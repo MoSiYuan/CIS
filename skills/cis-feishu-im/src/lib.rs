@@ -1,8 +1,7 @@
 //! # CIS Feishu IM Skill
 //!
 //! 飞书即时通讯集成 Skill，支持：
-//! - **长连接轮询**: 主动拉取消息，无公网暴露
-//! - **随时关机**: 冷冻模式，离线消息自动丢弃
+//! - **双模式运行**: 轮询 + Webhook，灵活配置
 //! - **AI 对话**: 使用 cis-core::ai 或 cis-skill-sdk::ai
 //! - **多轮对话**: 上下文管理
 //! - **数据库分离**: IM 数据库独立于记忆数据库
@@ -11,7 +10,7 @@
 //!
 //! 遵循 CIS 第一性原理：
 //! - **本地主权**: IM 数据库独立于记忆数据库
-//! - **主动拉取**: 长连接轮询，不暴露公网端口
+//! - **灵活运行**: 支持轮询/Webhook/双模式
 //! - **随时关机**: 关机即离线，开机即恢复
 //! - **可配置**: 支持 Claude/Kimi AI Provider
 //!
@@ -22,8 +21,12 @@
 //!
 //! let mut skill = FeishuImSkill::with_config(config);
 //!
-//! // 启动消息轮询
-//! skill.start_polling().await?;
+//! // 根据配置的 runtime_mode 自动启动
+//! skill.start().await?;
+//!
+//! // 或者单独启动
+//! skill.start_polling().await?;  // 仅轮询
+//! skill.start_webhook().await?;  // 仅 Webhook
 //! ```
 
 #![cfg_attr(feature = "wasm", no_std)]
@@ -35,6 +38,8 @@ mod error;
 mod poller;
 mod feishu_api;
 mod session;
+mod webhook;
+mod feishu;
 
 // WASM 模式使用 core
 #[cfg(feature = "wasm")]
@@ -49,11 +54,13 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 
 // 导出核心类型
-pub use config::{FeishuImConfig, TriggerMode, ContextConfig, expand_path};
+pub use config::{FeishuImConfig, TriggerMode, RuntimeMode, ContextConfig, expand_path, WebhookConfig};
 pub use context::ConversationContext;
 pub use error::FeishuImError;
+pub use feishu_api::FeishuApiClient;
 pub use poller::{MessagePoller, PollingConfig};
 pub use session::{FeishuSession, FeishuSessionManager, FeishuSessionType, FeishuSessionStatus};
+pub use webhook::WebhookServer;
 
 // 转换为 SDK Error
 impl From<FeishuImError> for SdkError {
@@ -78,6 +85,9 @@ pub struct FeishuImSkill {
     /// 消息轮询器
     poller: Option<MessagePoller>,
 
+    /// Webhook 服务器
+    webhook_server: Option<WebhookServer>,
+
     /// 运行状态
     running: Arc<RwLock<bool>>,
 }
@@ -90,6 +100,7 @@ impl FeishuImSkill {
             context: Arc::new(ConversationContext::default()),
             ai_provider: None,
             poller: None,
+            webhook_server: None,
             running: Arc::new(RwLock::new(false)),
         }
     }
@@ -102,6 +113,7 @@ impl FeishuImSkill {
             context: Arc::new(ConversationContext::new(context_config)),
             ai_provider: None,
             poller: None,
+            webhook_server: None,
             running: Arc::new(RwLock::new(false)),
         }
     }
@@ -142,6 +154,66 @@ impl FeishuImSkill {
                 .map_err(|e| FeishuImError::Polling(e.to_string()))?;
             *self.running.write().await = false;
         }
+        Ok(())
+    }
+
+    /// 启动 Webhook 服务器
+    pub async fn start_webhook(&mut self) -> Result<()> {
+        if self.webhook_server.is_some() {
+            return Err(FeishuImError::Config("Webhook 服务器已在运行".into()).into());
+        }
+
+        // 确保已初始化 AI Provider
+        if self.ai_provider.is_none() {
+            return Err(FeishuImError::Config("AI Provider 未初始化".into()).into());
+        }
+
+        // 创建 Webhook 服务器
+        let mut server = WebhookServer::new(
+            self.config.clone(),
+            self.context.clone(),
+            self.ai_provider.as_ref().unwrap().clone(),
+        );
+
+        // 启动服务器
+        server.start().await
+            .map_err(|e| FeishuImError::Config(format!("Webhook 启动失败: {}", e)))?;
+
+        self.webhook_server = Some(server);
+        tracing::info!("✅ Webhook 服务器已启动");
+        Ok(())
+    }
+
+    /// 停止 Webhook 服务器
+    pub async fn stop_webhook(&mut self) -> Result<()> {
+        if let Some(mut server) = self.webhook_server.take() {
+            server.stop().await
+                .map_err(|e| FeishuImError::Config(format!("Webhook 停止失败: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    /// 根据 runtime_mode 自动启动服务
+    pub async fn start(&mut self) -> Result<()> {
+        match self.config.runtime_mode {
+            RuntimeMode::PollingOnly => {
+                self.start_polling().await?;
+            }
+            RuntimeMode::WebhookOnly => {
+                self.start_webhook().await?;
+            }
+            RuntimeMode::Both => {
+                self.start_polling().await?;
+                self.start_webhook().await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 停止所有服务
+    pub async fn stop(&mut self) -> Result<()> {
+        self.stop_polling().await?;
+        self.stop_webhook().await?;
         Ok(())
     }
 

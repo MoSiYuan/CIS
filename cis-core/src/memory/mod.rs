@@ -2,6 +2,16 @@
 //!
 //! 提供私域/公域记忆管理，支持加密和访问控制。
 
+/// 记忆服务 Trait（用于 WASM Host API）
+pub trait MemoryServiceTrait: Send + Sync {
+    /// 获取记忆值
+    fn get(&self, key: &str) -> Option<Vec<u8>>;
+    /// 设置记忆值
+    fn set(&self, key: &str, value: &[u8]) -> crate::error::Result<()>;
+    /// 删除记忆
+    fn delete(&self, key: &str) -> crate::error::Result<()>;
+}
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -12,7 +22,7 @@ use crate::types::{MemoryCategory, MemoryDomain};
 
 pub mod encryption;
 
-use encryption::MemoryEncryption;
+pub use self::encryption::MemoryEncryption;
 
 
 
@@ -220,6 +230,38 @@ impl MemoryService {
             }
         }
         Ok(())
+    }
+
+    /// 简化版的获取（用于 WASM Host API）
+    pub fn get_raw(&self, key: &str) -> Option<Vec<u8>> {
+        match self.get(key) {
+            Ok(Some(entry)) => Some(entry.value),
+            _ => None,
+        }
+    }
+
+    /// 简化版的设置（用于 WASM Host API）
+    pub fn set_raw(&self, key: &str, value: &[u8]) -> Result<()> {
+        self.set(key, value, MemoryDomain::Private, MemoryCategory::Context)
+    }
+
+    /// 简化版的删除（用于 WASM Host API）
+    pub fn delete_raw(&self, key: &str) -> Result<()> {
+        self.delete(key).map(|_| ())
+    }
+}
+
+impl MemoryServiceTrait for MemoryService {
+    fn get(&self, key: &str) -> Option<Vec<u8>> {
+        self.get_raw(key)
+    }
+
+    fn set(&self, key: &str, value: &[u8]) -> Result<()> {
+        self.set_raw(key, value)
+    }
+
+    fn delete(&self, key: &str) -> Result<()> {
+        self.delete_raw(key)
     }
 }
 

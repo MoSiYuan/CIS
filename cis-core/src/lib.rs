@@ -62,6 +62,13 @@ pub mod project;
 // Wizard module - Initialization and onboarding
 pub mod wizard;
 
+// WASM module - WASM Runtime for sandboxed skills
+#[cfg(feature = "wasm")]
+pub mod wasm;
+
+// Matrix protocol integration
+pub mod matrix;
+
 // Planned modules
 // pub mod p2p;
 // pub mod identity;

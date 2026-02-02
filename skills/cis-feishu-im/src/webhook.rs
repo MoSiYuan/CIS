@@ -124,7 +124,7 @@ async fn handle_webhook(
     info!("收到 Webhook 请求: {:?}", payload);
 
     // 1. 验证签名（如果启用）
-    if state.config.verify_signature {
+    if state.config.webhook.verify_signature {
         // TODO: 实现签名验证
         info!("签名验证已启用（暂未实现）");
     }

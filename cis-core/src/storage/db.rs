@@ -20,7 +20,7 @@ pub struct CoreDb {
 impl CoreDb {
     /// 打开核心数据库
     pub fn open() -> Result<Self> {
-        let db_path = Paths::core_db();
+        let db_path = Paths::node_db();
         
         // 确保目录存在
         if let Some(parent) = db_path.parent() {
@@ -31,9 +31,22 @@ impl CoreDb {
             .map_err(|e| CisError::Storage(format!("Failed to open core db: {}", e)))?;
 
         let db = Self { conn };
+        db.configure_wal()?;
         db.init_schema()?;
         
         Ok(db)
+    }
+
+    /// 配置 WAL 模式（随时关机安全）
+    pub fn configure_wal(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA wal_autocheckpoint = 1000;
+             PRAGMA journal_size_limit = 100000000;
+             PRAGMA temp_store = memory;"
+        ).map_err(|e| CisError::Storage(format!("Failed to configure WAL: {}", e)))?;
+        Ok(())
     }
 
     /// 初始化核心数据库 Schema

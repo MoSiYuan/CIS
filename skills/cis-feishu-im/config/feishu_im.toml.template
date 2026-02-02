@@ -9,11 +9,14 @@
 # ⚠️ 重要: 请填写您从飞书开放平台获取的真实凭证
 app_id = "cli_a90a99e490f95cc7"          # 您的飞书应用 App ID
 app_secret = "bfwq9pZbbPNddQwU8MpKwdM2bZetMxas"    # 您的飞书应用 App Secret
-encrypt_key = ""                     # 事件订阅页面生成（先配置 Webhook URL 后填写）
-verify_token = ""                  # 事件订阅页面生成（先配置 Webhook URL 后填写）
 
-# Webhook 签名验证（生产环境强烈推荐开启）
-verify_signature = true
+# ==================== 运行模式配置 ====================
+#
+# 可选值:
+#   - "polling_only": 仅轮询模式（无需公网，适合本地开发）
+#   - "webhook_only": 仅 Webhook 模式（需要公网，实时性更好）
+#   - "both": 双模式同时运行（推荐，兼顾实时性和可靠性）
+runtime_mode = "both"
 
 # ==================== 对话触发模式 ====================
 #
@@ -73,16 +76,39 @@ im_db_path = "~/.cis/data/feishu_im.db"
 # 记忆数据库路径（只读，由 cis-core 管理，存储业务记忆）
 memory_db_path = "~/.cis/data/memory.db"
 
+# ==================== 消息轮询配置 ====================
+[polling]
+# HTTP 轮询间隔（秒）
+http_interval = 10
+
+# 批量拉取消息数量
+batch_size = 20
+
+# 是否处理历史消息（true=处理离线消息，false=冷冻模式）
+process_history = false
+
+# 会话检查间隔（秒）
+conversation_check_interval = 60
+
 # ==================== Webhook 服务器配置 ====================
 [webhook]
 # 监听地址（0.0.0.0 表示监听所有网卡）
 bind_address = "0.0.0.0"
 
 # 监听端口
-port = 8080
+port = 6767
 
 # Webhook 路径
 path = "/webhook/feishu"
+
+# 加密 Key（从飞书开放平台事件订阅页面获取）
+encrypt_key = ""
+
+# 验证 Token（从飞书开放平台事件订阅页面获取）
+verify_token = ""
+
+# 是否验证签名（生产环境强烈推荐开启）
+verify_signature = true
 
 # TLS 配置（可选，生产环境建议使用）
 # [webhook.tls]

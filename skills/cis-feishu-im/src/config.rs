@@ -7,6 +7,18 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use crate::poller::PollingConfig;
 
+/// 运行模式
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeMode {
+    /// 仅轮询模式
+    PollingOnly,
+    /// 仅 Webhook 模式
+    WebhookOnly,
+    /// 双模式同时运行
+    Both,
+}
+
 /// 飞书 IM Skill 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuImConfig {
@@ -15,6 +27,9 @@ pub struct FeishuImConfig {
 
     /// 飞书 App Secret（用于 API 调用）
     pub app_secret: String,
+
+    /// 运行模式
+    pub runtime_mode: RuntimeMode,
 
     /// 对话触发模式
     pub trigger_mode: TriggerMode,
@@ -33,6 +48,9 @@ pub struct FeishuImConfig {
 
     /// 消息轮询配置
     pub polling: PollingConfig,
+
+    /// Webhook 配置
+    pub webhook: WebhookConfig,
 }
 
 /// 对话触发模式
@@ -71,12 +89,14 @@ impl Default for FeishuImConfig {
         Self {
             app_id: String::new(),
             app_secret: String::new(),
+            runtime_mode: RuntimeMode::Both,
             trigger_mode: TriggerMode::PrivateAndAtMention,
             ai_provider: AiProviderConfig::default(),
             context_config: ContextConfig::default(),
             im_db_path: PathBuf::from("~/.cis/data/feishu_im.db"),
             memory_db_path: PathBuf::from("~/.cis/data/memory.db"),
             polling: PollingConfig::default(),
+            webhook: WebhookConfig::default(),
         }
     }
 }
@@ -125,6 +145,41 @@ pub fn expand_path(path: &PathBuf) -> PathBuf {
         }
     }
     path.clone()
+}
+
+/// Webhook 配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebhookConfig {
+    /// 监听地址
+    pub bind_address: String,
+
+    /// 监听端口
+    pub port: u16,
+
+    /// Webhook 路径
+    pub path: String,
+
+    /// 加密 Key（从飞书开放平台获取）
+    pub encrypt_key: String,
+
+    /// 验证 Token（从飞书开放平台获取）
+    pub verify_token: String,
+
+    /// 是否验证签名
+    pub verify_signature: bool,
+}
+
+impl Default for WebhookConfig {
+    fn default() -> Self {
+        Self {
+            bind_address: "0.0.0.0".to_string(),
+            port: 6767,
+            path: "/webhook/feishu".to_string(),
+            encrypt_key: String::new(),
+            verify_token: String::new(),
+            verify_signature: true,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "cis-core",
+    "cis-node",
+    "cis-skill-sdk",
+    "cis-skill-sdk/cis-skill-sdk-derive",
+    "skills/init-wizard",
+    "skills/push-client",
+    "skills/memory-organizer",
+    "skills/cis-feishu-im",
+    "skills/ai-executor",
+]

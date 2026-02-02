@@ -71,9 +71,19 @@ impl Paths {
         Self::data_dir().join("core")
     }
 
-    /// 核心数据库路径
+    /// 核心数据库路径 (旧版，保留兼容性)
     pub fn core_db() -> PathBuf {
-        Self::core_dir().join("core.db")
+        Self::node_db()
+    }
+
+    /// 主数据库路径 (~/.cis/node.db)
+    pub fn node_db() -> PathBuf {
+        Self::data_dir().join("node.db")
+    }
+
+    /// WAL 文件目录 (~/.cis/wal/)
+    pub fn wal_dir() -> PathBuf {
+        Self::data_dir().join("wal")
     }
 
     /// 核心备份目录
@@ -128,9 +138,9 @@ impl Paths {
         Self::skills_data_dir().join(skill_name)
     }
 
-    /// 特定 Skill 的数据库路径
+    /// 特定 Skill 的数据库路径 (~/.cis/skills/{skill_name}.db)
     pub fn skill_db(skill_name: &str) -> PathBuf {
-        Self::skill_data_dir(skill_name).join("data.db")
+        Self::skills_dir().join(format!("{}.db", skill_name))
     }
 
     // ==================== 日志目录 ====================

@@ -11,6 +11,9 @@ use crate::error::{CisError, Result};
 use crate::storage::db::{DbManager, SkillDb};
 use crate::storage::paths::Paths;
 
+#[cfg(feature = "wasm")]
+use crate::wasm::WasmRuntime;
+
 /// 活跃的 Skill 实例
 struct ActiveSkill {
     /// Skill 元数据
@@ -29,6 +32,9 @@ pub struct SkillManager {
     registry: Arc<Mutex<SkillRegistry>>,
     /// 活跃的 Skills
     active_skills: Arc<Mutex<HashMap<String, ActiveSkill>>>,
+    /// WASM 运行时（仅在 wasm 特性启用时）
+    #[cfg(feature = "wasm")]
+    wasm_runtime: Arc<Mutex<WasmRuntime>>,
 }
 
 impl SkillManager {
@@ -36,11 +42,57 @@ impl SkillManager {
     pub fn new(db_manager: Arc<DbManager>) -> Result<Self> {
         let registry = Arc::new(Mutex::new(SkillRegistry::load()?));
 
+        #[cfg(feature = "wasm")]
+        let wasm_runtime = Arc::new(Mutex::new(WasmRuntime::new()?));
+
         Ok(Self {
             db_manager,
             registry,
             active_skills: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(feature = "wasm")]
+            wasm_runtime,
         })
+    }
+
+    /// 加载 WASM Skill
+    ///
+    /// 从 WASM 字节码加载并实例化 Skill。
+    #[cfg(feature = "wasm")]
+    pub fn load_wasm(&self, name: &str, wasm_bytes: &[u8], options: LoadOptions) -> Result<()> {
+        use crate::memory::MemoryService;
+        use std::sync::Mutex as StdMutex;
+
+        tracing::info!("Loading WASM skill '{}'...", name);
+
+        // 获取或创建记忆服务
+        let core_db = self.db_manager.core();
+        let memory_service: Arc<StdMutex<dyn crate::memory::MemoryServiceTrait>> = 
+            Arc::new(StdMutex::new(MemoryService::new(core_db)));
+
+        // 使用 WasmSkillBuilder 构建 WASM Skill
+        let mut wasm_skill = crate::wasm::WasmSkillBuilder::new()
+            .name(name)
+            .version("1.0.0")
+            .description("WASM Skill")
+            .wasm_bytes(wasm_bytes.to_vec())
+            .memory_service(memory_service)
+            .build()?;
+
+        // 实例化 WASM 模块
+        wasm_skill.instantiate()?;
+
+        // 初始化 Skill
+        let config = options.config.unwrap_or_default();
+        wasm_skill.call_init(&config)?;
+
+        tracing::info!("WASM skill '{}' loaded successfully", name);
+
+        // 自动激活（如果启用）
+        if options.auto_activate {
+            tracing::info!("Activating WASM skill '{}'...", name);
+        }
+
+        Ok(())
     }
 
     // ==================== 注册/注销 ====================
