@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use crate::agent::{AgentBridgeSkill, AgentContext, AgentManager, AgentProvider};
+use crate::agent::{AgentContext, AgentManager, AgentProvider};
 use crate::error::Result;
 use crate::project::Project;
 use crate::skill::{LoadOptions, SkillManager};
@@ -182,7 +182,7 @@ impl ProjectSession {
         &self,
         skill_name: &str,
         method: &str,
-        params: serde_json::Value,
+        _params: serde_json::Value,
     ) -> Result<serde_json::Value> {
         // 通过 skill_manager 执行
         // TODO: 实现具体的执行逻辑
@@ -191,12 +191,12 @@ impl ProjectSession {
     }
 
     /// 存储项目记忆
-    pub fn set_memory(&self, key: &str, value: &[u8]) -> Result<()> {
+    pub fn set_memory(&self, key: &str, _value: &[u8]) -> Result<()> {
         let full_key = self.project.memory_key(key);
 
         // 获取 core_db 并存储
         let core_db = self.db_manager.core();
-        let db = core_db.lock()
+        let _db = core_db.lock()
             .map_err(|e| crate::error::CisError::storage(format!("Lock failed: {}", e)))?;
 
         // 实际存储逻辑

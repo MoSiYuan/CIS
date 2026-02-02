@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::{CisError, Result};
-use crate::storage::paths::Paths;
 
 pub mod session;
 

@@ -221,6 +221,7 @@ pub struct WasmSkillBuilder {
     description: Option<String>,
     wasm_bytes: Option<Vec<u8>>,
     memory_service: Option<Arc<Mutex<dyn MemoryServiceTrait>>>,
+    ai_provider: Option<Arc<Mutex<dyn crate::ai::AiProvider>>>,
 }
 
 impl WasmSkillBuilder {
@@ -232,6 +233,7 @@ impl WasmSkillBuilder {
             description: None,
             wasm_bytes: None,
             memory_service: None,
+            ai_provider: None,
         }
     }
 
@@ -265,6 +267,12 @@ impl WasmSkillBuilder {
         self
     }
 
+    /// 设置 AI Provider
+    pub fn ai_provider(mut self, provider: Arc<Mutex<dyn crate::ai::AiProvider>>) -> Self {
+        self.ai_provider = Some(provider);
+        self
+    }
+
     /// 构建 WASM Skill
     pub fn build(self) -> Result<WasmSkill> {
         let name = self.name.ok_or_else(|| CisError::skill("Name is required"))?;
@@ -272,13 +280,48 @@ impl WasmSkillBuilder {
         let description = self.description.unwrap_or_else(|| "WASM Skill".to_string());
         let wasm_bytes = self.wasm_bytes.ok_or_else(|| CisError::skill("WASM bytes are required"))?;
         let memory_service = self.memory_service.ok_or_else(|| CisError::skill("Memory service is required"))?;
+        let ai_provider = self.ai_provider.ok_or_else(|| CisError::skill("AI provider is required"))?;
 
-        // 创建运行时和实例
-        let mut runtime = super::WasmRuntime::new()?;
-        let instance = runtime.load_skill(&wasm_bytes)?;
+        // 克隆服务以便后续使用
+        let memory_service_clone = Arc::clone(&memory_service);
+        
+        // 创建运行时和实例（新版 API）
+        let runtime = super::runtime::WasmRuntime::new()?;
+        let skill_instance = runtime.load_skill(&wasm_bytes, memory_service, ai_provider)?;
+        
+        // 初始化
+        skill_instance.init()?;
 
-        WasmSkill::new(name, version, description, instance, memory_service)
+        // 创建兼容的 WasmInstance
+        let module = runtime.load_module(&wasm_bytes)?;
+        let (wasm_instance, _store) = create_compatible_instance(module, skill_instance)?;
+
+        WasmSkill::new(name, version, description, wasm_instance, memory_service_clone)
     }
+}
+
+/// 创建兼容的 WasmInstance（内部函数）
+fn create_compatible_instance(
+    module: super::runtime::WasmModule,
+    skill_instance: super::runtime::WasmSkillInstance,
+) -> Result<(super::WasmInstance, Arc<Mutex<wasmer::Store>>)> {
+    use super::WasmInstance;
+    use wasmer::{Engine, Module, Store};
+    
+    // 创建一个新的引擎和存储用于兼容层
+    let engine = Engine::default();
+    let store = Store::new(engine.clone());
+    let store_arc = Arc::new(Mutex::new(store));
+    
+    // 创建一个空模块（我们不实际使用它，只是为了满足 API）
+    let empty_wasm: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+    let compat_module = Module::from_binary(&engine, empty_wasm)
+        .map_err(|e| CisError::wasm(format!("Failed to create compat module: {}", e)))?;
+    
+    let mut instance = WasmInstance::from_module(compat_module, Arc::clone(&store_arc));
+    instance.set_runtime_instance(skill_instance);
+    
+    Ok((instance, store_arc))
 }
 
 impl Default for WasmSkillBuilder {

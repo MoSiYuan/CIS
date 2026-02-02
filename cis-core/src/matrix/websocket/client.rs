@@ -10,7 +10,6 @@
 //! - Automatic reconnection
 //! - UDP hole punching support
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,10 +20,10 @@ use tokio::time::{sleep, timeout};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tracing::{debug, error, info, warn};
 
-use crate::matrix::federation::types::{CisMatrixEvent, PeerInfo};
+use crate::matrix::federation::types::PeerInfo;
 
 use super::protocol::{
-    build_ws_url, AckMessage, AuthMessage, ErrorCode, HandshakeMessage, WsMessage, PROTOCOL_VERSION,
+    build_ws_url, AuthMessage, HandshakeMessage, WsMessage, PROTOCOL_VERSION,
     WS_PATH,
 };
 use super::tunnel::{Tunnel, TunnelError, TunnelManager, TunnelState};
@@ -222,8 +221,8 @@ impl WebSocketClient {
 
 /// Client connection handler
 struct ClientConnectionHandler {
-    /// WebSocket stream
-    ws_stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    /// WebSocket stream (wrapped in Option for ownership transfer)
+    ws_stream: Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     /// This node's ID
     node_id: String,
     /// This node's DID
@@ -269,7 +268,7 @@ impl ClientConnectionHandler {
     ) -> Self {
         let (msg_tx, msg_rx) = mpsc::unbounded_channel();
         Self {
-            ws_stream,
+            ws_stream: Some(ws_stream),
             node_id,
             node_did,
             auth_key,
@@ -287,8 +286,12 @@ impl ClientConnectionHandler {
     async fn run(mut self) -> Result<Arc<Tunnel>, WsClientError> {
         use futures::StreamExt;
 
+        // Take ownership of the stream
+        let ws_stream = self.ws_stream.take()
+            .ok_or_else(|| WsClientError::ConnectionError("WebSocket stream already taken".to_string()))?;
+        
         // Split the stream
-        let (mut ws_sender, mut ws_receiver) = self.ws_stream.split();
+        let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
         // Register tunnel first
         let tunnel = self
@@ -413,6 +416,7 @@ impl ClientConnectionHandler {
                                 }
                             }
                         );
+                        use futures::SinkExt;
                         if let Err(e) = ws_sender.send(ws_msg).await {
                             error!("Failed to send message: {}", e);
                             break;

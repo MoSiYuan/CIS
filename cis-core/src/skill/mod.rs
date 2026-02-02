@@ -10,20 +10,41 @@
 //!                          Pause      Resume     |
 //!                                       ↑_________|
 //! ```
+//!
+//! ## Skill = Matrix Room 视图
+//!
+//! 每个 Skill 对应一个 Matrix Room，支持联邦标记控制是否广播：
+//! - `room_id()`: 返回 Skill 对应的 Matrix Room ID
+//! - `federate()`: 控制是否联邦同步（默认 false）
+//! - `init()`: 初始化时创建/加入 Room
+//! - `on_matrix_event()`: 处理 Matrix 事件
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::sync::Arc;
 
+pub mod chain;
+pub mod cis_admin;
 pub mod manager;
 pub mod manifest;
+pub mod project_registry;
 pub mod registry;
+pub mod router;
+pub mod semantics;
 pub mod types;
 
+pub use chain::{ChainBuilder, ChainContext, ChainStep, ChainTemplates, SkillChain, StepResult};
+pub use cis_admin::{CisAdminSkill, CisAnalyzeSkill, CisCommitSkill, CisFileSkill, CisReadSkill, register_cis_local_skills};
 pub use manager::SkillManager;
 pub use manifest::{SkillManifest, SkillPermissions, ManifestValidator};
+pub use project_registry::{ProjectSkillRegistry, ProjectSkillConfig, ProjectSkillEntry, ProjectSkillDiscovery};
 pub use registry::{SkillRegistry, SkillRegistration};
-pub use types::{LoadOptions, SkillConfig, SkillInfo, SkillMeta, SkillState, SkillType};
+pub use router::{RouteResult, SkillVectorRouter};
+pub use semantics::{SkillIoSignature, SkillScope, SkillSemanticDescription, SkillSemanticMatcher, SkillSemanticRegistry, SkillSemanticsExt};
+pub use types::{LoadOptions, SkillConfig, SkillInfo, SkillMeta, SkillRoomInfo, SkillState, SkillType};
+
+// Re-export Matrix types for Skill integration
+pub use crate::matrix::nucleus::{MatrixNucleus, RoomOptions};
 
 /// Skill 统一接口（CIS Core 内部使用）
 #[async_trait]
@@ -41,13 +62,64 @@ pub trait Skill: Send + Sync {
         ""
     }
 
+    /// Skill 对应的 Matrix Room ID
+    /// 默认格式: !{skill_name}:cis.local
+    fn room_id(&self) -> Option<String> {
+        Some(format!("!{}:cis.local", self.name()))
+    }
+
+    /// 是否联邦同步（默认 false）
+    fn federate(&self) -> bool {
+        false
+    }
+
     /// 初始化
+    ///
+    /// 默认实现：创建 Room，注册 Matrix 事件处理器
     async fn init(&mut self, config: SkillConfig) -> crate::error::Result<()> {
         let _ = config;
         Ok(())
     }
 
-    /// 处理事件
+    /// 初始化 Matrix Room（由核心在加载 Skill 后调用）
+    ///
+    /// 默认实现：
+    /// - 创建/加入 Room
+    /// - 注册事件处理器
+    async fn init_room(&self, nucleus: Arc<MatrixNucleus>) -> crate::error::Result<()> {
+        if let Some(room_id_str) = self.room_id() {
+            let room_id = crate::matrix::nucleus::RoomId::parse(&room_id_str)
+                .map_err(|e| crate::error::CisError::Other(format!("Invalid room ID: {}", e)))?;
+            
+            // 创建 RoomOptions
+            let opts = RoomOptions::new(self.name().to_string())
+                .with_federate(self.federate());
+            
+            // 创建 Room
+            nucleus.create_room(opts).await.map_err(|e| 
+                crate::error::CisError::Other(format!("Failed to create room: {}", e))
+            )?;
+
+            // 注册事件处理器
+            let _handler_id = nucleus.register_handler("*", |_event| {
+                // TODO: 通过 channel 或其他方式将事件传递给 Skill
+                // 这里需要与 Skill 的 on_matrix_event 方法连接
+                Ok(())
+            }).await;
+
+            tracing::info!("Skill '{}' initialized room: {}", self.name(), room_id);
+        }
+        Ok(())
+    }
+
+    /// 处理 Matrix Event（可选实现）
+    async fn on_matrix_event(&self, event: crate::matrix::nucleus::MatrixEvent) -> crate::error::Result<()> {
+        // 默认空实现
+        let _ = event;
+        Ok(())
+    }
+
+    /// 处理 CIS 事件
     async fn handle_event(&self, ctx: &dyn SkillContext, event: Event) -> crate::error::Result<()>;
 
     /// 关闭

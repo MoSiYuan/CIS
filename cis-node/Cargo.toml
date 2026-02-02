@@ -14,4 +14,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = "0.4"
 rand = "0.8"
+uuid = { version = "1.6", features = ["v4"] }
 which = "6.0"
+tokio-tungstenite = "0.24"
+whoami = "1.5"

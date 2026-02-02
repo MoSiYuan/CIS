@@ -50,6 +50,9 @@ pub mod storage;
 // Skill module - Hot-swappable skill management
 pub mod skill;
 
+// Intent module - Natural language intent parsing
+pub mod intent;
+
 // AI module - AI Provider implementations
 pub mod ai;
 
@@ -62,6 +65,9 @@ pub mod project;
 // Wizard module - Initialization and onboarding
 pub mod wizard;
 
+// Init module - New initialization wizard with full flow
+pub mod init;
+
 // WASM module - WASM Runtime for sandboxed skills
 #[cfg(feature = "wasm")]
 pub mod wasm;
@@ -69,8 +75,20 @@ pub mod wasm;
 // Matrix protocol integration
 pub mod matrix;
 
+// Identity module - DID management
+pub mod identity;
+
+// Vector Intelligence module - Semantic search
+pub mod vector;
+
+// Conversation module - Session dialogue management
+pub mod conversation;
+
+// Telemetry module - Request logging and observability
+pub mod telemetry;
+
 // Planned modules
 // pub mod p2p;
-// pub mod identity;
 
 pub use error::{CisError, Result};
+pub use identity::DIDManager;

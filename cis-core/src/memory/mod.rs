@@ -1,6 +1,7 @@
 //! # 记忆服务模块
 //!
 //! 提供私域/公域记忆管理，支持加密和访问控制。
+//! 使用独立的 MemoryDb 存储，与核心数据库分离。
 
 /// 记忆服务 Trait（用于 WASM Host API）
 pub trait MemoryServiceTrait: Send + Sync {
@@ -14,21 +15,19 @@ pub trait MemoryServiceTrait: Send + Sync {
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
-use crate::error::{CisError, Result};
-use crate::storage::db::CoreDb;
+use crate::storage::memory_db::MemoryEntry;
 use crate::types::{MemoryCategory, MemoryDomain};
 
 pub mod encryption;
+pub mod service;
 
 pub use self::encryption::MemoryEncryption;
+pub use self::service::{MemoryItem, MemoryService, SearchOptions, SyncMarker};
 
-
-
-/// 记忆条目
+/// 扩展的记忆条目（包含更多元数据）
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryEntry {
+pub struct MemoryEntryExt {
     pub key: String,
     #[serde(with = "serde_bytes")]
     pub value: Vec<u8>,
@@ -42,226 +41,105 @@ pub struct MemoryEntry {
     pub metadata: HashMap<String, String>,
 }
 
-/// 记忆搜索选项
-#[derive(Debug, Clone, Default)]
-pub struct SearchOptions {
+impl From<MemoryEntry> for MemoryEntryExt {
+    fn from(entry: MemoryEntry) -> Self {
+        Self {
+            key: entry.key,
+            value: entry.value,
+            domain: entry.domain,
+            category: entry.category,
+            created_at: entry.created_at,
+            updated_at: entry.updated_at,
+            accessed_at: None,
+            version: 1,
+            encrypted: matches!(entry.domain, MemoryDomain::Private),
+            metadata: HashMap::new(),
+        }
+    }
+}
+
+impl From<MemoryItem> for MemoryEntryExt {
+    fn from(item: MemoryItem) -> Self {
+        Self {
+            key: item.key,
+            value: item.value,
+            domain: item.domain,
+            category: item.category,
+            created_at: item.created_at.timestamp(),
+            updated_at: item.updated_at.timestamp(),
+            accessed_at: None,
+            version: item.version as u32,
+            encrypted: item.encrypted,
+            metadata: HashMap::new(),
+        }
+    }
+}
+
+// SearchOptions 现在直接从 service 模块导出
+// 如果需要向后兼容的转换，可以在这里添加
+
+/// 私域/公域记忆过滤条件
+#[derive(Debug, Clone)]
+pub struct MemoryFilter {
     pub domain: Option<MemoryDomain>,
     pub category: Option<MemoryCategory>,
-    pub key_prefix: Option<String>,
-    pub time_range: Option<(i64, i64)>,
-    pub limit: Option<usize>,
+    pub key_pattern: Option<String>,
 }
 
-/// 记忆服务
-pub struct MemoryService {
-    core_db: Arc<Mutex<CoreDb>>,
-    encryption: Option<MemoryEncryption>,
-    namespace: Option<String>,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
 
-impl MemoryService {
-    pub fn new(core_db: Arc<Mutex<CoreDb>>) -> Self {
-        Self {
-            core_db,
-            encryption: None,
-            namespace: None,
-        }
+    fn setup_test_env() {
+        let temp_dir = env::temp_dir().join("cis_test_memory_mod");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::env::set_var("CIS_DATA_DIR", &temp_dir);
     }
 
-    pub fn with_encryption(mut self, encryption: MemoryEncryption) -> Self {
-        self.encryption = Some(encryption);
-        self
+    fn cleanup_test_env() {
+        std::env::remove_var("CIS_DATA_DIR");
     }
 
-    pub fn with_namespace(mut self, namespace: impl Into<String>) -> Self {
-        self.namespace = Some(namespace.into());
-        self
-    }
-
-    fn full_key(&self, key: &str) -> String {
-        match &self.namespace {
-            Some(ns) => format!("{}/{}", ns, key),
-            None => key.to_string(),
-        }
-    }
-
-    /// 存储记忆
-    pub fn set(
-        &self,
-        key: &str,
-        value: &[u8],
-        domain: MemoryDomain,
-        category: MemoryCategory,
-    ) -> Result<()> {
-        match domain {
-            MemoryDomain::Private => self.set_private(key, value, category),
-            MemoryDomain::Public => self.set_public(key, value, category),
-        }
-    }
-
-    /// 存储私域记忆（加密）
-    fn set_private(&self, key: &str, value: &[u8], category: MemoryCategory) -> Result<()> {
-        let full_key = self.full_key(key);
-        let now = chrono::Utc::now().timestamp();
-
-        let (encrypted_value, encrypted_flag) = if let Some(ref enc) = self.encryption {
-            (enc.encrypt(value)?, true)
-        } else {
-            (value.to_vec(), false)
-        };
-
+    #[test]
+    fn test_memory_entry_ext_from_entry() {
         let entry = MemoryEntry {
-            key: full_key.clone(),
-            value: encrypted_value,
+            key: "test".to_string(),
+            value: b"value".to_vec(),
             domain: MemoryDomain::Private,
-            category,
-            created_at: now,
-            updated_at: now,
-            accessed_at: None,
-            version: 1,
-            encrypted: encrypted_flag,
-            metadata: HashMap::new(),
+            category: MemoryCategory::Context,
+            created_at: 1234567890,
+            updated_at: 1234567890,
         };
 
-        let data = bincode::serialize(&entry)
-            .map_err(|e| CisError::storage(format!("Failed to serialize: {}", e)))?;
-
-        let db = self.core_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
-
-        db.set_config(&format!("memory/private/{}", full_key), &data, encrypted_flag)?;
-        db.register_memory_index(&full_key, None, "core", Some(&format!("{:?}", category)))?;
-
-        Ok(())
+        let ext: MemoryEntryExt = entry.into();
+        assert_eq!(ext.key, "test");
+        assert_eq!(ext.value, b"value");
+        assert!(ext.encrypted);
+        assert!(matches!(ext.domain, MemoryDomain::Private));
     }
 
-    /// 存储公域记忆（明文）
-    fn set_public(&self, key: &str, value: &[u8], category: MemoryCategory) -> Result<()> {
-        let full_key = self.full_key(key);
-        let now = chrono::Utc::now().timestamp();
-
-        let entry = MemoryEntry {
-            key: full_key.clone(),
-            value: value.to_vec(),
+    #[test]
+    fn test_memory_entry_ext_from_item() {
+        use chrono::Utc;
+        
+        let item = MemoryItem {
+            key: "test".to_string(),
+            value: b"value".to_vec(),
             domain: MemoryDomain::Public,
-            category,
-            created_at: now,
-            updated_at: now,
-            accessed_at: None,
-            version: 1,
+            category: MemoryCategory::Result,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            version: 2,
             encrypted: false,
-            metadata: HashMap::new(),
+            owner: "node1".to_string(),
         };
 
-        let data = bincode::serialize(&entry)
-            .map_err(|e| CisError::storage(format!("Failed to serialize: {}", e)))?;
-
-        let db = self.core_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
-
-        db.set_config(&format!("memory/public/{}", full_key), &data, false)?;
-        db.register_memory_index(&full_key, None, "core", Some(&format!("{:?}", category)))?;
-
-        Ok(())
-    }
-
-    /// 读取记忆
-    pub fn get(&self, key: &str) -> Result<Option<MemoryEntry>> {
-        let full_key = self.full_key(key);
-
-        let db = self.core_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
-
-        // 尝试私域
-        if let Some((data, _)) = db.get_config(&format!("memory/private/{}", full_key))? {
-            let mut entry: MemoryEntry = bincode::deserialize(&data)
-                .map_err(|e| CisError::storage(format!("Failed to deserialize: {}", e)))?;
-
-            if entry.encrypted {
-                if let Some(ref enc) = self.encryption {
-                    entry.value = enc.decrypt(&entry.value)?;
-                } else {
-                    return Err(CisError::storage("Encrypted memory but no key available"));
-                }
-            }
-            return Ok(Some(entry));
-        }
-
-        // 尝试公域
-        if let Some((data, _)) = db.get_config(&format!("memory/public/{}", full_key))? {
-            let entry: MemoryEntry = bincode::deserialize(&data)
-                .map_err(|e| CisError::storage(format!("Failed to deserialize: {}", e)))?;
-            return Ok(Some(entry));
-        }
-
-        Ok(None)
-    }
-
-    /// 删除记忆
-    pub fn delete(&self, key: &str) -> Result<bool> {
-        let _ = key;
-        // TODO: 实现删除
-        Ok(false)
-    }
-
-    /// 搜索记忆
-    pub fn search(&self, query: &str, options: SearchOptions) -> Result<Vec<MemoryEntry>> {
-        let _ = (query, options);
-        Ok(vec![])
-    }
-
-    /// 列出记忆键
-    pub fn list_keys(&self, prefix: &str, domain: Option<MemoryDomain>) -> Result<Vec<String>> {
-        let _ = (prefix, domain);
-        Ok(vec![])
-    }
-
-    /// 导出公域记忆（用于 P2P 同步）
-    pub fn export_public(&self, since: i64) -> Result<Vec<MemoryEntry>> {
-        let _ = since;
-        Ok(vec![])
-    }
-
-    /// 导入公域记忆
-    pub fn import_public(&self, entries: Vec<MemoryEntry>) -> Result<()> {
-        for entry in entries {
-            if entry.domain == MemoryDomain::Public {
-                self.set_public(&entry.key, &entry.value, entry.category)?;
-            }
-        }
-        Ok(())
-    }
-
-    /// 简化版的获取（用于 WASM Host API）
-    pub fn get_raw(&self, key: &str) -> Option<Vec<u8>> {
-        match self.get(key) {
-            Ok(Some(entry)) => Some(entry.value),
-            _ => None,
-        }
-    }
-
-    /// 简化版的设置（用于 WASM Host API）
-    pub fn set_raw(&self, key: &str, value: &[u8]) -> Result<()> {
-        self.set(key, value, MemoryDomain::Private, MemoryCategory::Context)
-    }
-
-    /// 简化版的删除（用于 WASM Host API）
-    pub fn delete_raw(&self, key: &str) -> Result<()> {
-        self.delete(key).map(|_| ())
+        let ext: MemoryEntryExt = item.into();
+        assert_eq!(ext.key, "test");
+        assert_eq!(ext.value, b"value");
+        assert!(!ext.encrypted);
+        assert_eq!(ext.version, 2);
     }
 }
-
-impl MemoryServiceTrait for MemoryService {
-    fn get(&self, key: &str) -> Option<Vec<u8>> {
-        self.get_raw(key)
-    }
-
-    fn set(&self, key: &str, value: &[u8]) -> Result<()> {
-        self.set_raw(key, value)
-    }
-
-    fn delete(&self, key: &str) -> Result<()> {
-        self.delete_raw(key)
-    }
-}
-

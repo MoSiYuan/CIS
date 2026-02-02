@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
-use tracing::{debug, error, info, warn};
 
 /// Claude CLI 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]

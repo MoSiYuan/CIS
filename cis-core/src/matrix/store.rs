@@ -9,13 +9,62 @@
 //! - `matrix_users`: Local user accounts (simplified auth)
 //! - `matrix_devices`: Device registrations
 //! - `matrix_tokens`: Access tokens
-//! - `matrix_rooms`: Room metadata
+//! - `matrix_rooms`: Room metadata (with federate flag)
 //! - `matrix_room_members`: Room membership tracking
 
-use rusqlite::{Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension};
 use std::sync::{Arc, Mutex};
 
 use super::error::{MatrixError, MatrixResult};
+
+/// Room 创建选项
+#[derive(Debug, Clone)]
+pub struct RoomOptions {
+    /// Room ID
+    pub room_id: String,
+    /// 创建者
+    pub creator: String,
+    /// Room 名称
+    pub name: Option<String>,
+    /// Room 主题
+    pub topic: Option<String>,
+    /// 是否联邦同步
+    pub federate: bool,
+    /// 创建时间戳
+    pub created_at: i64,
+}
+
+impl RoomOptions {
+    /// 创建新的 Room 选项
+    pub fn new(room_id: impl Into<String>, creator: impl Into<String>) -> Self {
+        Self {
+            room_id: room_id.into(),
+            creator: creator.into(),
+            name: None,
+            topic: None,
+            federate: false,
+            created_at: chrono::Utc::now().timestamp(),
+        }
+    }
+
+    /// 设置 Room 名称
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// 设置 Room 主题
+    pub fn with_topic(mut self, topic: impl Into<String>) -> Self {
+        self.topic = Some(topic.into());
+        self
+    }
+
+    /// 设置联邦同步标记
+    pub fn with_federate(mut self, federate: bool) -> Self {
+        self.federate = federate;
+        self
+    }
+}
 
 /// Matrix message/event representation
 #[derive(Debug, Clone)]
@@ -160,18 +209,25 @@ impl MatrixStore {
             [],
         ).map_err(|e| MatrixError::Store(format!("Failed to create sync_tokens table: {}", e)))?;
 
-        // Rooms table (Phase 1)
+        // Rooms table (Phase 1) - with federate flag
         db.execute(
             "CREATE TABLE IF NOT EXISTS matrix_rooms (
                 room_id TEXT PRIMARY KEY,
                 creator TEXT NOT NULL,
                 name TEXT,
                 topic TEXT,
+                federate INTEGER DEFAULT 0,
                 created_at INTEGER DEFAULT (unixepoch()),
                 FOREIGN KEY (creator) REFERENCES matrix_users(user_id)
             )",
             [],
         ).map_err(|e| MatrixError::Store(format!("Failed to create matrix_rooms table: {}", e)))?;
+
+        // 迁移：如果旧表没有 federate 列，添加它
+        let _ = db.execute(
+            "ALTER TABLE matrix_rooms ADD COLUMN federate INTEGER DEFAULT 0",
+            [],
+        );
 
         // Room members table (Phase 1) - tracks membership state
         db.execute(
@@ -432,7 +488,7 @@ impl MatrixStore {
         Ok(())
     }
 
-    /// Create a new room
+    /// Create a new room (原始方法，保持兼容)
     pub fn create_room(
         &self,
         room_id: &str,
@@ -440,20 +496,93 @@ impl MatrixStore {
         name: Option<&str>,
         topic: Option<&str>,
     ) -> MatrixResult<()> {
+        self.create_room_with_opts(&RoomOptions {
+            room_id: room_id.to_string(),
+            creator: creator.to_string(),
+            name: name.map(|s| s.to_string()),
+            topic: topic.map(|s| s.to_string()),
+            federate: false,
+            created_at: chrono::Utc::now().timestamp(),
+        })
+    }
+
+    /// 创建 Room（带 federate 标记）
+    pub fn create_room_with_opts(&self, opts: &RoomOptions) -> MatrixResult<()> {
         let db = self.db.lock()
             .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
 
         // Ensure creator exists
         db.execute(
             "INSERT OR IGNORE INTO matrix_users (user_id) VALUES (?1)",
-            [creator],
+            [&opts.creator],
         ).map_err(|e| MatrixError::Store(format!("Failed to ensure user: {}", e)))?;
 
-        // Insert room
+        // Insert room with federate flag
         db.execute(
-            "INSERT INTO matrix_rooms (room_id, creator, name, topic) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![room_id, creator, name, topic],
+            "INSERT INTO matrix_rooms (room_id, creator, name, topic, federate, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(room_id) DO UPDATE SET
+             name = excluded.name,
+             topic = excluded.topic,
+             federate = excluded.federate",
+            rusqlite::params![
+                opts.room_id,
+                opts.creator,
+                opts.name,
+                opts.topic,
+                opts.federate as i32,
+                opts.created_at,
+            ],
         ).map_err(|e| MatrixError::Store(format!("Failed to create room: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 获取 Room 的 federate 标记
+    pub fn is_room_federate(&self, room_id: &str) -> MatrixResult<bool> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let result: Result<Option<i32>, rusqlite::Error> = db.query_row(
+            "SELECT federate FROM matrix_rooms WHERE room_id = ?1",
+            [room_id],
+            |row| row.get(0),
+        ).optional();
+
+        match result {
+            Ok(Some(federate)) => Ok(federate != 0),
+            Ok(None) => Ok(false), // Room 不存在时默认不联邦
+            Err(e) => Err(MatrixError::Store(format!("Failed to check federate: {}", e))),
+        }
+    }
+
+    /// 列出所有 federate=true 的 Room
+    pub fn list_federate_rooms(&self) -> MatrixResult<Vec<String>> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let mut stmt = db.prepare(
+            "SELECT room_id FROM matrix_rooms WHERE federate = 1"
+        ).map_err(|e| MatrixError::Store(format!("Failed to prepare query: {}", e)))?;
+
+        let rooms = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| MatrixError::Store(format!("Failed to query rooms: {}", e)))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| MatrixError::Store(format!("Failed to collect rooms: {}", e)))?;
+
+        Ok(rooms)
+    }
+
+    /// 设置 Room 的 federate 标记
+    pub fn set_room_federate(&self, room_id: &str, federate: bool) -> MatrixResult<()> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        db.execute(
+            "UPDATE matrix_rooms SET federate = ?1 WHERE room_id = ?2",
+            rusqlite::params![federate as i32, room_id],
+        ).map_err(|e| MatrixError::Store(format!("Failed to set federate: {}", e)))?;
 
         Ok(())
     }
@@ -522,6 +651,58 @@ impl MatrixStore {
             Ok(None) => Ok(false),
             Err(e) => Err(MatrixError::Store(format!("Failed to check room: {}", e))),
         }
+    }
+
+    /// Check if an event exists by event_id
+    pub fn event_exists(&self, event_id: &str) -> MatrixResult<bool> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let result: Result<Option<i64>, rusqlite::Error> = db.query_row(
+            "SELECT 1 FROM matrix_events WHERE event_id = ?1",
+            [event_id],
+            |row| row.get(0),
+        ).optional();
+
+        match result {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) => Ok(false),
+            Err(e) => Err(MatrixError::Store(format!("Failed to check event: {}", e))),
+        }
+    }
+
+    /// Save a raw event (for federation sync)
+    pub fn save_raw_event(
+        &self,
+        room_id: &str,
+        event_id: &str,
+        event_type: &str,
+        content: &serde_json::Value,
+        origin_server_ts: i64,
+    ) -> MatrixResult<()> {
+        let content_str = content.to_string();
+        
+        // Extract sender from content if available, otherwise use empty
+        let sender = content.get("sender")
+            .and_then(|s| s.as_str())
+            .unwrap_or("@unknown:cis.local");
+        
+        // Extract unsigned if available
+        let unsigned = content.get("unsigned").map(|u| u.to_string());
+        
+        // Extract state_key if available
+        let state_key = content.get("state_key").and_then(|s| s.as_str());
+
+        self.save_event(
+            room_id,
+            event_id,
+            sender,
+            event_type,
+            &content_str,
+            origin_server_ts,
+            unsigned.as_deref(),
+            state_key,
+        )
     }
 
     /// Get room state (state events)

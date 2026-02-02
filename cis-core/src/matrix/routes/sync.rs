@@ -18,8 +18,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::matrix::error::{MatrixError, MatrixResult};
-use crate::matrix::routes::auth::{authenticate, AuthenticatedUser};
+use crate::matrix::error::MatrixResult;
+use crate::matrix::routes::auth::authenticate;
 use crate::matrix::store::MatrixStore;
 
 /// Sync request query parameters

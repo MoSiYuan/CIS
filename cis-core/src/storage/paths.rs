@@ -81,6 +81,21 @@ impl Paths {
         Self::data_dir().join("node.db")
     }
 
+    /// 邦联数据库路径 (~/.cis/federation.db)
+    pub fn federation_db() -> PathBuf {
+        Self::data_dir().join("federation.db")
+    }
+
+    /// 记忆数据库路径 (~/.cis/memory.db)
+    pub fn memory_db() -> PathBuf {
+        Self::data_dir().join("memory.db")
+    }
+
+    /// 向量数据库路径 (~/.cis/vector.db)
+    pub fn vector_db() -> PathBuf {
+        Self::data_dir().join("vector.db")
+    }
+
     /// WAL 文件目录 (~/.cis/wal/)
     pub fn wal_dir() -> PathBuf {
         Self::data_dir().join("wal")

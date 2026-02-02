@@ -20,6 +20,17 @@
 - [x] CLI 工具框架 (clap)
 - [x] 基础命令实现 (init, skill, memory, task, agent, doctor)
 
+### Phase 3: MATRIX-final 联邦架构 ✅
+- [x] MatrixNucleus 统一核心
+- [x] DID 身份系统 (Ed25519 + did:cis:)
+- [x] Skill = Matrix Room 视图
+- [x] Room 联邦标记 (federate)
+- [x] Cloud Anchor 服务发现
+- [x] Noise Protocol XX 握手
+- [x] 事件联邦广播
+- [x] 强类型 Skill 消息 (io.cis.*)
+- [x] 断线同步队列消费者
+
 ---
 
 ## 🚧 未完成

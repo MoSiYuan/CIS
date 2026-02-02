@@ -2,11 +2,7 @@
 //!
 //! Provides authentication extraction and validation for Matrix API endpoints.
 
-use axum::{
-    extract::State,
-    http::HeaderMap,
-};
-use std::sync::Arc;
+use axum::http::HeaderMap;
 
 use crate::matrix::error::MatrixError;
 use crate::matrix::store::MatrixStore;

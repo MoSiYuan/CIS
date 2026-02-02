@@ -18,10 +18,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::warn;
 
 use crate::matrix::error::{MatrixError, MatrixResult};
-use crate::matrix::routes::auth::{authenticate, AuthenticatedUser};
+use crate::matrix::routes::auth::authenticate;
 use crate::matrix::store::MatrixStore;
 
 // ==================== Create Room ====================

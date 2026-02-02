@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info};
 
 mod commands;
+use cis_node::TelemetryAction;
 
 /// CLI structure
 #[derive(Parser, Debug)]
@@ -28,6 +29,15 @@ enum Commands {
         /// Force overwrite existing configuration
         #[arg(long)]
         force: bool,
+        /// Non-interactive mode (use defaults)
+        #[arg(long)]
+        non_interactive: bool,
+        /// Skip environment checks
+        #[arg(long)]
+        skip_checks: bool,
+        /// Preferred AI provider (claude|kimi|aider)
+        #[arg(long)]
+        provider: Option<String>,
     },
     
     /// Manage skills
@@ -69,6 +79,18 @@ enum Commands {
     
     /// Show CIS status
     Status,
+    
+    /// Peer management
+    Peer {
+        #[command(subcommand)]
+        action: PeerAction,
+    },
+    
+    /// Telemetry and request logging
+    Telemetry {
+        #[command(subcommand)]
+        action: TelemetryAction,
+    },
 }
 
 /// Skill subcommands
@@ -133,6 +155,18 @@ enum SkillAction {
         /// Skill name
         name: String,
     },
+    
+    /// Execute skill by natural language (semantic invocation)
+    Do {
+        /// Natural language description
+        description: String,
+        /// Project path
+        #[arg(short, long)]
+        project: Option<std::path::PathBuf>,
+        /// Show candidate skill list
+        #[arg(short, long)]
+        candidates: bool,
+    },
 }
 
 /// Memory subcommands
@@ -164,13 +198,28 @@ enum MemoryAction {
         key: String,
     },
     
-    /// Search memory entries
+    /// Search memory entries (keyword-based)
     Search {
         /// Search query
         query: String,
         /// Maximum results
         #[arg(long)]
         limit: Option<usize>,
+    },
+    
+    /// Semantic search memory entries (vector-based)
+    VectorSearch {
+        /// Search query
+        query: String,
+        /// Maximum results
+        #[arg(short, long, default_value = "5")]
+        limit: usize,
+        /// Similarity threshold
+        #[arg(short, long)]
+        threshold: Option<f32>,
+        /// Category filter
+        #[arg(short, long)]
+        category: Option<String>,
     },
     
     /// List memory keys
@@ -192,6 +241,56 @@ enum MemoryAction {
         #[arg(long, short)]
         output: Option<String>,
     },
+}
+
+/// Peer subcommands
+#[derive(Subcommand, Debug)]
+enum PeerAction {
+    /// Add a peer node
+    Add {
+        /// Node ID
+        node_id: String,
+        /// DID
+        did: String,
+        /// WebSocket endpoint
+        endpoint: String,
+    },
+    
+    /// Remove a peer node
+    Remove {
+        /// Node ID
+        node_id: String,
+    },
+    
+    /// List all peers
+    List {
+        /// Show offline peers
+        #[arg(long)]
+        all: bool,
+    },
+    
+    /// Show peer details
+    Info {
+        /// Node ID
+        node_id: String,
+    },
+    
+    /// Set trust level for a peer
+    Trust {
+        /// Node ID
+        node_id: String,
+        /// Trust level (block, read, write)
+        level: String,
+    },
+    
+    /// Ping a peer
+    Ping {
+        /// Node ID
+        node_id: String,
+    },
+    
+    /// Show sync queue status
+    Sync,
 }
 
 /// Task subcommands
@@ -358,20 +457,17 @@ async fn main() {
 
 async fn run_command(command: Commands) -> anyhow::Result<()> {
     match command {
-        Commands::Init { project, force } => {
-            let options = cis_core::wizard::InitOptions {
+        Commands::Init { project, force, non_interactive, skip_checks, provider } => {
+            let options = commands::init::InitOptions {
                 project_mode: project,
                 project_dir: None,
-                skip_checks: false,
+                skip_checks,
                 force,
-                preferred_provider: None,
+                preferred_provider: provider,
+                non_interactive,
             };
             
-            if project {
-                commands::init::init_project()
-            } else {
-                commands::init::init_with_options(options)
-            }
+            commands::init::init_with_options(options).await
         }
         
         Commands::Skill { action } => match action {
@@ -386,6 +482,14 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
             }
             SkillAction::Install { path } => commands::skill::install_skill(&path),
             SkillAction::Remove { name } => commands::skill::remove_skill(&name),
+            SkillAction::Do { description, project, candidates } => {
+                let args = commands::skill::SkillDoArgs {
+                    description,
+                    project,
+                    candidates,
+                };
+                commands::skill::handle_skill_do(args).await
+            }
         }
         
         Commands::Memory { action } => match action {
@@ -400,7 +504,16 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
             }
             MemoryAction::Delete { key } => commands::memory::delete_memory(&key),
             MemoryAction::Search { query, limit } => {
-                commands::memory::search_memory(&query, limit)
+                commands::memory::search_memory(&query, limit).await
+            }
+            MemoryAction::VectorSearch { query, limit, threshold, category } => {
+                let args = commands::memory::MemorySearchArgs {
+                    query,
+                    limit,
+                    threshold,
+                    category,
+                };
+                commands::memory::handle_memory_search(args).await
             }
             MemoryAction::List { prefix, domain } => {
                 commands::memory::list_memory(
@@ -459,6 +572,22 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
         
         Commands::Status => {
             show_status()
+        }
+        
+        Commands::Peer { action } => match action {
+            PeerAction::Add { node_id, did, endpoint } => {
+                commands::peer::add_peer(&node_id, &did, &endpoint)
+            }
+            PeerAction::Remove { node_id } => commands::peer::remove_peer(&node_id),
+            PeerAction::List { all } => commands::peer::list_peers(all),
+            PeerAction::Info { node_id } => commands::peer::peer_info(&node_id),
+            PeerAction::Trust { node_id, level } => commands::peer::set_trust(&node_id, &level),
+            PeerAction::Ping { node_id } => commands::peer::ping_peer(&node_id).await,
+            PeerAction::Sync => commands::peer::sync_status(),
+        }
+        
+        Commands::Telemetry { action } => {
+            commands::telemetry::handle_telemetry(action)
         }
     }
 }

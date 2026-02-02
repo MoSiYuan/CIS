@@ -256,6 +256,7 @@ impl Default for PeerDiscovery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::matrix::federation::FEDERATION_PORT;
 
     #[test]
     fn test_peer_discovery_new() {

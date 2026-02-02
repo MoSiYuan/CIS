@@ -40,20 +40,28 @@
 //! - Room management
 //! - Full Matrix Federation
 
+pub mod anchor;
 pub mod bridge;
+pub mod broadcast;
 pub mod error;
+pub mod events;
 pub mod federation;
+pub mod nucleus;
 pub mod server;
 pub mod store;
+pub mod sync;
 
 // Routes are internal, not exposed directly
 mod routes;
 
-// WebSocket federation module (optional feature)
-#[cfg(feature = "websocket")]
+// WebSocket federation module
 pub mod websocket;
 
+pub use anchor::{CloudAnchor, PeerEndpoint};
+pub use broadcast::{EventBroadcaster, BroadcastResult};
 pub use bridge::{MatrixBridge, SkillResult, SkillTask};
 pub use error::{MatrixError, MatrixResult};
+pub use nucleus::{MatrixNucleus, RoomId, EventId, UserId, RoomOptions as NucleusRoomOptions, MatrixEvent, HandlerId, RoomManager};
 pub use server::MatrixServer;
-pub use store::MatrixStore;
+pub use store::{MatrixStore, RoomOptions};
+pub use sync::{SyncConsumer, SyncConfig, SyncResult};

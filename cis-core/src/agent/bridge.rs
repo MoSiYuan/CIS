@@ -157,7 +157,7 @@ pub struct AgentCisClient;
 
 impl AgentCisClient {
     /// 获取记忆
-    pub fn memory_get(key: &str) -> Option<Vec<u8>> {
+    pub fn memory_get(_key: &str) -> Option<Vec<u8>> {
         // 通过环境变量或命名管道与 CIS 通信
         // 简化实现：直接读取数据库
         // 实际应该通过 CIS 服务进程
@@ -165,12 +165,12 @@ impl AgentCisClient {
     }
 
     /// 设置记忆
-    pub fn memory_set(key: &str, value: &[u8]) -> Result<()> {
+    pub fn memory_set(_key: &str, _value: &[u8]) -> Result<()> {
         Ok(())
     }
 
     /// 调用 Skill
-    pub fn skill_call(skill: &str, method: &str, params: &[u8]) -> Result<Vec<u8>> {
+    pub fn skill_call(_skill: &str, _method: &str, _params: &[u8]) -> Result<Vec<u8>> {
         Ok(vec![])
     }
 
@@ -180,7 +180,7 @@ impl AgentCisClient {
     }
 
     /// 创建任务
-    pub fn task_create(title: &str, description: Option<&str>) -> Result<String> {
+    pub fn task_create(_title: &str, _description: Option<&str>) -> Result<String> {
         Ok(String::new())
     }
 }

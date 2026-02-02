@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::{mpsc, Mutex, RwLock};
-use tokio::time::{interval, timeout};
+use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 
 use super::protocol::{AckMessage, EventMessage, PingMessage, PongMessage, WsMessage};
@@ -100,8 +100,8 @@ impl Tunnel {
     }
 
     /// Send a message through the tunnel
-    pub fn send(&self, message: WsMessage) -> Result<(), TunnelError> {
-        self.update_activity();
+    pub async fn send(&self, message: WsMessage) -> Result<(), TunnelError> {
+        self.update_activity().await;
         self.sender.send(message).map_err(|_| TunnelError::SendError)
     }
 
@@ -109,6 +109,7 @@ impl Tunnel {
     pub async fn send_event(&self, event: &CisMatrixEvent) -> Result<(), TunnelError> {
         let event_data = serde_json::to_vec(event)
             .map_err(|e| TunnelError::SerializationError(e.to_string()))?;
+        let event_len = event_data.len();
 
         let message = EventMessage::new(
             format!("evt-{}", uuid::Uuid::new_v4()),
@@ -118,36 +119,36 @@ impl Tunnel {
         );
 
         let ws_message = WsMessage::Event(message);
-        self.send(ws_message)?;
+        self.send(ws_message).await?;
 
         // Update stats
         let mut stats = self.stats.write().await;
         stats.messages_sent += 1;
-        stats.bytes_sent += event_data.len() as u64;
+        stats.bytes_sent += event_len as u64;
 
         Ok(())
     }
 
     /// Send ping
-    pub fn send_ping(&self, ping_id: u64) -> Result<(), TunnelError> {
+    pub async fn send_ping(&self, ping_id: u64) -> Result<(), TunnelError> {
         let ping = WsMessage::Ping(PingMessage::new(ping_id));
-        self.send(ping)
+        self.send(ping).await
     }
 
     /// Send pong
-    pub fn send_pong(&self, ping_id: u64) -> Result<(), TunnelError> {
+    pub async fn send_pong(&self, ping_id: u64) -> Result<(), TunnelError> {
         let pong = WsMessage::Pong(PongMessage::new(ping_id));
-        self.send(pong)
+        self.send(pong).await
     }
 
     /// Send acknowledgment
-    pub fn send_ack(&self, message_id: &str, success: bool) -> Result<(), TunnelError> {
+    pub async fn send_ack(&self, message_id: &str, success: bool) -> Result<(), TunnelError> {
         let ack = if success {
             AckMessage::success(message_id)
         } else {
             AckMessage::failed(message_id, "processing failed")
         };
-        self.send(WsMessage::Ack(ack))
+        self.send(WsMessage::Ack(ack)).await
     }
 
     /// Get current state
@@ -164,8 +165,8 @@ impl Tunnel {
     }
 
     /// Update last activity timestamp
-    pub fn update_activity(&self) {
-        *self.last_activity.write_blocking() = Instant::now();
+    pub async fn update_activity(&self) {
+        *self.last_activity.write().await = Instant::now();
         self.missed_heartbeats.store(0, Ordering::SeqCst);
     }
 
@@ -333,6 +334,26 @@ impl TunnelManager {
         }
     }
 
+    /// Send raw WebSocket message to specific node
+    pub async fn send_message(
+        &self,
+        node_id: &str,
+        message: WsMessage,
+    ) -> Result<(), TunnelError> {
+        match self.get_tunnel(node_id).await {
+            Some(tunnel) => tunnel.send(message).await,
+            None => Err(TunnelError::TunnelNotFound(node_id.to_string())),
+        }
+    }
+
+    /// Check if a node is connected (has a ready tunnel)
+    pub async fn is_connected(&self, node_id: &str) -> bool {
+        match self.get_tunnel(node_id).await {
+            Some(tunnel) => tunnel.is_ready().await,
+            None => false,
+        }
+    }
+
     /// Start maintenance tasks (heartbeat, timeout cleanup)
     pub async fn start_maintenance(&self) {
         let tunnels = self.tunnels.clone();
@@ -387,7 +408,7 @@ impl TunnelManager {
             }
 
             // Send ping
-            match tunnel.send_ping(ping_id) {
+            match tunnel.send_ping(ping_id).await {
                 Ok(_) => {
                     debug!("Sent ping {} to {}", ping_id, node_id);
                     tunnel.increment_missed_heartbeats();
@@ -429,7 +450,7 @@ impl TunnelManager {
     /// Handle pong response
     pub async fn handle_pong(&self, node_id: &str, ping_id: u64) {
         if let Some(tunnel) = self.get_tunnel(node_id).await {
-            tunnel.update_activity();
+            tunnel.update_activity().await;
             debug!("Received pong {} from {}", ping_id, node_id);
         }
     }
@@ -437,7 +458,7 @@ impl TunnelManager {
     /// Handle incoming event
     pub async fn handle_event(&self, node_id: &str, event_msg: EventMessage) {
         if let Some(tunnel) = self.get_tunnel(node_id).await {
-            tunnel.update_activity();
+            tunnel.update_activity().await;
             tunnel.record_received(event_msg.event_data.len()).await;
 
             // Parse and forward event

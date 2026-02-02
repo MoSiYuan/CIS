@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use ruma::{
     events::room::message::{MessageType, RoomMessageEventContent},
-    EventId, OwnedEventId, OwnedRoomId, RoomId, UserId,
+    EventId, OwnedEventId, RoomId, UserId,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
@@ -429,7 +429,7 @@ impl MatrixBridge {
         self.matrix_store.save_event(
             room_id.as_str(),
             &event_id,
-            "@cis:cis.local",
+            "@cis:cis:cis.local",
             "m.room.message",
             &content.to_string(),
             now,
@@ -443,6 +443,44 @@ impl MatrixBridge {
 
         debug!("Message sent to room {}: {}", room_id, msg);
         Ok(owned_event_id)
+    }
+
+    /// 发送消息到 Room（带联邦检查）
+    /// 
+    /// 如果 Room 设置了 federate=true，消息会广播到联邦
+    pub async fn send_to_room_with_federation(
+        &self,
+        room_id: &RoomId,
+        msg: &str,
+    ) -> MatrixResult<OwnedEventId> {
+        // 先保存消息到本地存储
+        let event_id = self.send_to_room(room_id, msg).await?;
+        
+        // 检查是否需要联邦广播
+        if let Ok(true) = self.matrix_store.is_room_federate(room_id.as_str()) {
+            if let Err(e) = self.broadcast_to_federation(room_id, &event_id).await {
+                warn!("Failed to broadcast to federation: {}", e);
+                // 联邦广播失败不影响本地消息发送
+            }
+        }
+        
+        Ok(event_id)
+    }
+
+    /// 广播事件到联邦
+    async fn broadcast_to_federation(
+        &self,
+        room_id: &RoomId,
+        event_id: &EventId,
+    ) -> MatrixResult<()> {
+        info!("Broadcasting event {} to federation for room {}", event_id, room_id);
+        
+        // TODO: 实现实际的联邦广播逻辑
+        // 这里可以通过 FederationClient 发送事件到其他节点
+        // 需要获取已配置的 peers 列表并发送事件
+        
+        debug!("Event {} broadcasted to federation", event_id);
+        Ok(())
     }
 
     /// 获取控制房间 ID

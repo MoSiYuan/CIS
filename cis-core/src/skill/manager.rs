@@ -166,6 +166,12 @@ impl SkillManager {
 
         // 1. 加载 Skill 数据库
         let skill_db = self.db_manager.load_skill_db(name)?;
+        
+        // 1.5 挂载到多库连接（支持跨库查询）
+        if let Err(e) = self.db_manager.attach_skill_db(name) {
+            tracing::warn!("Failed to attach skill db to multi-connection: {}", e);
+            // 不中断加载流程，只是警告
+        }
 
         // 2. 确保 Skill 数据目录存在
         let skill_data_dir = Paths::skill_data_dir(name);
@@ -227,7 +233,12 @@ impl SkillManager {
             active_skills.remove(name);
         }
 
-        // 3. 关闭数据库连接
+        // 3. 从多库连接卸载
+        if let Err(e) = self.db_manager.detach_skill_db(name) {
+            tracing::warn!("Failed to detach skill db from multi-connection: {}", e);
+        }
+
+        // 4. 关闭数据库连接
         self.db_manager.unload_skill_db(name)?;
 
         // 4. 更新注册表状态

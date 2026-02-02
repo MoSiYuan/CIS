@@ -44,6 +44,14 @@ pub enum WsMessage {
     /// Acknowledgment
     #[serde(rename = "ack")]
     Ack(AckMessage),
+
+    /// Sync request for offline catch-up
+    #[serde(rename = "sync_request")]
+    SyncRequest(SyncRequest),
+
+    /// Sync response with events
+    #[serde(rename = "sync_response")]
+    SyncResponse(SyncResponse),
 }
 
 /// Handshake message for Noise protocol
@@ -274,6 +282,71 @@ pub enum AckStatus {
     Failed,
     /// Message received, processing async
     Pending,
+}
+
+/// Sync request message for offline event catch-up
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SyncRequest {
+    /// Target room ID to sync
+    pub room_id: String,
+    /// Start from this event ID (None = from beginning)
+    pub since_event_id: Option<String>,
+    /// Maximum number of events to return
+    pub limit: usize,
+    /// Request timestamp
+    pub timestamp: u64,
+}
+
+impl SyncRequest {
+    /// Create a new sync request
+    pub fn new(room_id: impl Into<String>, since_event_id: Option<String>, limit: usize) -> Self {
+        Self {
+            room_id: room_id.into(),
+            since_event_id,
+            limit,
+            timestamp: current_timestamp(),
+        }
+    }
+}
+
+/// Sync response message containing events
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SyncResponse {
+    /// Room ID being synced
+    pub room_id: String,
+    /// Events in chronological order
+    pub events: Vec<EventMessage>,
+    /// Whether there are more events
+    pub has_more: bool,
+    /// Next event ID to use for subsequent sync
+    pub next_batch: Option<String>,
+    /// Response timestamp
+    pub timestamp: u64,
+}
+
+impl SyncResponse {
+    /// Create a new sync response
+    pub fn new(room_id: impl Into<String>, events: Vec<EventMessage>) -> Self {
+        Self {
+            room_id: room_id.into(),
+            events,
+            has_more: false,
+            next_batch: None,
+            timestamp: current_timestamp(),
+        }
+    }
+
+    /// Set has_more flag
+    pub fn with_has_more(mut self, has_more: bool) -> Self {
+        self.has_more = has_more;
+        self
+    }
+
+    /// Set next batch token
+    pub fn with_next_batch(mut self, next_batch: impl Into<String>) -> Self {
+        self.next_batch = Some(next_batch.into());
+        self
+    }
 }
 
 /// Get current timestamp in milliseconds

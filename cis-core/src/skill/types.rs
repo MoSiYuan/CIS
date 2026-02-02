@@ -1,5 +1,6 @@
 //! Skill 类型定义
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -37,6 +38,8 @@ pub enum SkillState {
     Error,
     /// 已移除
     Removed,
+    /// 已禁用（项目级别）
+    Disabled,
 }
 
 impl SkillState {
@@ -66,6 +69,42 @@ impl SkillState {
     }
 }
 
+/// Skill Room 信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillRoomInfo {
+    /// Room ID
+    pub room_id: String,
+    /// 是否联邦同步
+    pub federate: bool,
+    /// 创建时间
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+impl SkillRoomInfo {
+    /// 创建新的 Room 信息
+    pub fn new(room_id: impl Into<String>, federate: bool) -> Self {
+        Self {
+            room_id: room_id.into(),
+            federate,
+            created_at: Some(Utc::now()),
+        }
+    }
+
+    /// 从 Room ID 字符串解析
+    /// 格式: !{skill_name}:cis.local[?federate=true]
+    pub fn from_room_id(room_id: &str) -> Option<Self> {
+        // 解析 Room ID，检查是否包含联邦标记
+        let federate = room_id.contains("federate=true");
+        let clean_room_id = room_id.split('?').next().unwrap_or(room_id);
+        
+        Some(Self {
+            room_id: clean_room_id.to_string(),
+            federate,
+            created_at: Some(Utc::now()),
+        })
+    }
+}
+
 /// Skill 元数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillMeta {
@@ -89,6 +128,40 @@ pub struct SkillMeta {
     pub subscriptions: Vec<String>,
     /// 配置 schema
     pub config_schema: Option<serde_json::Value>,
+    /// Room 配置（可选）
+    #[serde(default)]
+    pub room_config: Option<serde_json::Value>,
+}
+
+impl SkillMeta {
+    /// 获取 Room 信息
+    ///
+    /// 从 room_config 或根据 Skill 名称自动生成
+    pub fn room_info(&self) -> Option<SkillRoomInfo> {
+        // 首先尝试从 room_config 解析
+        if let Some(config) = &self.room_config {
+            if let Some(room_id) = config.get("room_id").and_then(|v| v.as_str()) {
+                let federate = config
+                    .get("federate")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                return Some(SkillRoomInfo::new(room_id, federate));
+            }
+        }
+
+        // 默认根据 Skill 名称生成 Room ID
+        let room_id = format!("!{}:cis.local", self.name);
+        Some(SkillRoomInfo::new(room_id, false))
+    }
+
+    /// 设置 Room 配置
+    pub fn with_room_config(mut self, room_id: impl Into<String>, federate: bool) -> Self {
+        self.room_config = Some(serde_json::json!({
+            "room_id": room_id.into(),
+            "federate": federate,
+        }));
+        self
+    }
 }
 
 /// Skill 运行时信息
@@ -114,6 +187,39 @@ pub struct SkillInfo {
     pub meta: SkillMeta,
     /// 运行时信息
     pub runtime: SkillRuntime,
+}
+
+impl SkillInfo {
+    /// 从 manifest 创建 SkillInfo
+    pub fn from_manifest(manifest: &crate::skill::manifest::SkillManifest) -> Self {
+        let skill = &manifest.skill;
+        Self {
+            meta: SkillMeta {
+                name: skill.name.clone(),
+                version: skill.version.clone(),
+                description: skill.description.clone(),
+                author: skill.author.clone(),
+                skill_type: match skill.skill_type {
+                    crate::skill::manifest::SkillType::Native => SkillType::Native,
+                    crate::skill::manifest::SkillType::Wasm => SkillType::Wasm,
+                    crate::skill::manifest::SkillType::Script => SkillType::Native,
+                },
+                path: String::new(),
+                db_path: String::new(),
+                permissions: manifest.permissions.custom.clone(),
+                subscriptions: Vec::new(),
+                config_schema: None,
+                room_config: None,
+            },
+            runtime: SkillRuntime {
+                state: SkillState::Installed,
+                loaded_at: None,
+                last_active_at: None,
+                error: None,
+                pid: None,
+            },
+        }
+    }
 }
 
 /// Skill 配置

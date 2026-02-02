@@ -259,7 +259,7 @@ impl AgentManager {
     }
 
     /// 获取 Provider
-    pub fn get(&self, name: &str) -> Option<Box<dyn AgentProvider>> {
+    pub fn get(&self, _name: &str) -> Option<Box<dyn AgentProvider>> {
         // 由于 trait object 不能 Clone，这里返回 None
         // 实际使用时应该通过其他方式获取引用
         None

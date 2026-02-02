@@ -70,6 +70,34 @@ pub enum CisError {
     #[error("Skill error: {0}")]
     Skill(String),
 
+    /// Vector/Embedding errors
+    #[error("Vector error: {0}")]
+    Vector(String),
+
+    /// Conversation errors
+    #[error("Conversation error: {0}")]
+    Conversation(String),
+
+    /// Intent errors
+    #[error("Intent error: {0}")]
+    Intent(String),
+
+    /// Telemetry errors
+    #[error("Telemetry error: {0}")]
+    Telemetry(String),
+
+    /// Skill not found errors
+    #[error("Skill not found: {0}")]
+    SkillNotFound(String),
+
+    /// AI/LLM errors
+    #[error("AI error: {0}")]
+    Ai(String),
+
+    /// WASM runtime errors
+    #[error("WASM error: {0}")]
+    Wasm(String),
+
     /// Generic errors with context
     #[error("{0}")]
     Other(String),
@@ -129,5 +157,45 @@ impl CisError {
     /// Create a new skill error
     pub fn skill(msg: impl Into<String>) -> Self {
         Self::Skill(msg.into())
+    }
+
+    /// Create a new vector error
+    pub fn vector(msg: impl Into<String>) -> Self {
+        Self::Vector(msg.into())
+    }
+
+    /// Create a new conversation error
+    pub fn conversation(msg: impl Into<String>) -> Self {
+        Self::Conversation(msg.into())
+    }
+
+    /// Create a new intent error
+    pub fn intent(msg: impl Into<String>) -> Self {
+        Self::Intent(msg.into())
+    }
+
+    /// Create a new telemetry error
+    pub fn telemetry(msg: impl Into<String>) -> Self {
+        Self::Telemetry(msg.into())
+    }
+
+    /// Create a new skill not found error
+    pub fn skill_not_found(msg: impl Into<String>) -> Self {
+        Self::SkillNotFound(msg.into())
+    }
+
+    /// Create a new AI error
+    pub fn ai(msg: impl Into<String>) -> Self {
+        Self::Ai(msg.into())
+    }
+
+    /// Create a new WASM error
+    pub fn wasm(msg: impl Into<String>) -> Self {
+        Self::Wasm(msg.into())
+    }
+
+    /// Create a new generic/other error
+    pub fn other(msg: impl Into<String>) -> Self {
+        Self::Other(msg.into())
     }
 }

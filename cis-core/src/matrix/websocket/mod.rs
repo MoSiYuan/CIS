@@ -98,6 +98,7 @@
 //! - Fallback to HTTP if WebSocket connection fails
 
 pub mod client;
+pub mod noise;
 pub mod protocol;
 pub mod server;
 pub mod tunnel;
@@ -106,15 +107,18 @@ pub mod tunnel;
 pub use client::{
     ConnectOptions, WebSocketClient, WebSocketClientBuilder, WsClientError,
 };
+pub use noise::{
+    keys as noise_keys, NoiseError, NoiseHandshake, NoiseTransport,
+};
 pub use protocol::{
     build_ws_url, AckMessage, AuthMessage, ErrorCode, ErrorMessage, EventMessage,
-    HandshakeMessage, PingMessage, PongMessage, WsMessage,
+    HandshakeMessage, PingMessage, PongMessage, SyncRequest, SyncResponse, WsMessage,
     DEFAULT_WS_PORT, PROTOCOL_VERSION, WS_PATH,
 };
 pub use server::{
     WebSocketServer, WebSocketServerBuilder, WsServerConfig, WsServerError,
 };
 pub use tunnel::{
-    ConnectionState as TunnelConnectionState, Tunnel, TunnelError, TunnelManager,
-    TunnelState, TunnelStats, CONNECTION_TIMEOUT, HEARTBEAT_INTERVAL,
+    Tunnel, TunnelError, TunnelManager, TunnelState, TunnelStats,
+    CONNECTION_TIMEOUT, HEARTBEAT_INTERVAL,
 };

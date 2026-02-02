@@ -9,7 +9,6 @@
 //! - DID authentication
 //! - Event forwarding
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -19,17 +18,15 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
 use tracing::{debug, error, info, warn};
 
-use crate::matrix::federation::types::{CisMatrixEvent, PeerInfo};
 use crate::matrix::store::MatrixStore;
 
 use super::protocol::{
     AckMessage, AuthMessage, ErrorCode, ErrorMessage, HandshakeMessage, WsMessage, PROTOCOL_VERSION,
     WS_PATH,
 };
-use super::tunnel::{Tunnel, TunnelManager, TunnelState};
+use super::tunnel::{TunnelManager, TunnelState};
 
 /// WebSocket federation server
-#[derive(Debug)]
 pub struct WebSocketServer {
     /// Server configuration
     config: WsServerConfig,
@@ -41,6 +38,16 @@ pub struct WebSocketServer {
     node_did: String,
     /// Shutdown signal sender
     shutdown_tx: Option<mpsc::Sender<()>>,
+}
+
+impl std::fmt::Debug for WebSocketServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebSocketServer")
+            .field("config", &self.config)
+            .field("tunnel_manager", &self.tunnel_manager)
+            .field("node_did", &self.node_did)
+            .finish_non_exhaustive()
+    }
 }
 
 /// WebSocket server configuration
@@ -223,8 +230,8 @@ impl WebSocketServer {
 struct ConnectionHandler {
     /// Remote address
     peer_addr: SocketAddr,
-    /// WebSocket stream
-    ws_stream: WebSocketStream<TcpStream>,
+    /// WebSocket stream (wrapped in Option for ownership transfer)
+    ws_stream: Option<WebSocketStream<TcpStream>>,
     /// Tunnel manager
     tunnel_manager: Arc<TunnelManager>,
     /// Matrix store
@@ -256,7 +263,7 @@ impl ConnectionHandler {
         let (msg_tx, msg_rx) = mpsc::unbounded_channel();
         Self {
             peer_addr,
-            ws_stream,
+            ws_stream: Some(ws_stream),
             tunnel_manager,
             store,
             config,
@@ -270,11 +277,18 @@ impl ConnectionHandler {
 
     /// Run the connection handler
     async fn run(mut self) -> Result<(), WsServerError> {
+        // Take ownership of the stream
+        let ws_stream = self.ws_stream.take()
+            .ok_or_else(|| WsServerError::Internal("WebSocket stream already taken".to_string()))?;
+        
         // Split the WebSocket stream
-        let (mut ws_sender, mut ws_receiver) = self.ws_stream.split();
+        let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+        
+        // Start handshake
+        self.send_handshake().await?;
 
         // Start handshake
-        self.perform_handshake().await?;
+        self.send_handshake().await?;
 
         // Message processing loop
         loop {
@@ -300,6 +314,7 @@ impl ConnectionHandler {
                         serde_json::to_string(&msg)
                             .map_err(|e| WsServerError::SerializationError(e.to_string()))?
                     );
+                    use futures::SinkExt;
                     if let Err(e) = ws_sender.send(ws_msg).await {
                         error!("Failed to send to {}: {}", self.peer_addr, e);
                         break;
@@ -317,9 +332,11 @@ impl ConnectionHandler {
 
         Ok(())
     }
+    
 
-    /// Perform Noise handshake (simplified)
-    async fn perform_handshake(&mut self) -> Result<(), WsServerError> {
+
+    /// Send handshake message
+    async fn send_handshake(&mut self) -> Result<(), WsServerError> {
         debug!("Starting handshake with {}", self.peer_addr);
 
         // Send handshake message
@@ -351,7 +368,7 @@ impl ConnectionHandler {
                     .map_err(|e| WsServerError::SerializationError(e.to_string()))?;
                 self.handle_ws_message(ws_msg).await
             }
-            Message::Ping(data) => {
+            Message::Ping(_data) => {
                 // Pong is handled automatically by tokio-tungstenite
                 debug!("Received ping from {}", self.peer_addr);
                 Ok(())
@@ -457,6 +474,23 @@ impl ConnectionHandler {
 
             WsMessage::Error(err) => {
                 warn!("Received error from peer: {:?}", err);
+                Ok(())
+            }
+
+            WsMessage::SyncRequest(_request) => {
+                debug!("Received sync request");
+                // TODO: 处理同步请求，返回历史事件
+                // 暂时返回空响应
+                let response = WsMessage::SyncResponse(super::protocol::SyncResponse::new(
+                    "!room:cis.local",
+                    vec![],
+                ));
+                self.msg_tx.send(response).map_err(|_| WsServerError::SendError)
+            }
+
+            WsMessage::SyncResponse(_response) => {
+                debug!("Received sync response");
+                // TODO: 处理同步响应，保存接收到的事件
                 Ok(())
             }
         }

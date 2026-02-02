@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use tokio::process::Command;
-use tracing::{debug, error, info, warn};
 
 /// Kimi Code 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]

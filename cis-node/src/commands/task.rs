@@ -184,7 +184,7 @@ pub fn create_task(
 
 /// Update task status
 pub fn update_task_status(id: &str, status: TaskStatus) -> Result<()> {
-    let mut store = TaskStore::load()?;
+    let store = TaskStore::load()?;
     
     // Find and update task
     let mut found = false;

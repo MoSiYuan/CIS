@@ -1,8 +1,6 @@
 //! 配置生成模块
 
-use crate::error::{CisError, Result};
-use crate::storage::paths::Paths;
-use std::collections::HashMap;
+use crate::error::Result;
 
 /// 配置生成器
 pub struct ConfigGenerator;

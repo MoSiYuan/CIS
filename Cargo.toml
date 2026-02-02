@@ -11,4 +11,5 @@ members = [
     "skills/memory-organizer",
     "skills/cis-feishu-im",
     "skills/ai-executor",
+    "skills/im",
 ]
