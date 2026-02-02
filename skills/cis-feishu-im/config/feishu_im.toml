@@ -1,0 +1,94 @@
+# 飞书 IM Skill 配置示例
+#
+# 将此文件复制到 ~/.cis/config/feishu_im.toml 并填写实际配置
+
+# ==================== 飞书应用配置 ====================
+app_id = "cli_xxxxxxxxxxxxx"          # 飞书 App ID
+app_secret = "xxxxxxxxxxxxxxxxxxxx"    # 飞书 App Secret
+encrypt_key = "xxxxxxxxxxxxxxxxxxxx"   # 加密 Key（用于解密 Webhook 消息）
+verify_token = "xxxxxxxxxxxxxxxxxxxx"  # 验证 Token（用于验证 Webhook）
+
+# 是否验证 Webhook 签名（生产环境建议开启）
+verify_signature = true
+
+# ==================== 对话触发模式 ====================
+#
+# 可选值:
+#   - "at_mention_only": 仅 @ 机器人时响应
+#   - "private_and_at_mention": 私聊自动响应 + @ 机器人（推荐）
+#   - "all": 所有消息都响应
+trigger_mode = "private_and_at_mention"
+
+# ==================== AI Provider 配置 ====================
+[ai_provider]
+# AI Provider 类型: "claude" 或 "kim"
+provider_type = "claude"
+
+# Claude CLI 配置
+[ai_provider.claude]
+# Claude CLI 可执行文件路径（可选，默认使用系统 PATH）
+binary_path = "claude"
+
+# Kimi Code 配置（如果 provider_type = "kimi"）
+# [ai_provider.kimi]
+# binary_path = "kimi"
+
+# ==================== 对话上下文配置 ====================
+[context_config]
+# 是否持久化对话历史到 IM 数据库
+persist_context = true
+
+# 最大对话轮次（超过后清空上下文）
+max_turns = 20
+
+# 上下文超时时间（秒）
+context_timeout_secs = 1800  # 30 分钟
+
+# 是否将重要信息同步到记忆数据库
+sync_to_memory = true
+
+# 同步到记忆的关键词列表（包含任一关键词即同步）
+memory_keywords = [
+    "记住",
+    "重要",
+    "笔记",
+    "总结",
+    "任务",
+    "计划",
+]
+
+# ==================== 数据库配置 ====================
+#
+# ⚠️ 重要: 严格分离 IM 信息和记忆信息
+#   - im_db_path: IM 信息数据库（临时通信数据）
+#   - memory_db_path: 记忆数据库（核心主权记忆）
+
+im_db_path = "~/.cis/data/feishu_im.db"       # IM 信息数据库
+memory_db_path = "~/.cis/data/memory.db"      # 记忆数据库（只读，由 cis-core 管理）
+
+# ==================== Webhook 服务器配置 ====================
+[webhook]
+# 监听地址
+bind_address = "0.0.0.0"
+
+# 监听端口
+port = 8080
+
+# Webhook 路径
+path = "/webhook/feishu"
+
+# TLS 配置（可选，生产环境建议使用）
+# [webhook.tls]
+# cert_path = "/path/to/cert.pem"
+# key_path = "/path/to/key.pem"
+
+# ==================== 飞书开放平台配置 ====================
+#
+# 配置 Webhook URL:
+# 1. 登录飞书开放平台: https://open.feishu.cn/
+# 2. 进入应用设置 -> 事件订阅
+# 3. 配置请求地址 URL: http://your-server:8080/webhook/feishu
+# 4. 订阅事件:
+#    - im.message.receive_v1（接收消息）
+#    - im.chat.member.added_v1（用户加入群组）
+#    - im.chat.member.removed_v1（用户离开群组）

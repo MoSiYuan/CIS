@@ -13,11 +13,17 @@ path = "src/lib.rs"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
 
 # Database (with encryption support planned)
-rusqlite = { version = "0.30", features = ["bundled"] }
+rusqlite = { version = "0.30", features = ["bundled", "backup"] }
 sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio"], optional = true }
+
+# Configuration
+toml = "0.8"
+
+# Directory utilities
+dirs = "5.0"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

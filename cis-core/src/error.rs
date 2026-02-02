@@ -62,6 +62,14 @@ pub enum CisError {
     #[error("Configuration error: {0}")]
     Configuration(String),
 
+    /// Storage errors
+    #[error("Storage error: {0}")]
+    Storage(String),
+
+    /// Skill errors
+    #[error("Skill error: {0}")]
+    Skill(String),
+
     /// Generic errors with context
     #[error("{0}")]
     Other(String),
@@ -111,5 +119,15 @@ impl CisError {
     /// Create a new configuration error
     pub fn configuration(msg: impl Into<String>) -> Self {
         Self::Configuration(msg.into())
+    }
+
+    /// Create a new storage error
+    pub fn storage(msg: impl Into<String>) -> Self {
+        Self::Storage(msg.into())
+    }
+
+    /// Create a new skill error
+    pub fn skill(msg: impl Into<String>) -> Self {
+        Self::Skill(msg.into())
     }
 }

@@ -72,8 +72,8 @@ impl AiProvider for ClaudeCliProvider {
         if let Some(ref work_dir) = self.config.work_dir {
             cmd.current_dir(work_dir);
         }
-        
-        let output = cmd.output().await.map_err(AiError::Io)?;
+
+        let output: std::process::Output = cmd.output().await.map_err(AiError::Io)?;
         
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -99,8 +99,8 @@ impl AiProvider for ClaudeCliProvider {
         cmd.stdin(Stdio::null())
            .stdout(Stdio::piped())
            .stderr(Stdio::piped());
-        
-        let output = cmd.output().await.map_err(AiError::Io)?;
+
+        let output: std::process::Output = cmd.output().await.map_err(AiError::Io)?;
         
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

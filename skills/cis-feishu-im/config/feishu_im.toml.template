@@ -1,0 +1,100 @@
+# CIS 配置文件模板
+#
+# 使用说明：
+# 1. 复制本文件到 ~/.cis/config/feishu_im.toml
+# 2. 填写真实的飞书应用凭证
+# 3. 根据需要调整配置参数
+
+# ==================== 飞书应用配置 ====================
+app_id = "cli_xxxxxxxxxxxxx"          # 从飞书开放平台获取
+app_secret = "xxxxxxxxxxxxxxxxxxxx"    # 从飞书开放平台获取
+encrypt_key = "xxxxxxxxxxxxxxxxxxxx"   # 事件订阅页面生成
+verify_token = "xxxxxxxxxxxxxxxxxxxx"  # 事件订阅页面生成
+
+# Webhook 签名验证（生产环境强烈推荐开启）
+verify_signature = true
+
+# ==================== 对话触发模式 ====================
+#
+# 可选值:
+#   - "at_mention_only": 仅 @ 机器人时响应
+#   - "private_and_at_mention": 私聊自动响应 + @机器人（推荐）
+#   - "all": 所有消息都响应
+trigger_mode = "private_and_at_mention"
+
+# ==================== AI Provider 配置 ====================
+[ai_provider]
+# AI Provider 类型: "claude" 或 "kimi"
+provider_type = "claude"
+
+# Claude CLI 配置（当 provider_type = "claude" 时使用）
+# 如需要使用特定模型，可以在这里配置
+# model = "claude-sonnet-4-20250514"  # 可选，默认使用系统默认
+
+# Kimi Code 配置（当 provider_type = "kimi" 时使用）
+# model = "kimi-k2"  # 可选
+
+# ==================== 对话上下文配置 ====================
+[context_config]
+# 是否持久化对话历史到 IM 数据库
+persist_context = true
+
+# 最大对话轮次（超过后清空上下文，保留最近 N 条）
+max_turns = 20
+
+# 上下文超时时间（秒，超过此时间无新消息则清理会话）
+context_timeout_secs = 1800  # 30 分钟
+
+# 是否将用户消息同步到记忆系统
+sync_to_memory = true
+
+# 同步到记忆的关键词列表（包含任一关键词即同步）
+memory_keywords = [
+    "记住",
+    "重要",
+    "笔记",
+    "总结",
+    "任务",
+    "计划",
+    "备忘",
+    "待办",
+]
+
+# ==================== 数据库路径配置 ====================
+#
+# ⚠️ 重要: 严格分离 IM 信息和记忆信息
+#   - im_db_path: IM 信息数据库（Skill 管理，临时通信数据）
+#   - memory_db_path: 记忆数据库（Core 管理，核心主权记忆）
+
+# IM 数据库路径（存储对话历史、用户信息等临时数据）
+im_db_path = "~/.cis/data/feishu_im.db"
+
+# 记忆数据库路径（只读，由 cis-core 管理，存储业务记忆）
+memory_db_path = "~/.cis/data/memory.db"
+
+# ==================== Webhook 服务器配置 ====================
+[webhook]
+# 监听地址（0.0.0.0 表示监听所有网卡）
+bind_address = "0.0.0.0"
+
+# 监听端口
+port = 8080
+
+# Webhook 路径
+path = "/webhook/feishu"
+
+# TLS 配置（可选，生产环境建议使用）
+# [webhook.tls]
+# cert_path = "/path/to/cert.pem"
+# key_path = "/path/to/key.pem"
+
+# ==================== 高级配置（可选）====================
+#
+# 消息处理超时时间（秒）
+message_timeout = 30
+
+# AI 回复最大长度（字符数）
+max_response_length = 2000
+
+# 是否启用调试日志
+debug = false

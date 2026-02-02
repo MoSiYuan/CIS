@@ -1,0 +1,281 @@
+//! # Agent Provider 模块
+//!
+//! 提供统一的 LLM Agent 抽象接口，支持双向调用：
+//! - CIS → Agent: CIS 调用外部 LLM Agent
+//! - Agent → CIS: 外部 Agent 通过 CLI/API 调用 CIS
+
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use tokio::sync::mpsc;
+
+use crate::error::Result;
+
+pub mod bridge;
+pub mod providers;
+
+pub use bridge::AgentBridgeSkill;
+
+/// Agent 请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRequest {
+    /// 主指令/Prompt
+    pub prompt: String,
+    /// 上下文信息
+    pub context: AgentContext,
+    /// 允许使用的 Skill 列表
+    pub skills: Vec<String>,
+    /// 系统提示词（覆盖默认）
+    pub system_prompt: Option<String>,
+    /// 会话历史
+    pub history: Vec<AgentMessage>,
+}
+
+/// Agent 消息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentMessage {
+    pub role: MessageRole,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageRole {
+    System,
+    User,
+    Assistant,
+}
+
+/// Agent 上下文
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentContext {
+    /// 工作目录
+    pub work_dir: Option<PathBuf>,
+    /// 允许访问的记忆前缀
+    pub memory_access: Vec<String>,
+    /// 项目配置
+    pub project_config: Option<crate::project::ProjectConfig>,
+    /// 额外上下文数据
+    pub extra: HashMap<String, serde_json::Value>,
+}
+
+impl AgentContext {
+    pub fn new() -> Self {
+        Self {
+            work_dir: None,
+            memory_access: vec![],
+            project_config: None,
+            extra: HashMap::new(),
+        }
+    }
+
+    pub fn with_work_dir(mut self, dir: PathBuf) -> Self {
+        self.work_dir = Some(dir);
+        self
+    }
+
+    pub fn with_memory_access(mut self, prefixes: Vec<String>) -> Self {
+        self.memory_access = prefixes;
+        self
+    }
+}
+
+impl Default for AgentContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Agent 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentResponse {
+    /// 响应内容
+    pub content: String,
+    /// 使用的 Token 数（如果可用）
+    pub token_usage: Option<TokenUsage>,
+    /// 元数据
+    pub metadata: HashMap<String, serde_json::Value>,
+}
+
+/// Token 使用统计
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenUsage {
+    pub prompt: u32,
+    pub completion: u32,
+    pub total: u32,
+}
+
+/// Agent Provider 统一接口
+///
+/// 所有 LLM Agent（Claude, Kimi, Aider, 等）实现此接口
+#[async_trait]
+pub trait AgentProvider: Send + Sync {
+    /// Provider 名称
+    fn name(&self) -> &str;
+
+    /// Provider 版本
+    fn version(&self) -> &str {
+        "0.1.0"
+    }
+
+    /// 检查 Agent 是否可用
+    async fn available(&self) -> bool;
+
+    /// 执行指令（同步返回）
+    async fn execute(&self, req: AgentRequest) -> Result<AgentResponse>;
+
+    /// 流式执行
+    async fn execute_stream(
+        &self,
+        req: AgentRequest,
+        tx: mpsc::Sender<String>,
+    ) -> Result<AgentResponse>;
+
+    /// 初始化（可选）
+    async fn init(&mut self, _context: AgentContext) -> Result<()> {
+        Ok(())
+    }
+
+    /// 获取 Agent 能力描述
+    fn capabilities(&self) -> AgentCapabilities {
+        AgentCapabilities::default()
+    }
+}
+
+/// Agent 能力描述
+#[derive(Debug, Clone, Default)]
+pub struct AgentCapabilities {
+    /// 是否支持流式输出
+    pub streaming: bool,
+    /// 是否支持工具调用
+    pub tool_calling: bool,
+    /// 是否支持多模态
+    pub multimodal: bool,
+    /// 最大上下文长度
+    pub max_context_length: Option<usize>,
+    /// 支持的模型列表
+    pub supported_models: Vec<String>,
+}
+
+/// Agent Provider 工厂
+pub struct AgentProviderFactory;
+
+impl AgentProviderFactory {
+    /// 根据配置创建 Provider
+    pub fn create(config: &AgentConfig) -> Result<Box<dyn AgentProvider>> {
+        match config.provider_type {
+            AgentType::Claude => Ok(Box::new(providers::ClaudeProvider::new(config.clone()))),
+            AgentType::Kimi => Ok(Box::new(providers::KimiProvider::new(config.clone()))),
+            AgentType::Aider => Ok(Box::new(providers::AiderProvider::new(config.clone()))),
+            AgentType::Custom => {
+                // 自定义 Provider 通过插件机制加载
+                Err(crate::error::CisError::configuration(
+                    "Custom agent provider not implemented yet"
+                ))
+            }
+        }
+    }
+
+    /// 创建默认 Provider
+    pub fn default_provider() -> Result<Box<dyn AgentProvider>> {
+        // 尝试按优先级创建：Claude → Kimi → Aider
+        let providers: Vec<Box<dyn AgentProvider>> = vec![
+            Box::new(providers::ClaudeProvider::default()),
+            Box::new(providers::KimiProvider::default()),
+            Box::new(providers::AiderProvider::default()),
+        ];
+
+        for mut provider in providers {
+            if provider.available().await {
+                return Ok(provider);
+            }
+        }
+
+        Err(crate::error::CisError::configuration(
+            "No AI agent available. Please install Claude Code, Kimi, or Aider."
+        ))
+    }
+}
+
+/// Agent 配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConfig {
+    pub provider_type: AgentType,
+    pub model: Option<String>,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub timeout_secs: Option<u64>,
+    pub max_tokens: Option<u32>,
+    pub temperature: Option<f32>,
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            provider_type: AgentType::Claude,
+            model: None,
+            api_key: None,
+            base_url: None,
+            timeout_secs: Some(300),
+            max_tokens: Some(4096),
+            temperature: Some(0.7),
+        }
+    }
+}
+
+/// Agent 类型
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentType {
+    Claude,
+    Kimi,
+    Aider,
+    Custom,
+}
+
+/// Agent 管理器
+pub struct AgentManager {
+    providers: HashMap<String, Box<dyn AgentProvider>>,
+    default: String,
+}
+
+impl AgentManager {
+    pub fn new() -> Self {
+        Self {
+            providers: HashMap::new(),
+            default: "claude".to_string(),
+        }
+    }
+
+    /// 注册 Provider
+    pub fn register(&mut self, name: impl Into<String>, provider: Box<dyn AgentProvider>) {
+        self.providers.insert(name.into(), provider);
+    }
+
+    /// 获取 Provider
+    pub fn get(&self, name: &str) -> Option<&dyn AgentProvider> {
+        self.providers.get(name).map(|p| p.as_ref())
+    }
+
+    /// 获取默认 Provider
+    pub fn default_provider(&self) -> Option<&dyn AgentProvider> {
+        self.get(&self.default)
+    }
+
+    /// 设置默认 Provider
+    pub fn set_default(&mut self, name: impl Into<String>) {
+        self.default = name.into();
+    }
+
+    /// 列出所有 Providers
+    pub fn list(&self) -> Vec<&str> {
+        self.providers.keys().map(|k| k.as_str()).collect()
+    }
+}
+
+impl Default for AgentManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}

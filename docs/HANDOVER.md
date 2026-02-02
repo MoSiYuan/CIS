@@ -235,4 +235,199 @@ CIS/
 
 ---
 
-**下一步**: 在 CIS 项目中实现 WASM Runtime 和 Host API
+## SDK 设计 (`cis-skill-sdk`)
+
+### 目录结构
+
+```
+cis-skill-sdk/
+├── Cargo.toml
+├── src/
+│   ├── lib.rs          # 主入口，导出核心类型
+│   ├── skill.rs        # Skill trait, SkillContext, NativeSkill, WasmSkill
+│   ├── types.rs        # SkillMeta, Event, MemoryEntry, HttpRequest, etc.
+│   ├── host.rs         # Host API (Native/WASM 双模式)
+│   ├── im.rs           # IM 专用接口（Claude 开发用）
+│   ├── ai.rs           # AI 调用封装
+│   └── error.rs        # Error, Result, ErrorCode
+├── cis-skill-sdk-derive/  # Proc-macro crate
+│   └── src/lib.rs      # #[skill], #[derive(Skill)]
+├── examples/
+│   └── hello_skill.rs  # 示例
+└── README.md
+```
+
+### 核心设计
+
+1. **双模式支持**
+   - `native` feature: 完整功能，支持异步
+   - `wasm` feature: `no_std` 兼容，FFI 导入 Host API
+
+2. **Skill Trait**
+   ```rust
+   pub trait Skill: Send + Sync {
+       fn name(&self) -> &str;
+       fn version(&self) -> &str;
+       fn init(&mut self, config: SkillConfig) -> Result<()>;
+       fn handle_event(&self, ctx: &dyn SkillContext, event: Event) -> Result<()>;
+   }
+   ```
+
+3. **SkillContext 接口**
+   ```rust
+   pub trait SkillContext: Send + Sync {
+       fn log(&self, level: LogLevel, message: &str);
+       fn memory_get(&self, key: &str) -> Option<Vec<u8>>;
+       fn memory_set(&self, key: &str, value: &[u8]) -> Result<()>;
+       fn ai_chat(&self, prompt: &str) -> Result<String>;
+       fn http_request(&self, request: HttpRequest) -> Result<HttpResponse>;
+       // ...
+   }
+   ```
+
+4. **IM 专用接口** (`im` 模块)
+   - `ImMessage`: 完整的消息结构
+   - `ImMessageBuilder`: 流式构建消息
+   - `ImContextExt`: 为 SkillContext 添加 IM 方法
+   - 事件：`ImEvent::MessageReceived`, `ImEvent::UserOnline`, etc.
+
+5. **AI 封装** (`ai` 模块)
+   ```rust
+   Ai::chat(prompt)?;
+   Ai::summarize(text, max_length)?;
+   Ai::extract_keywords(text, count)?;
+   Ai::sentiment(text)?;
+   Ai::classify(text, &["cat", "dog"])?;
+   ```
+
+### 使用示例
+
+```rust
+use cis_skill_sdk::{Skill, SkillContext, Event, Result};
+use cis_skill_sdk::im::{ImContextExt, ImMessage, ImMessageBuilder};
+
+pub struct EchoSkill;
+
+impl Skill for EchoSkill {
+    fn name(&self) -> &str { "echo" }
+    
+    fn handle_event(&self, ctx: &dyn SkillContext, event: Event) -> Result<()> {
+        if let Event::Custom { name, data } = event {
+            if name == "im:message" {
+                let msg: ImMessage = serde_json::from_value(data)?;
+                let reply = ImMessageBuilder::text("收到！")
+                    .to(&msg.from)
+                    .reply_to(&msg.id)
+                    .build();
+                ctx.im_send(&reply)?;
+            }
+        }
+        Ok(())
+    }
+}
+```
+
+### 给 Claude（IM 开发）
+
+Claude 正在开发 IM 相关功能，SDK 已提供：
+
+1. **消息类型**: `ImMessage`, `MessageContent`, `MessageType`
+2. **构建器**: `ImMessageBuilder` 提供流式 API
+3. **上下文扩展**: `ImContextExt` trait 添加 `im_send`, `im_reply`, `im_get_history` 等方法
+4. **事件**: `ImEvent` 枚举涵盖所有 IM 场景
+
+**Claude 开发 IM Skill 时**:
+1. 引入 `cis-skill-sdk` 依赖，启用 `native` feature
+2. 实现 `Skill` trait
+3. 使用 `im` 模块中的类型和 API
+4. 通过 `ctx.im_send()` 等方法与 IM 系统交互
+
+---
+
+## 存储与热插拔设计 (`cis-core`)
+
+### 跨平台目录结构
+
+| 平台 | 数据目录 |
+|------|---------|
+| macOS | `~/Library/Application Support/CIS` |
+| Linux | `~/.local/share/cis` |
+| Windows | `%LOCALAPPDATA%\CIS` |
+
+```
+$CIS_DATA_DIR/
+├── config.toml              # 主配置
+├── node.key                 # 节点私钥
+├── core/
+│   ├── core.db              # 核心数据库（任务、配置、索引）
+│   └── backup/              # 自动备份
+├── skills/
+│   ├── registry.json        # Skill 注册表
+│   ├── installed/           # Skill 代码
+│   │   ├── native/          # Native Skills
+│   │   └── wasm/            # WASM Skills
+│   └── data/                # Skill 独立数据库
+│       ├── ai-executor/data.db
+│       ├── im/data.db       # IM 独立数据库
+│       └── memory-organizer/data.db
+├── logs/
+├── cache/                   # 可安全删除
+└── runtime/                 # 重启清空
+```
+
+### 数据库隔离
+
+#### 核心数据库 (`core/core.db`)
+
+```rust
+pub struct CoreDb;
+impl CoreDb {
+    pub fn open() -> Result<Self>;
+    pub fn set_config(&self, key: &str, value: &[u8]) -> Result<()>;
+    pub fn register_memory_index(&self, key: &str, skill: Option<&str>) -> Result<()>;
+    // 不存储 Skill 数据，只存索引
+}
+```
+
+#### Skill 数据库 (`skills/data/{name}/data.db`)
+
+```rust
+pub struct SkillDb {
+    name: String,
+    conn: Connection,
+}
+
+// 每个 Skill 完全独立
+// 热插拔：独立加载/卸载，不影响核心
+```
+
+### 热插拔支持
+
+```rust
+use cis_core::skill::{SkillManager, LoadOptions};
+
+// 1. 创建管理器
+let manager = SkillManager::new(db_manager)?;
+
+// 2. 加载 Skill（热插拔）
+manager.load("im", LoadOptions::default())?;
+manager.activate("im")?;
+
+// 3. 卸载 Skill（热插拔）
+manager.unload("im")?;
+```
+
+**生命周期**: `Registered → Loaded → Active → Unloaded`
+
+**关键特性**:
+- 每个 Skill 独立 SQLite 连接
+- 卸载时关闭连接，释放资源
+- 不影响核心数据库和其他 Skill
+
+---
+
+**下一步**: 
+1. Claude 使用 SDK 开发 IM Skill
+2. 实现 WASM Runtime 和 Host API
+3. 测试 Native/WASM 双模式
+4. 实现发布脚本（macOS/Linux/Windows）

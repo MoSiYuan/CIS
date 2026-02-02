@@ -30,8 +30,16 @@ pub mod types;
 pub mod sandbox;
 pub mod scheduler;
 
+// Storage module - 跨平台存储管理，支持核心/Skill数据隔离和热插拔
+pub mod storage;
+
+// Skill module - 热插拔 Skill 管理
+pub mod skill;
+
+// AI module - AI Provider 抽象层
+pub mod ai;
+
 // Planned modules
-// pub mod memory;     // Phase 2
 // pub mod executor;   // Phase 2
 // pub mod p2p;        // Phase 4
 // pub mod identity;   // Phase 4

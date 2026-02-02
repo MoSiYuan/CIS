@@ -1,0 +1,63 @@
+# ==================== Rust build artifacts ====================
+/target/
+**/target/
+/debug/
+**/debug/
+
+# Cargo lock files (optional, uncomment if needed)
+# Cargo.lock
+
+# ==================== IDE ====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ==================== OS ====================
+.DS_Store
+Thumbs.db
+
+# ==================== Logs ====================
+*.log
+/logs/
+
+# ==================== Database files (local development) ====================
+*.db
+*.db-shm
+*.db-wal
+/data/
+
+# ==================== Environment ====================
+.env
+.env.local
+.env.*.local
+
+# ==================== Test artifacts ====================
+*.profraw
+*.profdata
+
+# ==================== CIS 配置和敏感信息 ====================
+# 用户配置目录（包含敏感凭证）
+.cis/
+
+# 配置文件（包含 App Secret、Encrypt Key 等）
+config/*.toml
+!config/*.template
+
+# ==================== CIS 数据目录 ====================
+# 数据文件（包含数据库、日志等运行时数据）
+~/.cis/data/
+~/.cis/logs/
+
+# 本地数据目录
+/data/
+/logs/
+
+# ==================== 敏感凭证文件 ====================
+*_secret.toml
+*_credentials.toml
+*.key
+*.pem
+*.cert
+

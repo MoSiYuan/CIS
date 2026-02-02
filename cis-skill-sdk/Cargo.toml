@@ -1,0 +1,33 @@
+[package]
+name = "cis-skill-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "CIS Skill SDK - 统一 Skill 开发框架"
+license = "MIT"
+authors = ["CIS Team"]
+
+[features]
+default = ["native"]
+native = ["tokio", "async-trait"]
+wasm = []
+im = []  # IM 功能支持
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tracing = "0.1"
+
+# Native 模式依赖
+tokio = { version = "1", features = ["rt", "sync"], optional = true }
+async-trait = { version = "0.1", optional = true }
+
+# Derive 宏
+cis-skill-sdk-derive = { path = "cis-skill-sdk-derive", version = "0.1.0" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[[example]]
+name = "hello_skill"
+path = "examples/hello_skill.rs"

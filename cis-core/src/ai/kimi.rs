@@ -62,8 +62,8 @@ impl AiProvider for KimiCodeProvider {
            .stdin(Stdio::null())
            .stdout(Stdio::piped())
            .stderr(Stdio::piped());
-        
-        let output = cmd.output().await.map_err(AiError::Io)?;
+
+        let output: std::process::Output = cmd.output().await.map_err(AiError::Io)?;
         
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

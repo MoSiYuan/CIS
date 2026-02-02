@@ -130,6 +130,12 @@ pub enum ProviderType {
     Kimi,
 }
 
+impl Default for ProviderType {
+    fn default() -> Self {
+        Self::Claude
+    }
+}
+
 /// AI Provider 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiProviderConfig {
