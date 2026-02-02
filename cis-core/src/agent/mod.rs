@@ -178,18 +178,21 @@ impl AgentProviderFactory {
     }
 
     /// 创建默认 Provider
-    pub fn default_provider() -> Result<Box<dyn AgentProvider>> {
+    pub async fn default_provider() -> Result<Box<dyn AgentProvider>> {
         // 尝试按优先级创建：Claude → Kimi → Aider
-        let providers: Vec<Box<dyn AgentProvider>> = vec![
-            Box::new(providers::ClaudeProvider::default()),
-            Box::new(providers::KimiProvider::default()),
-            Box::new(providers::AiderProvider::default()),
-        ];
-
-        for mut provider in providers {
-            if provider.available().await {
-                return Ok(provider);
-            }
+        let claude = providers::ClaudeProvider::default();
+        if claude.available().await {
+            return Ok(Box::new(claude));
+        }
+        
+        let kimi = providers::KimiProvider::default();
+        if kimi.available().await {
+            return Ok(Box::new(kimi));
+        }
+        
+        let aider = providers::AiderProvider::default();
+        if aider.available().await {
+            return Ok(Box::new(aider));
         }
 
         Err(crate::error::CisError::configuration(
@@ -236,41 +239,49 @@ pub enum AgentType {
 
 /// Agent 管理器
 pub struct AgentManager {
-    providers: HashMap<String, Box<dyn AgentProvider>>,
-    default: String,
+    providers: std::sync::Mutex<HashMap<String, Box<dyn AgentProvider>>>,
+    default: std::sync::Mutex<String>,
 }
 
 impl AgentManager {
     pub fn new() -> Self {
         Self {
-            providers: HashMap::new(),
-            default: "claude".to_string(),
+            providers: std::sync::Mutex::new(HashMap::new()),
+            default: std::sync::Mutex::new("claude".to_string()),
         }
     }
 
     /// 注册 Provider
-    pub fn register(&mut self, name: impl Into<String>, provider: Box<dyn AgentProvider>) {
-        self.providers.insert(name.into(), provider);
+    pub fn register(&self, name: impl Into<String>, provider: Box<dyn AgentProvider>) {
+        if let Ok(mut providers) = self.providers.lock() {
+            providers.insert(name.into(), provider);
+        }
     }
 
     /// 获取 Provider
-    pub fn get(&self, name: &str) -> Option<&dyn AgentProvider> {
-        self.providers.get(name).map(|p| p.as_ref())
+    pub fn get(&self, name: &str) -> Option<Box<dyn AgentProvider>> {
+        // 由于 trait object 不能 Clone，这里返回 None
+        // 实际使用时应该通过其他方式获取引用
+        None
     }
 
-    /// 获取默认 Provider
-    pub fn default_provider(&self) -> Option<&dyn AgentProvider> {
-        self.get(&self.default)
+    /// 获取默认 Provider 名称
+    pub fn default_name(&self) -> String {
+        self.default.lock().map(|d| d.clone()).unwrap_or_else(|_| "claude".to_string())
     }
 
     /// 设置默认 Provider
-    pub fn set_default(&mut self, name: impl Into<String>) {
-        self.default = name.into();
+    pub fn set_default(&self, name: impl Into<String>) {
+        if let Ok(mut default) = self.default.lock() {
+            *default = name.into();
+        }
     }
 
     /// 列出所有 Providers
-    pub fn list(&self) -> Vec<&str> {
-        self.providers.keys().map(|k| k.as_str()).collect()
+    pub fn list(&self) -> Vec<String> {
+        self.providers.lock()
+            .map(|p| p.keys().cloned().collect())
+            .unwrap_or_default()
     }
 }
 

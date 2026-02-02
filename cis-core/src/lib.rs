@@ -10,8 +10,10 @@
 //! - **Types**: Core data structures and domain types
 //! - **Sandbox**: Security and path validation
 //! - **Scheduler**: DAG-based task scheduling
-//! - **Memory**: Local sovereign memory storage (planned)
-//! - **Executor**: Task execution engine (planned)
+//! - **Storage**: Cross-platform storage with data isolation and hot-swappable skills
+//! - **Skill**: Hot-swappable skill management
+//! - **Agent**: LLM Agent abstraction with bidirectional integration
+//! - **Project**: Project-level configuration and local skills
 //! - **P2P**: Peer-to-peer communication (planned)
 //! - **Identity**: Hardware-bound DID management (planned)
 //!
@@ -22,27 +24,46 @@
 //! - Local memory sovereignty
 //! - Zero-token inter-node communication
 //! - Pure P2P architecture (no central coordinator)
+//!
+//! ## Bidirectional Agent Integration
+//!
+//! CIS serves as infrastructure with memory as data. The integration is bidirectional:
+//!
+//! ```
+//! CIS → Agent: CIS calls external LLM Agent through AgentProvider
+//! Agent → CIS: External Agent calls CIS through CLI/API
+//! ```
 
 pub mod error;
 pub mod types;
 
-// Core modules (Phase 1 - Direct Inherit)
+// Core modules
 pub mod sandbox;
 pub mod scheduler;
 
-// Storage module - 跨平台存储管理，支持核心/Skill数据隔离和热插拔
+// Memory module - Private/Public memory with encryption
+pub mod memory;
+
+// Storage module - Cross-platform storage with core/skill data isolation
 pub mod storage;
 
-// Skill module - 热插拔 Skill 管理
+// Skill module - Hot-swappable skill management
 pub mod skill;
 
-// AI module - AI Provider 抽象层
+// AI module - AI Provider implementations
 pub mod ai;
 
+// Agent module - LLM Agent abstraction with bidirectional integration
+pub mod agent;
+
+// Project module - Project-level configuration
+pub mod project;
+
+// Wizard module - Initialization and onboarding
+pub mod wizard;
+
 // Planned modules
-// pub mod executor;   // Phase 2
-// pub mod p2p;        // Phase 4
-// pub mod identity;   // Phase 4
-// pub mod sync;       // Phase 4
+// pub mod p2p;
+// pub mod identity;
 
 pub use error::{CisError, Result};

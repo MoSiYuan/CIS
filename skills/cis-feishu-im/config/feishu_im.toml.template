@@ -6,10 +6,11 @@
 # 3. 根据需要调整配置参数
 
 # ==================== 飞书应用配置 ====================
-app_id = "cli_xxxxxxxxxxxxx"          # 从飞书开放平台获取
-app_secret = "xxxxxxxxxxxxxxxxxxxx"    # 从飞书开放平台获取
-encrypt_key = "xxxxxxxxxxxxxxxxxxxx"   # 事件订阅页面生成
-verify_token = "xxxxxxxxxxxxxxxxxxxx"  # 事件订阅页面生成
+# ⚠️ 重要: 请填写您从飞书开放平台获取的真实凭证
+app_id = "cli_a90a99e490f95cc7"          # 您的飞书应用 App ID
+app_secret = "bfwq9pZbbPNddQwU8MpKwdM2bZetMxas"    # 您的飞书应用 App Secret
+encrypt_key = ""                     # 事件订阅页面生成（先配置 Webhook URL 后填写）
+verify_token = ""                  # 事件订阅页面生成（先配置 Webhook URL 后填写）
 
 # Webhook 签名验证（生产环境强烈推荐开启）
 verify_signature = true

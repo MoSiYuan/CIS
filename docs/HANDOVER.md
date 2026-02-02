@@ -426,8 +426,139 @@ manager.unload("im")?;
 
 ---
 
+## Agent 抽象层与双向集成 (`cis-core`)
+
+### 架构设计
+
+CIS 作为基础设施，记忆是基础设施里的数据。支持双向调用：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     CIS 基础设施层                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
+│  │   Memory    │  │   Skills    │  │   Tasks     │          │
+│  │   Store     │  │   Registry  │  │  Scheduler  │          │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘          │
+│         └─────────────────┼─────────────────┘                │
+│                           │                                  │
+│                    ┌──────┴──────┐                          │
+│                    │  CIS Core   │                          │
+│                    │   Engine    │                          │
+│                    └──────┬──────┘                          │
+└───────────────────────────┼─────────────────────────────────┘
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+              ▼                           ▼
+    ┌──────────────────┐      ┌──────────────────┐
+    │   CIS → Agent    │      │   Agent → CIS    │
+    │   (调用 LLM)     │      │   (调用基础设施)  │
+    └──────────────────┘      └──────────────────┘
+```
+
+### 1. CIS → Agent (CIS 调用 Agent)
+
+```rust
+use cis_core::agent::{AgentProvider, AgentRequest, AgentContext};
+
+// 创建请求
+let req = AgentRequest {
+    prompt: "Review this code".to_string(),
+    context: AgentContext::new()
+        .with_work_dir(project_path),
+    skills: vec!["memory-search".to_string()],
+    system_prompt: None,
+    history: vec![],
+};
+
+// 执行
+let response = agent.execute(req).await?;
+```
+
+**支持的 Agents**: Claude, Kimi, Aider
+
+### 2. Agent → CIS (Agent 调用 CIS)
+
+Claude 通过 CLI 调用 CIS：
+
+```bash
+# 记忆操作
+$ cis memory get <key>
+$ cis memory set <key> <value>
+$ cis memory search <query>
+
+# 任务管理
+$ cis task list
+$ cis task create --title "..." --description "..."
+
+# Skill 调用
+$ cis skill call <name> --method <method>
+
+# 导出上下文
+$ cis context export
+```
+
+### 3. 项目级集成
+
+项目配置文件 `.cis/project.toml`:
+
+```toml
+[project]
+name = "my-project"
+id = "uuid"
+
+[ai]
+guide = """
+You are working on a Rust project with CIS integration.
+Available skills: memory-search, task-manage, code-review
+"""
+provider = "claude"
+
+[[skills]]
+name = "custom-linter"
+path = "./skills/custom-linter"
+auto_load = true
+
+[memory]
+namespace = "project/my-project"
+shared_keys = ["conventions", "architecture"]
+```
+
+**代码位置**:
+- `cis-core/src/agent/` - Agent 抽象层和 Provider 实现
+- `cis-core/src/project/` - 项目管理和会话
+
+---
+
+## 已完成工作总结
+
+### SDK (`cis-skill-sdk`)
+- ✅ 双模式支持 (Native/WASM)
+- ✅ Skill trait 定义
+- ✅ Host API 接口
+- ✅ IM 专用接口 (`ImMessage`, `ImMessageBuilder`, `ImContextExt`)
+- ✅ AI 调用封装
+- ✅ Derive 宏
+
+### Core (`cis-core`)
+- ✅ 跨平台目录结构 (macOS/Linux/Windows)
+- ✅ 数据库隔离 (核心/Split 分离)
+- ✅ 热插拔支持
+- ✅ Agent 抽象层 (Claude/Kimi/Aider)
+- ✅ 双向集成 (CIS ↔ Agent)
+- ✅ 项目级配置
+- ✅ Skill 管理器
+
+### Skills (非 IM)
+- ✅ `ai-executor` - AI Agent 执行层
+- ✅ `init-wizard` - 初始化引导
+- ✅ `memory-organizer` - 记忆整理 (WASM)
+- ✅ `push-client` - 推送客户端 (WASM)
+
+---
+
 **下一步**: 
-1. Claude 使用 SDK 开发 IM Skill
-2. 实现 WASM Runtime 和 Host API
-3. 测试 Native/WASM 双模式
-4. 实现发布脚本（macOS/Linux/Windows）
+1. **Claude 开发 IM Skill** - 使用 SDK，数据独立存储
+2. **WASM Runtime 集成** - 在 core 中集成 wasmer/wasmtime
+3. **CLI 实现** - 实现 `cis` 命令行工具
+4. **发布准备** - macOS/Linux/Windows 构建脚本

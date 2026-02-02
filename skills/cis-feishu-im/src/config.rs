@@ -5,6 +5,7 @@
 use cis_core::ai::{AiProviderConfig, ProviderType};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use crate::poller::PollingConfig;
 
 /// 飞书 IM Skill 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,15 +15,6 @@ pub struct FeishuImConfig {
 
     /// 飞书 App Secret（用于 API 调用）
     pub app_secret: String,
-
-    /// 飞书 Encrypt Key（用于解密 Webhook 消息）
-    pub encrypt_key: String,
-
-    /// 飞书 Verification Token（用于验证 Webhook）
-    pub verify_token: String,
-
-    /// 是否验证 Webhook 签名
-    pub verify_signature: bool,
 
     /// 对话触发模式
     pub trigger_mode: TriggerMode,
@@ -39,8 +31,8 @@ pub struct FeishuImConfig {
     /// 记忆数据库路径（memory.db - 只读，由 cis-core 管理）
     pub memory_db_path: PathBuf,
 
-    /// Webhook 服务器配置
-    pub webhook: WebhookConfig,
+    /// 消息轮询配置
+    pub polling: PollingConfig,
 }
 
 /// 对话触发模式
@@ -74,46 +66,17 @@ pub struct ContextConfig {
     pub memory_keywords: Vec<String>,
 }
 
-/// Webhook 服务器配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WebhookConfig {
-    /// 监听地址
-    pub bind_address: String,
-
-    /// 监听端口
-    pub port: u16,
-
-    /// Webhook 路径
-    pub path: String,
-
-    /// TLS 配置（可选）
-    pub tls: Option<TlsConfig>,
-}
-
-/// TLS 配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TlsConfig {
-    /// 证书文件路径
-    pub cert_path: PathBuf,
-
-    /// 私钥文件路径
-    pub key_path: PathBuf,
-}
-
 impl Default for FeishuImConfig {
     fn default() -> Self {
         Self {
             app_id: String::new(),
             app_secret: String::new(),
-            encrypt_key: String::new(),
-            verify_token: String::new(),
-            verify_signature: true,
             trigger_mode: TriggerMode::PrivateAndAtMention,
             ai_provider: AiProviderConfig::default(),
             context_config: ContextConfig::default(),
             im_db_path: PathBuf::from("~/.cis/data/feishu_im.db"),
             memory_db_path: PathBuf::from("~/.cis/data/memory.db"),
-            webhook: WebhookConfig::default(),
+            polling: PollingConfig::default(),
         }
     }
 }
@@ -133,17 +96,6 @@ impl Default for ContextConfig {
                 "任务".to_string(),
                 "计划".to_string(),
             ],
-        }
-    }
-}
-
-impl Default for WebhookConfig {
-    fn default() -> Self {
-        Self {
-            bind_address: "0.0.0.0".to_string(),
-            port: 8080,
-            path: "/webhook/feishu".to_string(),
-            tls: None,
         }
     }
 }
@@ -183,8 +135,8 @@ mod tests {
     fn test_default_config() {
         let config = FeishuImConfig::default();
         assert_eq!(config.trigger_mode, TriggerMode::PrivateAndAtMention);
-        assert!(config.verify_signature);
-        assert_eq!(config.webhook.port, 8080);
+        assert_eq!(config.polling.http_interval, 10);
+        assert_eq!(config.polling.batch_size, 20);
     }
 
     #[test]
