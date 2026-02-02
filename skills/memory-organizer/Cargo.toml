@@ -1,0 +1,15 @@
+[package]
+name = "cis-skill-memory-organizer"
+version = "0.1.0"
+edition = "2021"
+description = "Memory Organizer Skill - 记忆整理（从 AgentFlow 迁移）"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 依赖 AI Executor Skill 提供的接口
+# cis-skill-ai-executor = { path = "../ai-executor" }

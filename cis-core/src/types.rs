@@ -1,0 +1,222 @@
+//! # CIS Core Types
+//!
+//! Core data structures and domain types for CIS.
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// Unique identifier for a task
+pub type TaskId = String;
+
+/// Unique identifier for a node (DID in the future)
+pub type NodeId = String;
+
+/// Task status enumeration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub enum TaskStatus {
+    /// Task is pending execution
+    Pending,
+    /// Task is currently running
+    Running,
+    /// Task completed successfully
+    Completed,
+    /// Task failed
+    Failed,
+    /// Task is blocked (dependencies not met)
+    Blocked,
+    /// Task was cancelled
+    Cancelled,
+}
+
+impl TaskStatus {
+    /// Returns true if the task is in a terminal state
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+    }
+
+    /// Returns true if the task can transition to running
+    pub fn can_run(&self) -> bool {
+        matches!(self, Self::Pending | Self::Blocked)
+    }
+}
+
+/// Task priority levels
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
+pub enum TaskPriority {
+    /// Urgent priority
+    Urgent = 4,
+    /// High priority
+    High = 3,
+    /// Medium priority
+    Medium = 2,
+    /// Low priority
+    Low = 1,
+}
+
+impl Default for TaskPriority {
+    fn default() -> Self {
+        Self::Medium
+    }
+}
+
+/// Core task structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Task {
+    /// Unique task ID
+    pub id: TaskId,
+
+    /// Optional parent task ID
+    pub parent_id: Option<TaskId>,
+
+    /// Task title
+    pub title: String,
+
+    /// Detailed description
+    pub description: Option<String>,
+
+    /// Task group/category
+    pub group_name: String,
+
+    /// Completion criteria
+    pub completion_criteria: Option<String>,
+
+    /// Current status
+    pub status: TaskStatus,
+
+    /// Task priority
+    pub priority: TaskPriority,
+
+    /// Task dependencies (task IDs that must complete first)
+    pub dependencies: Vec<TaskId>,
+
+    /// Task result (if completed)
+    pub result: Option<String>,
+
+    /// Error message (if failed)
+    pub error: Option<String>,
+
+    /// Workspace directory for the task
+    pub workspace_dir: Option<String>,
+
+    /// Whether the task is sandboxed
+    pub sandboxed: bool,
+
+    /// Whether network access is allowed
+    pub allow_network: bool,
+
+    /// Task creation timestamp
+    pub created_at: DateTime<Utc>,
+
+    /// Task start timestamp (if started)
+    pub started_at: Option<DateTime<Utc>>,
+
+    /// Task completion timestamp (if completed)
+    pub completed_at: Option<DateTime<Utc>>,
+
+    /// Node ID currently executing the task
+    pub node_id: Option<NodeId>,
+
+    /// Additional metadata
+    pub metadata: HashMap<String, String>,
+}
+
+impl Task {
+    /// Create a new task with minimal required fields
+    pub fn new(id: TaskId, title: String, group_name: String) -> Self {
+        Self {
+            id,
+            parent_id: None,
+            title,
+            description: None,
+            group_name,
+            completion_criteria: None,
+            status: TaskStatus::Pending,
+            priority: TaskPriority::default(),
+            dependencies: Vec::new(),
+            result: None,
+            error: None,
+            workspace_dir: None,
+            sandboxed: true,
+            allow_network: false,
+            created_at: Utc::now(),
+            started_at: None,
+            completed_at: None,
+            node_id: None,
+            metadata: HashMap::new(),
+        }
+    }
+
+    /// Returns true if all dependencies are satisfied
+    pub fn dependencies_satisfied(&self, completed_tasks: &[TaskId]) -> bool {
+        self.dependencies
+            .iter()
+            .all(|dep| completed_tasks.contains(dep))
+    }
+}
+
+/// Task execution result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskResult {
+    /// Task ID
+    pub task_id: TaskId,
+
+    /// Whether the task succeeded
+    pub success: bool,
+
+    /// Result output
+    pub output: Option<String>,
+
+    /// Error message (if failed)
+    pub error: Option<String>,
+
+    /// Execution duration in milliseconds
+    pub duration_ms: u64,
+
+    /// Timestamp of completion
+    pub completed_at: DateTime<Utc>,
+}
+
+/// Memory entry categories
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub enum MemoryCategory {
+    /// Execution records
+    Execution,
+    /// Result data
+    Result,
+    /// Error information
+    Error,
+    /// Context information
+    Context,
+    /// Skill experience
+    Skill,
+}
+
+/// Memory domain (public/private)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub enum MemoryDomain {
+    /// Private encrypted memory
+    Private,
+    /// Public shared memory
+    Public,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_task_status() {
+        assert!(!TaskStatus::Pending.is_terminal());
+        assert!(!TaskStatus::Running.is_terminal());
+        assert!(TaskStatus::Completed.is_terminal());
+        assert!(TaskStatus::Failed.is_terminal());
+    }
+
+    #[test]
+    fn test_task_dependencies() {
+        let task = Task::new("task-1".into(), "Test".into(), "test".into());
+        assert!(task.dependencies_satisfied(&[]));
+        assert!(task.dependencies_satisfied(&["task-2".into()]));
+    }
+}
