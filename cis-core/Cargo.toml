@@ -64,6 +64,11 @@ rustls-native-certs = "0.6"
 stun = "0.5"  # STUN client
 igd = "0.12"  # UPnP IGD client for port mapping
 
+# PTY for remote agent sessions
+portable-pty = "0.8"
+bytes = "1.5"
+tokio-util = { version = "0.7", features = ["codec"] }
+
 # WebSocket Federation
 tokio-tungstenite = "0.21"
 

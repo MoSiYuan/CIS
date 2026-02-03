@@ -10,6 +10,7 @@ use crate::error::{CisError, Result};
 use crate::matrix::error::{MatrixError, MatrixResult};
 
 /// DID 管理器
+#[derive(Clone)]
 pub struct DIDManager {
     signing_key: SigningKey,
     node_id: String,
@@ -165,6 +166,12 @@ impl DIDManager {
         self.signing_key.sign(data)
     }
     
+    /// 签名数据并返回十六进制字符串
+    pub fn sign_to_hex(&self, data: &[u8]) -> String {
+        let signature = self.sign(data);
+        hex::encode(signature.to_bytes())
+    }
+    
     /// 验证签名（静态方法）
     pub fn verify(verifying_key: &VerifyingKey, data: &[u8], signature: &Signature) -> bool {
         verifying_key.verify(data, signature).is_ok()
@@ -204,11 +211,6 @@ impl DIDManager {
         
         VerifyingKey::from_bytes(&key_bytes)
             .map_err(|e| MatrixError::InvalidParameter(format!("Invalid public key: {:?}", e)))
-    }
-    
-    /// 签名十六进制字符串（方便传输）
-    pub fn sign_to_hex(&self, data: &[u8]) -> String {
-        hex::encode(self.sign(data).to_bytes())
     }
     
     /// 从十六进制解析签名

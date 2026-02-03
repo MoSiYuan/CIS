@@ -2,9 +2,8 @@
 //!
 //! 管理 P2P 网络连接和节点发现
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Args, Subcommand};
-use std::path::PathBuf;
 
 /// P2P 子命令
 #[derive(Subcommand, Debug)]
@@ -176,7 +175,7 @@ async fn show_status() -> Result<()> {
 }
 
 /// 列出节点
-async fn list_peers(verbose: bool, connected_only: bool) -> Result<()> {
+async fn list_peers(_verbose: bool, connected_only: bool) -> Result<()> {
     println!("📡 Discovered Peers\n");
     
     if connected_only {

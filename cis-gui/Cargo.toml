@@ -1,0 +1,40 @@
+[package]
+name = "cis-gui"
+version = "0.1.0"
+edition = "2021"
+description = "CIS GUI - Egui-based interface with Alacritty terminal"
+
+[dependencies]
+cis-core = { path = "../cis-core" }
+
+# Egui framework
+egui = "0.31"
+eframe = { version = "0.31", features = ["default_fonts", "glow"] }
+
+# Terminal emulation (Alacritty backend)
+alacritty_terminal = "0.25"
+portable-pty = "0.8"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Time
+chrono = "0.4"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Cross-platform paths
+directories = "5"
+
+[dev-dependencies]
+tokio-test = "0.4"

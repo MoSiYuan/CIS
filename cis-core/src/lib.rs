@@ -93,5 +93,8 @@ pub mod task;
 // P2P module - Peer-to-peer networking
 pub mod p2p;
 
+// Network module - Access control and DID-based admission
+pub mod network;
+
 pub use error::{CisError, Result};
 pub use identity::DIDManager;

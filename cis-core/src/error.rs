@@ -216,4 +216,14 @@ impl CisError {
     pub fn other(msg: impl Into<String>) -> Self {
         Self::Other(msg.into())
     }
+
+    /// Create a new network error (alias for P2P)
+    pub fn network(msg: impl Into<String>) -> Self {
+        Self::P2P(msg.into())
+    }
+
+    /// Create a new serialization error (manual)
+    pub fn serialization(msg: impl Into<String>) -> Self {
+        Self::Other(format!("Serialization error: {}", msg.into()))
+    }
 }

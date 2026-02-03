@@ -7,6 +7,7 @@ pub mod doctor;
 pub mod im;
 pub mod init;
 pub mod memory;
+pub mod network;
 pub mod node;
 pub mod peer;
 pub mod p2p;

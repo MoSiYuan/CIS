@@ -12,4 +12,5 @@ members = [
     "skills/cis-feishu-im",
     "skills/ai-executor",
     "skills/im",
+    "cis-gui",
 ]

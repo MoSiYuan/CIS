@@ -118,6 +118,12 @@ enum Commands {
         action: commands::node::NodeAction,
     },
     
+    /// Network access control
+    Network {
+        #[command(subcommand)]
+        action: commands::network::NetworkCommands,
+    },
+    
     /// Telemetry and request logging
     Telemetry {
         #[command(subcommand)]
@@ -919,6 +925,10 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
         Commands::Node { action } => {
             let args = commands::node::NodeArgs { action };
             commands::node::handle_node(args).await
+        }
+        
+        Commands::Network { action } => {
+            commands::network::handle(action).await
         }
         
         Commands::Telemetry { action } => {
