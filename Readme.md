@@ -10,6 +10,10 @@
 
 ---
 
+> 🌐 [English Version](#english-version) | 中文版本（默认）
+
+---
+
 ## 🎯 核心定位
 
 **解决跨设备幻觉（Cross-Device Hallucination）**：当同一用户在不同设备（工作站/笔记本/服务器）使用独立 Agent 时，由于上下文窗口差异、记忆检索延迟及网络分区，Agent 会生成与事实不符的内容（幻觉）。CIS 通过**硬件绑定的本地记忆 + P2P 联邦同步**，确保每个节点的记忆绝对一致且永不离开本地。
@@ -25,17 +29,39 @@
 - **硬件绑定防复制**：DID 身份与硬件指纹（CPU/主板/网卡）强绑定，配置复制到异构硬件立即失效，防止数据泄露
 - **零云端依赖**：无需 OpenAI/Claude API 即可运行，支持本地 Ollama/Llama.cpp，断网环境完全可用
 
-### 2. 解决跨设备幻觉（记忆一致性）
+### 2. DID 网络安全（零信任架构）
+- **手动 DID 白名单**：基于 out-of-band 信任的节点准入控制
+- **WebSocket 握手挑战**：Ed25519 签名验证，防止中间人攻击
+- **四种网络模式**：
+  - `Whitelist`（白名单）- 仅允许已知节点
+  - `Solitary`（独处）- 拒绝新连接
+  - `Open`（开放）- 允许验证通过的节点
+  - `Quarantine`（隔离）- 仅审计不拒绝
+- **ACL 同步传播**：DNS 风格的权限更新传播，版本控制防回滚
+
+### 3. 远程 Agent 会话（SSH 替代）
+- **WebSocket PTY 会话**：通过 Matrix 端口 6767 建立加密终端会话
+- **多 Agent 支持**：远程启动 Claude / Kimi / Aider 等 Agent
+- **二进制帧传输**：低延迟、高效率的终端 I/O 转发
+- **会话管理**：支持多会话、会话恢复、权限控制
+
+### 4. GUI 管理界面
+- **节点可视化**：节点状态、信任级别、连接状态一目了然
+- **终端集成**：egui + Alacritty 终端，支持本地/远程会话
+- **ACL 管理**：可视化白名单/黑名单管理
+- **实时日志**：审计日志实时查看
+
+### 5. 解决跨设备幻觉（记忆一致性）
 - **本地记忆内联打包**：任务跨节点移交时，相关记忆片段以二进制形式随任务上下文原子性传输，接收节点本地重建完整决策环境
 - **零 LLM 状态同步**：设备间仅同步任务状态机变更（Merkle DAG 元数据），不依赖 LLM 对状态进行语义摘要，避免模型随机性引入偏差
 - **确定性记忆访问**：单节点记忆访问不依赖云端向量数据库，消除跨设备上下文窗口差异导致的幻觉
 
-### 3. 0 Token 互联（零成本组网）
+### 6. 0 Token 互联（零成本组网）
 - **Agent 阵列**：多节点通过 WebSocket + QUIC P2P 直接通信，无需云端中转
 - **零 LLM 参与**：节点间使用 Protobuf 二进制协议，不消耗任何 LLM Token
 - **联邦同步**：基于 Matrix 协议的 Room 联邦机制，任务/记忆跨节点安全流转
 
-### 4. 独联体架构（去中心化）
+### 7. 独联体架构（去中心化）
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    CIS Agent 阵列                           │
@@ -106,11 +132,13 @@ cis skill do "分析今天的代码提交并生成报告"
 # 4. 语义搜索本地记忆（向量检索，sqlite-vec）
 cis memory search "暗黑模式相关的配置"
 
-# 5. 查看联邦节点状态
-cis node status
+# 5. 网络 ACL 管理（新增）
+cis network allow did:cis:abc123... --reason "信任的工作站"
+cis network mode whitelist
+cis network list
 
-# 6. 向其他节点广播消息（0 Token 成本）
-cis node broadcast "部署完成通知"
+# 6. 启动 GUI（新增）
+cis-gui
 ```
 
 ---
@@ -152,15 +180,35 @@ cis node broadcast "部署完成通知"
 CIS Node Architecture
 ├── Matrix Core        # Matrix 协议内核（Room/联邦/Event）
 ├── P2P Network        # QUIC + mDNS + DHT 组网
+├── Network Security   # DID 验证 + ACL + WebSocket 认证（新增）
+├── Agent Session      # 远程 PTY 会话（SSH 替代）（新增）
+├── GUI Application    # egui + Alacritty 终端（新增）
 ├── Vector Memory      # sqlite-vec 语义记忆存储
 ├── Skill Runtime      # WASM Skill 沙箱执行
 ├── DID Identity       # Ed25519 硬件绑定身份
 └── Federation Manager # 节点间 0 Token 通信
 ```
 
+### 网络端口
+
+| 端口 | 用途 | 协议 |
+|------|------|------|
+| 6767 | Matrix Federation + Agent Session | WebSocket |
+| 7676 | Matrix Client-Server API | HTTP |
+| 7677 | P2P QUIC 传输 | QUIC |
+
 ---
 
 ## 🔒 安全与隐私：单节点数据绝对保障
+
+### 网络安全机制（新增）
+
+| 层级 | 机制 | 说明 |
+|------|------|------|
+| **传输层** | WebSocket + TLS | 加密传输通道 |
+| **认证层** | DID Challenge/Response | Ed25519 签名验证 |
+| **访问控制** | ACL 白名单 | 手动信任管理 |
+| **审计层** | 安全事件日志 | 完整操作记录 |
 
 ### 跨设备幻觉防护机制
 
@@ -191,6 +239,9 @@ CIS Node Architecture
 | **离线运行** | ✅ 完全支持 | ❌ | ❌ | ❌ |
 | **隐私保护** | 硬件绑定 | 云端存储 | 自托管可选 | 依赖云端 |
 | **具身智能** | ✅ 边缘原生 | ❌ | ❌ | ❌ |
+| **DID 安全** | ✅ Ed25519 | ❌ | ❌ | ❌ |
+| **远程会话** | ✅ WebSocket PTY | ❌ | ❌ | ❌ |
+| **GUI** | ✅ egui | ❌ | ✅ | 部分支持 |
 
 ---
 
@@ -198,8 +249,9 @@ CIS Node Architecture
 
 - **语言**: Rust（零成本抽象，静态链接单二进制 ~15MB）
 - **存储**: SQLite 3.40+（WAL 模式）+ sqlite-vec（向量检索）
-- **网络**: Matrix Federation + QUIC P2P + mDNS 发现
+- **网络**: Matrix Federation + QUIC P2P + mDNS 发现 + WebSocket
 - **加密**: Ed25519（签名）+ Argon2id（密钥派生）+ ChaCha20-Poly1305（对称加密）
+- **GUI**: egui 0.31 + eframe + Alacritty 终端
 - **序列化**: Protobuf（节点间）+ JSON（配置）
 
 ---
@@ -208,6 +260,8 @@ CIS Node Architecture
 
 - [快速开始指南](docs/USAGE.md)
 - [架构设计文档](docs/ARCHITECTURE.md)
+- [网络安全设计](plan/NETWORK_ACCESS_DESIGN.md)（新增）
+- [GUI+安全设计](plan/GUI_SECURITY_DESIGN.md)（新增）
 - [Matrix Federation 实现](docs/MATRIX_FEDERATION_IMPROVEMENT_PLAN.md)
 - [生产就绪检查](docs/PRODUCTION_READINESS.md)
 - [开发文档](docs/STORAGE_DESIGN.md)
@@ -225,3 +279,283 @@ MIT License - 详见 [LICENSE](LICENSE)
 ---
 
 **CIS: 让每一台机器都成为独立的智能体，无需云端，即刻互联。**
+
+---
+
+# English Version
+
+**Local LLM Agent Memory Enhancement Tool**
+
+[![CI](https://github.com/MoSiYuan/CIS/actions/workflows/ci.yml/badge.svg)](https://github.com/MoSiYuan/CIS/actions/workflows/ci.yml)
+[![Release](https://github.com/MoSiYuan/CIS/actions/workflows/release.yml/badge.svg)](https://github.com/MoSiYuan/CIS/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**Based on CIS Architecture (Cluster of Independent Systems), enabling 0-Token interconnected Agent clusters**
+
+---
+
+## 🎯 Core Positioning
+
+**Solving Cross-Device Hallucination**: When the same user uses independent Agents on different devices (workstation/laptop/server), context window differences, memory retrieval delays, and network partitions cause Agents to generate factually incorrect content (hallucinations). CIS ensures absolute memory consistency and local-only storage through **hardware-bound local memory + P2P federation sync**.
+
+**CIS is a local LLM Agent memory enhancement framework for high-privacy scenarios**. Each node is a **hardware-bound independent Agent**, interconnected via **Matrix Federation + P2P Network** at 0 Token cost, building embodied intelligence networks in fully offline environments.
+
+---
+
+## ✨ Core Features
+
+### 1. Absolute Single-Node Privacy (Zero Data Leakage)
+- **Private Memory Never Clouds**: All conversation history, task states, and Skill data stored in local SQLite with ChaCha20-Poly1305 encryption; physical prohibition of cloud sync
+- **Hardware Binding Anti-Copy**: DID identity strongly bound to hardware fingerprints (CPU/motherboard/NIC); configuration copied to different hardware immediately fails, preventing data leakage
+- **Zero Cloud Dependency**: Runs without OpenAI/Claude API; supports local Ollama/Llama.cpp; fully functional offline
+
+### 2. DID Network Security (Zero-Trust Architecture)
+- **Manual DID Whitelist**: Node admission control based on out-of-band trust
+- **WebSocket Handshake Challenge**: Ed25519 signature verification, preventing MITM attacks
+- **Four Network Modes**:
+  - `Whitelist` - Only known nodes allowed
+  - `Solitary` - Reject new connections
+  - `Open` - Allow verified nodes
+  - `Quarantine` - Audit only, no rejection
+- **ACL Sync Propagation**: DNS-style permission update propagation with version control to prevent rollback
+
+### 3. Remote Agent Sessions (SSH Alternative)
+- **WebSocket PTY Sessions**: Encrypted terminal sessions via Matrix port 6767
+- **Multi-Agent Support**: Remotely launch Claude / Kimi / Aider Agents
+- **Binary Frame Transport**: Low-latency, high-efficiency terminal I/O forwarding
+- **Session Management**: Multi-session support, session recovery, permission control
+
+### 4. GUI Management Interface
+- **Node Visualization**: Node status, trust levels, connection states at a glance
+- **Terminal Integration**: egui + Alacritty terminal, supporting local/remote sessions
+- **ACL Management**: Visual whitelist/blacklist management
+- **Real-time Logs**: Real-time audit log viewing
+
+### 5. Solving Cross-Device Hallucination (Memory Consistency)
+- **Inline Memory Packing**: When tasks transfer across nodes, relevant memory fragments are transmitted atomically with task context in binary form; receiving nodes locally reconstruct the complete decision environment
+- **Zero LLM State Sync**: Devices only sync task state machine changes (Merkle DAG metadata), not relying on LLM semantic summaries, avoiding model randomness bias
+- **Deterministic Memory Access**: Single-node memory access doesn't depend on cloud vector databases, eliminating hallucinations from cross-device context window differences
+
+### 6. 0-Token Interconnection (Zero-Cost Networking)
+- **Agent Cluster**: Multiple nodes communicate directly via WebSocket + QUIC P2P without cloud relay
+- **Zero LLM Participation**: Nodes use Protobuf binary protocol, consuming no LLM Tokens
+- **Federation Sync**: Matrix protocol-based Room federation mechanism for secure task/memory transfer across nodes
+
+### 7. CIS Architecture (Decentralized)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CIS Agent Cluster                        │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐    P2P/QUIC      ┌──────────────┐       │
+│  │  Node A      │ ◄──────────────► │  Node B      │       │
+│  │  (Workstation)│   0-Token Tx    │  (Server)    │       │
+│  └──────┬───────┘                  └──────┬───────┘       │
+│         │                                  │               │
+│    ┌────▼────┐                        ┌───▼────┐          │
+│    │SQLite   │                        │SQLite  │          │
+│    │Local Mem│                        │LocalMem│          │
+│    └─────────┘                        └────────┘          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🚀 Use Cases
+
+| Scenario | Pain Point | CIS Solution |
+|----------|------------|--------------|
+| **Cross-Device Hallucination** | Same user's Agents on different devices give inconsistent answers | **Hardware-bound local memory** ensures deterministic single-node access; **inline memory packing** enables atomic context transfer |
+| **Cluster Development** | Multiple server Agents out of sync | Local memory + P2P sync; code review/deployment states shared in real-time |
+| **Embodied Intelligence** | Robot/IoT device privacy data cloud risks | Edge nodes do local inference; critical data never leaves the device |
+| **High-Privacy Office** | Enterprise code/docs can't upload to cloud LLM | Local Skill processes sensitive data; only sanitized metadata federated; **physical prohibition of cloud sync** |
+| **Offline Environment** | Intranet/disconnected environments can't use AI assistants | Fully offline operation; nodes auto-discover via mDNS |
+
+---
+
+## 📦 Quick Start
+
+### Installation
+
+**macOS**:
+```bash
+curl -fsSL https://github.com/MoSiYuan/CIS/releases/latest/download/cis-macos.tar.gz | tar xz
+sudo mv cis /usr/local/bin/
+cis init
+```
+
+**Linux**:
+```bash
+curl -fsSL https://github.com/MoSiYuan/CIS/releases/latest/download/cis-linux.tar.gz | tar xz
+sudo mv cis /usr/local/bin/
+cis init
+```
+
+**Build from Source**:
+```bash
+git clone https://github.com/MoSiYuan/CIS.git
+cd CIS
+cargo build --release
+```
+
+### Basic Usage
+
+```bash
+# 1. Initialize node (generate DID + local database)
+cis init
+
+# 2. Start node (auto-discover LAN CIS nodes)
+cis node start
+
+# 3. Use natural language to invoke Skill (local processing, no internet)
+cis skill do "Analyze today's commits and generate report"
+
+# 4. Semantic search local memory (vector retrieval, sqlite-vec)
+cis memory search "Dark mode related configuration"
+
+# 5. Network ACL management (NEW)
+cis network allow did:cis:abc123... --reason "Trusted workstation"
+cis network mode whitelist
+cis network list
+
+# 6. Launch GUI (NEW)
+cis-gui
+```
+
+---
+
+## 🏗️ Architecture
+
+### Design Goals: Eliminate Cross-Device Hallucination + Ensure Single-Node Privacy
+
+```
+Traditional Cloud-Native Agent         CIS Architecture
+───────────────────────────           ──────────────────
+┌─────────────┐                       ┌─────────────┐
+│   Cloud LLM  │◄── Context Summary ─►│   Cloud LLM  │   ← Hallucination Source: LLM Randomness
+└──────┬──────┘                       └──────┬──────┘
+       │                                     │
+       ▼                                     ▼
+┌─────────────┐                       ┌─────────────┐
+│  Cloud DB    │                       │  Node A      │   ← Local SQLite
+│  (Shared)    │                       │  SQLite     │      Physical Isolation
+└─────────────┘                       └──────┬──────┘
+                                             │ P2P
+                                       ┌─────▼─────┐
+                                       │  Node B    │   ← Inline Memory Packing
+                                       │  SQLite   │      Atomic Transfer
+                                       └───────────┘      No LLM Involved
+```
+
+### Three Zero Principles
+
+| Principle | Description | Technical Implementation |
+|-----------|-------------|-------------------------|
+| **Zero Token** | Node communication consumes no LLM Tokens | Protobuf + WebSocket Binary Protocol |
+| **Zero Cloud** | No AWS/Azure/cloud DB needed; private memory physically isolated | SQLite + Local Vector Store + Hardware Binding |
+| **Zero Hallucination** | Cross-device memory access is deterministic; state sync bypasses LLM | Merkle DAG Metadata Sync + Inline Memory Packing |
+
+### Core Components
+
+```
+CIS Node Architecture
+├── Matrix Core        # Matrix protocol kernel (Room/Federation/Event)
+├── P2P Network        # QUIC + mDNS + DHT networking
+├── Network Security   # DID verification + ACL + WebSocket auth (NEW)
+├── Agent Session      # Remote PTY sessions (SSH alternative) (NEW)
+├── GUI Application    # egui + Alacritty terminal (NEW)
+├── Vector Memory      # sqlite-vec semantic memory storage
+├── Skill Runtime      # WASM Skill sandbox execution
+├── DID Identity       # Ed25519 hardware-bound identity
+└── Federation Manager # 0-Token inter-node communication
+```
+
+### Network Ports
+
+| Port | Usage | Protocol |
+|------|-------|----------|
+| 6767 | Matrix Federation + Agent Session | WebSocket |
+| 7676 | Matrix Client-Server API | HTTP |
+| 7677 | P2P QUIC Transport | QUIC |
+
+---
+
+## 🔒 Security & Privacy: Absolute Single-Node Data Protection
+
+### Network Security Mechanisms (NEW)
+
+| Layer | Mechanism | Description |
+|-------|-----------|-------------|
+| **Transport** | WebSocket + TLS | Encrypted transport channel |
+| **Authentication** | DID Challenge/Response | Ed25519 signature verification |
+| **Access Control** | ACL Whitelist | Manual trust management |
+| **Audit** | Security Event Logs | Complete operation records |
+
+### Cross-Device Hallucination Protection
+
+| Risk Point | Traditional | CIS Solution |
+|------------|-------------|--------------|
+| **Context Window Differences** | Independent history per device | **Private memory local storage**, full memory access per node |
+| **Memory Retrieval Latency** | Dependent on cloud vector DB RTT | **Local sqlite-vec**, <10ms semantic retrieval |
+| **State Sync Deviation** | LLM-generated summary sync | **Merkle DAG metadata** sync, zero LLM involvement |
+| **Network Partition Recovery** | LLM-dependent merge on conflict | **CRDT automatic merge**, deterministic conflict resolution |
+
+### Privacy Protection Measures
+
+- **Hardware Binding**: DID = `mnemonic + hardware fingerprint`; copying to another machine immediately fails, **physically preventing data replication**
+- **Memory Encryption**: SQLite uses ChaCha20-Poly1305; keys derived from hardware fingerprints; **plaintext keys never stored in memory**
+- **Zero Cloud Sync**: Private memory **never leaves the network**; public domain only syncs Merkle DAG metadata (no content payload)
+- **Docker Disabled**: Containerization destroys hardware fingerprint authenticity; system **explicitly prohibits virtualized deployment**
+- **Migration Mechanism**: Hardware failure recovery via mnemonic on new hardware restores memory ownership but generates **new DID** (new hardware = new identity)
+
+---
+
+## 📊 Comparison with Other Solutions
+
+| Feature | CIS | AutoGPT | Dify | Other Multi-Agent |
+|---------|-----|---------|------|-------------------|
+| **Deployment** | Single binary | Docker/Cloud | Docker/Cloud | Cloud service |
+| **Memory Storage** | Local SQLite | Cloud/Redis | PostgreSQL | Cloud database |
+| **Networking Cost** | 0 Token | N/A | API fees | LLM Token fees |
+| **Offline Operation** | ✅ Full support | ❌ | ❌ | ❌ |
+| **Privacy Protection** | Hardware binding | Cloud storage | Self-hosted optional | Cloud dependent |
+| **Embodied Intelligence** | ✅ Edge native | ❌ | ❌ | ❌ |
+| **DID Security** | ✅ Ed25519 | ❌ | ❌ | ❌ |
+| **Remote Sessions** | ✅ WebSocket PTY | ❌ | ❌ | ❌ |
+| **GUI** | ✅ egui | ❌ | ✅ | Partial |
+
+---
+
+## 🛠️ Tech Stack
+
+- **Language**: Rust (zero-cost abstraction, statically linked single binary ~15MB)
+- **Storage**: SQLite 3.40+ (WAL mode) + sqlite-vec (vector retrieval)
+- **Network**: Matrix Federation + QUIC P2P + mDNS discovery + WebSocket
+- **Crypto**: Ed25519 (signing) + Argon2id (key derivation) + ChaCha20-Poly1305 (symmetric encryption)
+- **GUI**: egui 0.31 + eframe + Alacritty terminal
+- **Serialization**: Protobuf (inter-node) + JSON (config)
+
+---
+
+## 📚 Documentation
+
+- [Quick Start Guide](docs/USAGE.md)
+- [Architecture Design](docs/ARCHITECTURE.md)
+- [Network Security Design](plan/NETWORK_ACCESS_DESIGN.md) (NEW)
+- [GUI + Security Design](plan/GUI_SECURITY_DESIGN.md) (NEW)
+- [Matrix Federation Implementation](docs/MATRIX_FEDERATION_IMPROVEMENT_PLAN.md)
+- [Production Readiness](docs/PRODUCTION_READINESS.md)
+- [Developer Docs](docs/STORAGE_DESIGN.md)
+
+---
+
+## 🤝 Contributing
+
+We welcome Issues and PRs! Please read [Contributing Guide](CONTRIBUTING.md) first.
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE)
+
+---
+
+**CIS: Making every machine an independent intelligent agent, no cloud required, interconnected instantly.**
