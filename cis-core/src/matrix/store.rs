@@ -80,6 +80,20 @@ pub struct MatrixMessage {
     pub state_key: Option<String>,
 }
 
+/// Federation event representation for storing received federation events
+#[derive(Debug, Clone)]
+pub struct FederationEvent {
+    pub id: i64,
+    pub event_id: String,
+    pub sender: String,
+    pub room_id: String,
+    pub event_type: String,
+    pub content: String,
+    pub origin_server_ts: i64,
+    pub received_at: i64,
+    pub processed: bool,
+}
+
 /// Matrix room information
 #[derive(Debug, Clone)]
 pub struct MatrixRoom {
@@ -91,6 +105,7 @@ pub struct MatrixRoom {
 }
 
 /// Matrix event store
+#[derive(Debug)]
 pub struct MatrixStore {
     db: Arc<Mutex<Connection>>,
 }
@@ -132,7 +147,8 @@ impl MatrixStore {
         // Matrix events table - stores actual Matrix protocol events
         db.execute(
             "CREATE TABLE IF NOT EXISTS matrix_events (
-                event_id TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT UNIQUE NOT NULL,
                 room_id TEXT NOT NULL,
                 sender TEXT NOT NULL,
                 event_type TEXT NOT NULL,
@@ -140,8 +156,9 @@ impl MatrixStore {
                 received_at INTEGER,
                 federate INTEGER DEFAULT 0,
                 origin_server_ts INTEGER,
-                unsigned TEXT
-            ) WITHOUT ROWID",
+                unsigned TEXT,
+                state_key TEXT
+            )",
             [],
         ).map_err(|e| MatrixError::Store(format!("Failed to create matrix_events table: {}", e)))?;
 
@@ -318,6 +335,43 @@ impl MatrixStore {
             [],
         ).map_err(|e| MatrixError::Store(format!("Failed to create index: {}", e)))?;
 
+        // Federation events table for deduplication and cleanup
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS federation_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT UNIQUE NOT NULL,
+                sender TEXT NOT NULL,
+                room_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                origin_server_ts INTEGER NOT NULL,
+                received_at INTEGER DEFAULT (unixepoch()),
+                processed BOOLEAN DEFAULT FALSE
+            )",
+            [],
+        ).map_err(|e| MatrixError::Store(format!("Failed to create federation_events table: {}", e)))?;
+
+        // Indexes for federation_events table
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_federation_events_event_id ON federation_events(event_id)",
+            [],
+        ).map_err(|e| MatrixError::Store(format!("Failed to create federation_events index: {}", e)))?;
+
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_federation_events_room ON federation_events(room_id)",
+            [],
+        ).map_err(|e| MatrixError::Store(format!("Failed to create federation_events room index: {}", e)))?;
+
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_federation_events_received_at ON federation_events(received_at)",
+            [],
+        ).map_err(|e| MatrixError::Store(format!("Failed to create federation_events received_at index: {}", e)))?;
+
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_federation_events_processed ON federation_events(processed)",
+            [],
+        ).map_err(|e| MatrixError::Store(format!("Failed to create federation_events processed index: {}", e)))?;
+
         Ok(())
     }
 
@@ -381,7 +435,7 @@ impl MatrixStore {
     }
 
     /// Get database connection for direct access
-    pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+    pub fn conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
         self.db.lock().expect("Failed to lock database")
     }
 
@@ -416,7 +470,7 @@ impl MatrixStore {
             .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
 
         let mut stmt = db.prepare(
-            "SELECT id, room_id, event_id, sender, event_type, content, 
+            "SELECT id, room_id, event_id, sender, event_type, content_json AS content, 
                     origin_server_ts, unsigned, state_key
              FROM matrix_events 
              WHERE room_id = ?1 AND origin_server_ts > ?2
@@ -468,10 +522,10 @@ impl MatrixStore {
 
         db.execute(
             "INSERT INTO matrix_events 
-             (room_id, event_id, sender, event_type, content, origin_server_ts, unsigned, state_key) 
+             (room_id, event_id, sender, event_type, content_json, origin_server_ts, unsigned, state_key) 
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(event_id) DO UPDATE SET
-             content = excluded.content,
+             content_json = excluded.content_json,
              origin_server_ts = excluded.origin_server_ts",
             rusqlite::params![
                 room_id,
@@ -735,6 +789,246 @@ impl MatrixStore {
 
         Ok(result)
     }
+
+    /// Get events for a room since a specific event ID (for sync pagination)
+    pub fn get_events_since_event_id(
+        &self,
+        room_id: &str,
+        since_event_id: &str,
+        limit: i64,
+    ) -> MatrixResult<Vec<MatrixMessage>> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        // First, get the timestamp of the since_event_id
+        let since_ts: Option<i64> = db.query_row(
+            "SELECT origin_server_ts FROM matrix_events WHERE event_id = ?1 AND room_id = ?2",
+            rusqlite::params![since_event_id, room_id],
+            |row| row.get(0),
+        ).optional().map_err(|e| MatrixError::Store(format!("Failed to query since event: {}", e)))?;
+
+        // If the event doesn't exist, return empty (client will need to do full sync)
+        let since_ts = match since_ts {
+            Some(ts) => ts,
+            None => {
+                tracing::warn!("Since event {} not found in room {}, returning empty result", 
+                    since_event_id, room_id);
+                return Ok(Vec::new());
+            }
+        };
+
+        // Get events after this timestamp
+        let mut stmt = db.prepare(
+            "SELECT id, room_id, event_id, sender, event_type, content, 
+                    origin_server_ts, unsigned, state_key
+             FROM matrix_events 
+             WHERE room_id = ?1 AND origin_server_ts > ?2
+             ORDER BY origin_server_ts ASC
+             LIMIT ?3"
+        ).map_err(|e| MatrixError::Store(format!("Failed to prepare query: {}", e)))?;
+
+        let messages = stmt
+            .query_map(
+                rusqlite::params![room_id, since_ts, limit],
+                |row| {
+                    Ok(MatrixMessage {
+                        id: row.get(0)?,
+                        room_id: row.get(1)?,
+                        event_id: row.get(2)?,
+                        sender: row.get(3)?,
+                        event_type: row.get(4)?,
+                        content: row.get(5)?,
+                        origin_server_ts: row.get(6)?,
+                        unsigned: row.get(7)?,
+                        state_key: row.get(8)?,
+                    })
+                },
+            )
+            .map_err(|e| MatrixError::Store(format!("Failed to query messages: {}", e)))?;
+
+        let mut result = Vec::new();
+        for msg in messages {
+            result.push(msg.map_err(|e| MatrixError::Store(format!("Failed to read message: {}", e)))?);
+        }
+
+        Ok(result)
+    }
+
+    // ==================== Federation Event Storage ====================
+
+    /// Store a federation event with deduplication (ON CONFLICT IGNORE)
+    ///
+    /// Returns true if the event was inserted, false if it was a duplicate
+    pub fn store_federation_event(
+        &self,
+        event_id: &str,
+        sender: &str,
+        room_id: &str,
+        event_type: &str,
+        content: &str,
+        origin_server_ts: i64,
+    ) -> MatrixResult<bool> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let rows_affected = db.execute(
+            "INSERT OR IGNORE INTO federation_events 
+             (event_id, sender, room_id, event_type, content, origin_server_ts)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                event_id,
+                sender,
+                room_id,
+                event_type,
+                content,
+                origin_server_ts,
+            ],
+        ).map_err(|e| MatrixError::Store(format!("Failed to store federation event: {}", e)))?;
+
+        Ok(rows_affected > 0)
+    }
+
+    /// Check if a federation event exists by event_id
+    pub fn federation_event_exists(&self, event_id: &str) -> MatrixResult<bool> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let result: Result<Option<i64>, rusqlite::Error> = db.query_row(
+            "SELECT 1 FROM federation_events WHERE event_id = ?1",
+            [event_id],
+            |row| row.get(0),
+        ).optional();
+
+        match result {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) => Ok(false),
+            Err(e) => Err(MatrixError::Store(format!("Failed to check federation event: {}", e))),
+        }
+    }
+
+    /// Get a federation event by event_id
+    pub fn get_federation_event(&self, event_id: &str) -> MatrixResult<Option<FederationEvent>> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let result = db.query_row(
+            "SELECT id, event_id, sender, room_id, event_type, content, 
+                    origin_server_ts, received_at, processed
+             FROM federation_events WHERE event_id = ?1",
+            [event_id],
+            |row| {
+                Ok(FederationEvent {
+                    id: row.get(0)?,
+                    event_id: row.get(1)?,
+                    sender: row.get(2)?,
+                    room_id: row.get(3)?,
+                    event_type: row.get(4)?,
+                    content: row.get(5)?,
+                    origin_server_ts: row.get(6)?,
+                    received_at: row.get(7)?,
+                    processed: row.get::<_, i32>(8)? != 0,
+                })
+            },
+        ).optional();
+
+        match result {
+            Ok(event) => Ok(event),
+            Err(e) => Err(MatrixError::Store(format!("Failed to get federation event: {}", e))),
+        }
+    }
+
+    /// Mark a federation event as processed
+    pub fn mark_federation_event_processed(&self, event_id: &str) -> MatrixResult<()> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        db.execute(
+            "UPDATE federation_events SET processed = TRUE WHERE event_id = ?1",
+            [event_id],
+        ).map_err(|e| MatrixError::Store(format!("Failed to mark event as processed: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get unprocessed federation events (for async processing)
+    pub fn get_unprocessed_federation_events(&self, limit: usize) -> MatrixResult<Vec<FederationEvent>> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let mut stmt = db.prepare(
+            "SELECT id, event_id, sender, room_id, event_type, content, 
+                    origin_server_ts, received_at, processed
+             FROM federation_events 
+             WHERE processed = FALSE
+             ORDER BY received_at ASC
+             LIMIT ?1"
+        ).map_err(|e| MatrixError::Store(format!("Failed to prepare query: {}", e)))?;
+
+        let events = stmt
+            .query_map([limit as i64], |row| {
+                Ok(FederationEvent {
+                    id: row.get(0)?,
+                    event_id: row.get(1)?,
+                    sender: row.get(2)?,
+                    room_id: row.get(3)?,
+                    event_type: row.get(4)?,
+                    content: row.get(5)?,
+                    origin_server_ts: row.get(6)?,
+                    received_at: row.get(7)?,
+                    processed: row.get::<_, i32>(8)? != 0,
+                })
+            })
+            .map_err(|e| MatrixError::Store(format!("Failed to query unprocessed events: {}", e)))?;
+
+        let mut result = Vec::new();
+        for event in events {
+            result.push(event.map_err(|e| MatrixError::Store(format!("Failed to read event: {}", e)))?);
+        }
+
+        Ok(result)
+    }
+
+    /// Cleanup expired federation events (older than retention_days)
+    ///
+    /// Returns the number of deleted events
+    pub fn cleanup_expired_federation_events(&self, retention_days: i64) -> MatrixResult<usize> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        // Delete events older than retention_days
+        let rows_deleted = db.execute(
+            "DELETE FROM federation_events 
+             WHERE received_at < unixepoch() - (?1 * 86400)",
+            [retention_days],
+        ).map_err(|e| MatrixError::Store(format!("Failed to cleanup expired events: {}", e)))?;
+
+        Ok(rows_deleted)
+    }
+
+    /// Get the count of federation events (optionally filtered by processed status)
+    pub fn count_federation_events(&self, processed: Option<bool>) -> MatrixResult<i64> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let count: i64 = match processed {
+            Some(p) => {
+                db.query_row(
+                    "SELECT COUNT(*) FROM federation_events WHERE processed = ?1",
+                    [if p { 1 } else { 0 }],
+                    |row| row.get(0),
+                ).map_err(|e| MatrixError::Store(format!("Failed to count events: {}", e)))?
+            }
+            None => {
+                db.query_row(
+                    "SELECT COUNT(*) FROM federation_events",
+                    [],
+                    |row| row.get(0),
+                ).map_err(|e| MatrixError::Store(format!("Failed to count events: {}", e)))?
+            }
+        };
+
+        Ok(count)
+    }
 }
 
 #[cfg(test)]
@@ -831,5 +1125,168 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].event_id, event_id);
         assert_eq!(messages[0].content, content);
+    }
+
+    // ==================== Federation Event Tests ====================
+
+    #[test]
+    fn test_store_federation_event() {
+        let store = MatrixStore::open_in_memory().unwrap();
+
+        // Store a federation event
+        let inserted = store.store_federation_event(
+            "$fed_event1",
+            "@sender:example.com",
+            "!room:example.com",
+            "m.room.message",
+            r#"{"body":"Hello","msgtype":"m.text"}"#,
+            1234567890,
+        ).unwrap();
+
+        assert!(inserted);
+
+        // Verify the event exists
+        let exists = store.federation_event_exists("$fed_event1").unwrap();
+        assert!(exists);
+
+        // Get the event
+        let event = store.get_federation_event("$fed_event1").unwrap();
+        assert!(event.is_some());
+        let event = event.unwrap();
+        assert_eq!(event.event_id, "$fed_event1");
+        assert_eq!(event.sender, "@sender:example.com");
+        assert_eq!(event.room_id, "!room:example.com");
+        assert_eq!(event.event_type, "m.room.message");
+        assert!(!event.processed);
+    }
+
+    #[test]
+    fn test_federation_event_deduplication() {
+        let store = MatrixStore::open_in_memory().unwrap();
+
+        // Store the same event twice
+        let inserted1 = store.store_federation_event(
+            "$dup_event",
+            "@sender:example.com",
+            "!room:example.com",
+            "m.room.message",
+            r#"{"body":"Hello"}"#,
+            1234567890,
+        ).unwrap();
+        assert!(inserted1);
+
+        let inserted2 = store.store_federation_event(
+            "$dup_event",
+            "@sender:example.com",
+            "!room:example.com",
+            "m.room.message",
+            r#"{"body":"Hello"}"#,
+            1234567890,
+        ).unwrap();
+        assert!(!inserted2); // Second insert should be ignored
+
+        // Count should be 1
+        let count = store.count_federation_events(None).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_mark_federation_event_processed() {
+        let store = MatrixStore::open_in_memory().unwrap();
+
+        // Store an event
+        store.store_federation_event(
+            "$proc_event",
+            "@sender:example.com",
+            "!room:example.com",
+            "m.room.message",
+            r#"{"body":"Hello"}"#,
+            1234567890,
+        ).unwrap();
+
+        // Verify not processed
+        let event = store.get_federation_event("$proc_event").unwrap().unwrap();
+        assert!(!event.processed);
+
+        // Mark as processed
+        store.mark_federation_event_processed("$proc_event").unwrap();
+
+        // Verify processed
+        let event = store.get_federation_event("$proc_event").unwrap().unwrap();
+        assert!(event.processed);
+    }
+
+    #[test]
+    fn test_get_unprocessed_federation_events() {
+        let store = MatrixStore::open_in_memory().unwrap();
+
+        // Store multiple events
+        for i in 0..5 {
+            store.store_federation_event(
+                &format!("$unproc_event{}", i),
+                "@sender:example.com",
+                "!room:example.com",
+                "m.room.message",
+                r#"{"body":"Hello"}"#,
+                1234567890,
+            ).unwrap();
+        }
+
+        // Mark some as processed
+        store.mark_federation_event_processed("$unproc_event0").unwrap();
+        store.mark_federation_event_processed("$unproc_event2").unwrap();
+
+        // Get unprocessed events
+        let unprocessed = store.get_unprocessed_federation_events(10).unwrap();
+        assert_eq!(unprocessed.len(), 3);
+
+        // Verify counts
+        let total = store.count_federation_events(None).unwrap();
+        let processed = store.count_federation_events(Some(true)).unwrap();
+        let unproc_count = store.count_federation_events(Some(false)).unwrap();
+
+        assert_eq!(total, 5);
+        assert_eq!(processed, 2);
+        assert_eq!(unproc_count, 3);
+    }
+
+    #[test]
+    fn test_cleanup_expired_federation_events() {
+        let store = MatrixStore::open_in_memory().unwrap();
+
+        // Store some events
+        for i in 0..3 {
+            store.store_federation_event(
+                &format!("$cleanup_event{}", i),
+                "@sender:example.com",
+                "!room:example.com",
+                "m.room.message",
+                r#"{"body":"Hello"}"#,
+                1234567890,
+            ).unwrap();
+        }
+
+        let count_before = store.count_federation_events(None).unwrap();
+        assert_eq!(count_before, 3);
+
+        // Cleanup with 30 days retention (should not delete recent events)
+        let deleted = store.cleanup_expired_federation_events(30).unwrap();
+        assert_eq!(deleted, 0);
+
+        // Count should still be 3
+        let count_after = store.count_federation_events(None).unwrap();
+        assert_eq!(count_after, 3);
+    }
+
+    #[test]
+    fn test_federation_event_not_found() {
+        let store = MatrixStore::open_in_memory().unwrap();
+
+        // Check non-existent event
+        let exists = store.federation_event_exists("$nonexistent").unwrap();
+        assert!(!exists);
+
+        let event = store.get_federation_event("$nonexistent").unwrap();
+        assert!(event.is_none());
     }
 }

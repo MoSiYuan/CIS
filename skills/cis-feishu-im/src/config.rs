@@ -2,7 +2,7 @@
 //!
 //! 定义 FeishuImSkill 的配置结构
 
-use cis_core::ai::{AiProviderConfig, ProviderType};
+use cis_core::ai::AiProviderConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use crate::poller::PollingConfig;

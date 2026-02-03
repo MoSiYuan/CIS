@@ -3,7 +3,7 @@
 //! 维护对话历史，支持多轮对话
 //! 数据存储在 IM 数据库（feishu_im.db），严格分离于记忆数据库
 
-use cis_core::ai::{Message, Role};
+use cis_core::ai::Message;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -160,7 +160,7 @@ impl ConversationContext {
     }
 
     /// 从数据库加载会话
-    pub async fn load_session(&self, session_id: &str) -> Result<Option<ConversationSession>, Box<dyn std::error::Error>> {
+    pub async fn load_session(&self, _session_id: &str) -> Result<Option<ConversationSession>, Box<dyn std::error::Error>> {
         // TODO: 实现 SQLite 加载
         // 1. 连接到 feishu_im.db
         // 2. 查询 sessions 表

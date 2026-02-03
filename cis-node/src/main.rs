@@ -7,6 +7,7 @@ use tracing::{error, info};
 
 mod commands;
 use cis_node::TelemetryAction;
+use cis_core::storage::paths::Paths;
 
 /// CLI structure
 #[derive(Parser, Debug)]
@@ -21,6 +22,12 @@ struct Cli {
 /// Main commands
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// IM (Instant Messaging) operations
+    Im {
+        #[command(subcommand)]
+        action: ImSubcommand,
+    },
+
     /// Initialize CIS environment
     Init {
         /// Initialize project instead of global
@@ -60,7 +67,10 @@ enum Commands {
     
     /// Interact with AI agent
     Agent {
-        /// The prompt to send to the agent
+        #[command(subcommand)]
+        action: Option<AgentSubcommand>,
+        
+        /// The prompt to send to the agent (positional, 用于向后兼容)
         prompt: Vec<String>,
         /// Enable interactive chat mode
         #[arg(long, short)]
@@ -68,6 +78,12 @@ enum Commands {
         /// List available agents
         #[arg(long)]
         list: bool,
+        /// Session ID for conversation context
+        #[arg(short, long)]
+        session: Option<String>,
+        /// Project path
+        #[arg(short, long)]
+        project: Option<std::path::PathBuf>,
     },
     
     /// Check environment
@@ -77,19 +93,57 @@ enum Commands {
         fix: bool,
     },
     
-    /// Show CIS status
-    Status,
+    /// Show CIS status and paths
+    Status {
+        /// Show detailed path information
+        #[arg(long)]
+        paths: bool,
+    },
     
-    /// Peer management
+    /// Peer management (legacy)
     Peer {
         #[command(subcommand)]
         action: PeerAction,
+    },
+    
+    /// P2P network management
+    P2p {
+        #[command(subcommand)]
+        action: commands::p2p::P2pAction,
     },
     
     /// Telemetry and request logging
     Telemetry {
         #[command(subcommand)]
         action: TelemetryAction,
+    },
+}
+
+/// Agent subcommands
+#[derive(Subcommand, Debug)]
+enum AgentSubcommand {
+    /// Execute a prompt (默认)
+    Prompt {
+        /// The prompt text
+        prompt: Vec<String>,
+    },
+    
+    /// Interactive chat mode
+    Chat,
+    
+    /// List available agents
+    List,
+    
+    /// Execute with conversation context
+    Context {
+        /// The prompt to send
+        prompt: String,
+        /// Session ID for conversation context
+        #[arg(short, long)]
+        session: Option<String>,
+        /// Project path
+        #[arg(short, long)]
+        project: Option<std::path::PathBuf>,
     },
 }
 
@@ -167,6 +221,21 @@ enum SkillAction {
         #[arg(short, long)]
         candidates: bool,
     },
+    
+    /// Discover and execute skill chains
+    Chain {
+        /// Natural language description of the task
+        description: String,
+        /// Preview mode - only show the chain without executing
+        #[arg(long)]
+        preview: bool,
+        /// Show detailed matching information
+        #[arg(short, long)]
+        verbose: bool,
+        /// Project path
+        #[arg(short, long)]
+        project: Option<std::path::PathBuf>,
+    },
 }
 
 /// Memory subcommands
@@ -220,6 +289,9 @@ enum MemoryAction {
         /// Category filter
         #[arg(short, long)]
         category: Option<String>,
+        /// Output format (plain, json, table)
+        #[arg(short, long, value_enum, default_value = "plain")]
+        format: OutputFormat,
     },
     
     /// List memory keys
@@ -293,6 +365,25 @@ enum PeerAction {
     Sync,
 }
 
+/// IM subcommands
+#[derive(Subcommand, Debug)]
+enum ImSubcommand {
+    /// Send a message
+    Send(commands::im::SendArgs),
+    /// List sessions
+    List(commands::im::ListArgs),
+    /// View message history
+    History(commands::im::HistoryArgs),
+    /// Search messages
+    Search(commands::im::SearchArgs),
+    /// Create a new session
+    Create(commands::im::CreateArgs),
+    /// Mark messages as read
+    Read(commands::im::ReadArgs),
+    /// Get session info
+    Info(commands::im::InfoArgs),
+}
+
 /// Task subcommands
 #[derive(Subcommand, Debug)]
 enum TaskAction {
@@ -345,6 +436,24 @@ enum TaskAction {
     
     /// Execute tasks using DAG scheduler
     Execute,
+}
+
+/// Output format enum for search results
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum OutputFormat {
+    Plain,
+    Json,
+    Table,
+}
+
+impl From<OutputFormat> for commands::memory::OutputFormat {
+    fn from(format: OutputFormat) -> Self {
+        match format {
+            OutputFormat::Plain => commands::memory::OutputFormat::Plain,
+            OutputFormat::Json => commands::memory::OutputFormat::Json,
+            OutputFormat::Table => commands::memory::OutputFormat::Table,
+        }
+    }
 }
 
 /// Memory domain enum
@@ -443,6 +552,12 @@ async fn main() {
     
     info!("Running command: {:?}", cli.command);
     
+    // 首次运行检测（排除 init, doctor, status, help）
+    if let Err(e) = check_first_run(&cli.command).await {
+        eprintln!("{}", e);
+        std::process::exit(1);
+    }
+    
     match run_command(cli.command).await {
         Ok(_) => {
             info!("Command completed successfully");
@@ -455,8 +570,157 @@ async fn main() {
     }
 }
 
+/// 检查是否首次运行
+/// 
+/// 对于需要初始化的命令，如果 CIS 未初始化：
+/// - Release 模式：自动创建默认配置
+/// - 开发模式：提示用户初始化
+async fn check_first_run(command: &Commands) -> anyhow::Result<()> {
+    use cis_core::storage::paths::{Paths, RunMode};
+    
+    // Release 模式下，Status 命令也需要触发自动初始化
+    let is_release = Paths::run_mode() == RunMode::Release;
+    
+    // 不需要初始化的命令白名单
+    let needs_init = if is_release {
+        // Release 模式：只有 init 和 doctor 不需要初始化
+        !matches!(command, Commands::Init { .. } | Commands::Doctor { .. })
+    } else {
+        // 开发模式：init, doctor, status 不需要初始化
+        !matches!(command, 
+            Commands::Init { .. } | 
+            Commands::Doctor { .. } | 
+            Commands::Status { .. }
+        )
+    };
+    
+    if needs_init && !Paths::config_file().exists() {
+        // Release 模式下自动初始化
+        if Paths::run_mode() == RunMode::Release {
+            eprintln!("📦 Release 模式：自动初始化 CIS...");
+            
+            // 创建默认配置
+            let config = create_default_config().await?;
+            
+            // 确保目录存在
+            if let Some(parent) = Paths::config_file().parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            
+            // 写入配置
+            std::fs::write(Paths::config_file(), config)?;
+            
+            // 创建数据目录
+            Paths::ensure_dirs()?;
+            
+            eprintln!("✅ CIS 自动初始化完成");
+            eprintln!("   配置: {}", Paths::config_file().display());
+            eprintln!("   数据: {}", Paths::data_dir().display());
+            eprintln!();
+            
+            return Ok(());
+        }
+        
+        // 开发模式：提示用户初始化
+        eprintln!("⚠️  CIS 尚未初始化");
+        eprintln!();
+        
+        // 显示路径信息
+        Paths::print_info();
+        
+        eprintln!();
+        eprintln!("💡 请先初始化 CIS:");
+        eprintln!("   cis init           # 交互式初始化");
+        eprintln!("   cis init --help    # 查看初始化选项");
+        eprintln!();
+        eprintln!("   或使用快速初始化:");
+        eprintln!("   cis init --non-interactive --provider claude");
+        eprintln!();
+        
+        // 检查 Git 项目
+        if let Some(git_root) = Paths::git_root() {
+            eprintln!("📁 检测到 Git 项目: {}", git_root.display());
+            eprintln!("   初始化数据将存储在: {}", git_root.join(".cis").display());
+            eprintln!();
+        }
+        
+        return Err(anyhow::anyhow!("CIS not initialized"));
+    }
+    
+    Ok(())
+}
+
+/// 创建默认配置（用于 Release 模式自动初始化）
+async fn create_default_config() -> anyhow::Result<String> {
+    use cis_core::wizard::ConfigGenerator;
+    use cis_core::storage::paths::Paths;
+    
+    // 生成节点密钥
+    let node_key = generate_node_key();
+    let key_path = Paths::data_dir().join("node.key");
+    if let Some(parent) = key_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&key_path, &node_key)?;
+    
+    // 设置权限（Unix only）
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(&key_path)?.permissions();
+        permissions.set_mode(0o600);
+        std::fs::set_permissions(&key_path, permissions)?;
+    }
+    
+    let generator = ConfigGenerator::new();
+    let mut config = generator.generate_global_config(None)?;
+    
+    // 添加节点密钥到配置
+    let key_hex = hex::encode(&node_key);
+    config.push_str(&format!(r#"
+[node]
+key = "{}"
+"#, key_hex));
+    
+    // 添加 P2P 默认配置
+    config.push_str(r#"
+
+[p2p]
+enabled = true
+listen_port = 7677
+enable_dht = true
+enable_nat_traversal = true
+
+[p2p.bootstrap]
+nodes = []
+"#);
+    
+    Ok(config)
+}
+
+/// 生成节点密钥
+fn generate_node_key() -> Vec<u8> {
+    use rand::RngCore;
+    let mut key = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut key);
+    key.to_vec()
+}
+
 async fn run_command(command: Commands) -> anyhow::Result<()> {
     match command {
+        Commands::Im { action } => {
+            let args = commands::im::ImArgs { action: match action {
+                ImSubcommand::Send(args) => commands::im::ImAction::Send(args),
+                ImSubcommand::List(args) => commands::im::ImAction::List(args),
+                ImSubcommand::History(args) => commands::im::ImAction::History(args),
+                ImSubcommand::Search(args) => commands::im::ImAction::Search(args),
+                ImSubcommand::Create(args) => commands::im::ImAction::Create(args),
+                ImSubcommand::Read(args) => commands::im::ImAction::Read(args),
+                ImSubcommand::Info(args) => commands::im::ImAction::Info(args),
+            }};
+            commands::im::handle_im(args).await
+        }
+        
         Commands::Init { project, force, non_interactive, skip_checks, provider } => {
             let options = commands::init::InitOptions {
                 project_mode: project,
@@ -490,6 +754,15 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
                 };
                 commands::skill::handle_skill_do(args).await
             }
+            SkillAction::Chain { description, preview, verbose, project } => {
+                let args = commands::skill::SkillChainArgs {
+                    description,
+                    preview,
+                    verbose,
+                    project,
+                };
+                commands::skill::handle_skill_chain(args).await
+            }
         }
         
         Commands::Memory { action } => match action {
@@ -506,12 +779,13 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
             MemoryAction::Search { query, limit } => {
                 commands::memory::search_memory(&query, limit).await
             }
-            MemoryAction::VectorSearch { query, limit, threshold, category } => {
+            MemoryAction::VectorSearch { query, limit, threshold, category, format } => {
                 let args = commands::memory::MemorySearchArgs {
                     query,
                     limit,
                     threshold,
                     category,
+                    format: format.into(),
                 };
                 commands::memory::handle_memory_search(args).await
             }
@@ -547,18 +821,58 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
             TaskAction::Execute => commands::task::execute_tasks(),
         }
         
-        Commands::Agent { prompt, chat, list } => {
-            if list {
-                commands::agent::list_agents().await
-            } else if chat {
-                commands::agent::interactive_chat().await
+        Commands::Agent { action, prompt, chat, list, session, project } => {
+            // 如果指定了子命令，使用子命令
+            if let Some(action) = action {
+                match action {
+                    AgentSubcommand::Prompt { prompt: p } => {
+                        let prompt = p.join(" ");
+                        if prompt.is_empty() {
+                            return Err(anyhow::anyhow!("Prompt is required"));
+                        }
+                        commands::agent::execute_prompt(&prompt).await
+                    }
+                    AgentSubcommand::Chat => {
+                        commands::agent::interactive_chat().await
+                    }
+                    AgentSubcommand::List => {
+                        commands::agent::list_agents().await
+                    }
+                    AgentSubcommand::Context { prompt, session, project } => {
+                        let args = commands::agent::AgentContextArgs {
+                            prompt,
+                            session,
+                            project,
+                        };
+                        commands::agent::handle_agent_context(args).await
+                    }
+                }
             } else {
-                let prompt = if prompt.is_empty() {
-                    return Err(anyhow::anyhow!("Prompt is required. Use --chat for interactive mode or --list to see available agents."));
+                // 向后兼容：使用 flags
+                if list {
+                    commands::agent::list_agents().await
+                } else if chat {
+                    commands::agent::interactive_chat().await
+                } else if session.is_some() || project.is_some() {
+                    let prompt = if prompt.is_empty() {
+                        return Err(anyhow::anyhow!("Prompt is required. Use --chat for interactive mode or --list to see available agents."));
+                    } else {
+                        prompt.join(" ")
+                    };
+                    let args = commands::agent::AgentContextArgs {
+                        prompt,
+                        session,
+                        project,
+                    };
+                    commands::agent::handle_agent_context(args).await
                 } else {
-                    prompt.join(" ")
-                };
-                commands::agent::execute_prompt(&prompt).await
+                    let prompt = if prompt.is_empty() {
+                        return Err(anyhow::anyhow!("Prompt is required. Use --chat for interactive mode or --list to see available agents."));
+                    } else {
+                        prompt.join(" ")
+                    };
+                    commands::agent::execute_prompt(&prompt).await
+                }
             }
         }
         
@@ -570,8 +884,13 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
             }
         }
         
-        Commands::Status => {
-            show_status()
+        Commands::Status { paths } => {
+            if paths {
+                Paths::print_info();
+            } else {
+                show_status();
+            }
+            Ok(())
         }
         
         Commands::Peer { action } => match action {
@@ -586,15 +905,18 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
             PeerAction::Sync => commands::peer::sync_status(),
         }
         
+        Commands::P2p { action } => {
+            let args = commands::p2p::P2pArgs { action };
+            commands::p2p::handle_p2p(args).await
+        }
+        
         Commands::Telemetry { action } => {
             commands::telemetry::handle_telemetry(action)
         }
     }
 }
 
-fn show_status() -> anyhow::Result<()> {
-    use cis_core::storage::paths::Paths;
-    
+fn show_status() {
     println!("CIS Status\n");
     println!("{}", "-".repeat(40));
     
@@ -616,10 +938,19 @@ fn show_status() -> anyhow::Result<()> {
     }
     
     // Project check
-    let project_file = std::env::current_dir()?.join(".cis/project.toml");
-    if project_file.exists() {
-        println!("\n✅ CIS project initialized in current directory");
+    let project_file = std::env::current_dir()
+        .ok()
+        .and_then(|d| Some(d.join(".cis/project.toml")));
+    
+    if let Some(project_file) = project_file {
+        if project_file.exists() {
+            println!("\n✅ CIS project initialized in current directory");
+        }
     }
     
-    Ok(())
+    // Run mode
+    println!("\nRun Mode: {}", match Paths::run_mode() {
+        cis_core::storage::paths::RunMode::Release => "Release (Portable)",
+        cis_core::storage::paths::RunMode::Development => "Development",
+    });
 }

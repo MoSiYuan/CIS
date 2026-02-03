@@ -8,6 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 
 /// Default federation port
 pub const FEDERATION_PORT: u16 = 6767;
@@ -432,5 +433,138 @@ mod tests {
         assert!(!error.accepted);
         assert_eq!(error.event_id, "$event456");
         assert_eq!(error.error, Some("Invalid signature".to_string()));
+    }
+}
+
+/// Room information for federation queries
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomInfo {
+    /// Room ID
+    pub room_id: String,
+    /// Room creator
+    pub creator: String,
+    /// Room name
+    pub name: Option<String>,
+    /// Room topic
+    pub topic: Option<String>,
+    /// Whether room is federated
+    pub federate: bool,
+    /// Creation timestamp
+    pub created_at: i64,
+}
+
+impl RoomInfo {
+    /// Create new room info
+    pub fn new(
+        room_id: impl Into<String>,
+        creator: impl Into<String>,
+    ) -> Self {
+        Self {
+            room_id: room_id.into(),
+            creator: creator.into(),
+            name: None,
+            topic: None,
+            federate: true,
+            created_at: chrono::Utc::now().timestamp(),
+        }
+    }
+
+    /// Set room name
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Set room topic
+    pub fn with_topic(mut self, topic: impl Into<String>) -> Self {
+        self.topic = Some(topic.into());
+        self
+    }
+
+    /// Set federate flag
+    pub fn with_federate(mut self, federate: bool) -> Self {
+        self.federate = federate;
+        self
+    }
+}
+
+/// Discovery source for a discovered node
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DiscoverySource {
+    /// Discovered via mDNS
+    Mdns,
+    /// Manually configured
+    Manual,
+    /// Discovered via DHT
+    Dht,
+    /// Discovered via seed node
+    Seed,
+}
+
+/// Discovered node information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredNode {
+    /// Node ID (unique identifier)
+    pub node_id: String,
+    /// DID (Decentralized Identifier)
+    pub did: String,
+    /// Network address
+    pub address: SocketAddr,
+    /// Discovery source
+    pub source: DiscoverySource,
+    /// Server name (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_name: Option<String>,
+    /// Node version (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// Capabilities (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<String>>,
+    /// Last seen timestamp
+    pub last_seen: i64,
+}
+
+impl DiscoveredNode {
+    /// Create a new discovered node
+    pub fn new(
+        node_id: impl Into<String>,
+        did: impl Into<String>,
+        address: SocketAddr,
+        source: DiscoverySource,
+    ) -> Self {
+        Self {
+            node_id: node_id.into(),
+            did: did.into(),
+            address,
+            source,
+            server_name: None,
+            version: None,
+            capabilities: None,
+            last_seen: chrono::Utc::now().timestamp(),
+        }
+    }
+
+    /// Set server name
+    pub fn with_server_name(mut self, server_name: impl Into<String>) -> Self {
+        self.server_name = Some(server_name.into());
+        self
+    }
+
+    /// Set version
+    pub fn with_version(mut self, version: impl Into<String>) -> Self {
+        self.version = Some(version.into());
+        self
+    }
+
+    /// Set capabilities
+    pub fn with_capabilities(mut self, capabilities: Vec<String>) -> Self {
+        self.capabilities = Some(capabilities);
+        self
+    }
+
+    /// Update last_seen timestamp
+    pub fn touch(&mut self) {
+        self.last_seen = chrono::Utc::now().timestamp();
     }
 }

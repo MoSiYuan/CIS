@@ -4,6 +4,60 @@
 版本：v1.0-FINAL  
 分类：硬件绑定型分布式系统规范
 
+[![CI](https://github.com/your-org/cis/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/cis/actions/workflows/ci.yml)
+[![Release](https://github.com/your-org/cis/actions/workflows/release.yml/badge.svg)](https://github.com/your-org/cis/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+---
+
+## 快速开始
+
+### 安装
+
+**macOS** (Homebrew):
+```bash
+brew install cis
+cis init
+```
+
+**Linux**:
+```bash
+curl -fsSL https://github.com/your-org/cis/releases/latest/download/install.sh | bash
+cis init
+```
+
+**Windows** (PowerShell):
+```powershell
+irm https://github.com/your-org/cis/releases/latest/download/install.ps1 | iex
+cis init
+```
+
+**从源码构建**:
+```bash
+git clone https://github.com/your-org/cis.git
+cd cis
+./scripts/install/setup-dev.sh
+```
+
+### 基本使用
+
+```bash
+# 检查环境
+cis doctor
+
+# 查看状态
+cis status --paths
+
+# 使用自然语言调用技能
+cis skill do "分析今天的代码提交"
+
+# 语义搜索记忆
+cis memory search "暗黑模式配置"
+
+# 与 AI 对话
+cis agent "帮我优化这段代码"
+```
+
 ---
 
 ## 1. 系统定义

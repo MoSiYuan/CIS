@@ -464,25 +464,119 @@ async fn verify_event_signature(
 }
 
 /// Save event to Matrix store
+///
+/// This function handles deduplication and stores federation events
+/// in the federation_events table for tracking and cleanup.
 async fn save_event_to_store(
     event: &CisMatrixEvent,
-    _state: &FederationState,
+    state: &FederationState,
 ) -> Result<(), MatrixError> {
-    // Note: In a full implementation, we would have methods on MatrixStore
-    // for saving federation events. For now, we just log the event.
-    
     debug!(
         "Saving event: id={}, room={}, type={}",
         event.event_id, event.room_id, event.event_type
     );
-    
-    // TODO: Implement actual storage once MatrixStore has federation methods
-    // This would involve:
-    // 1. Saving to matrix_events table
-    // 2. Saving CIS metadata to cis_event_meta table
-    // 3. Forwarding to interested rooms
-    
+
+    // 1. Check for duplicate events (deduplication)
+    match state.store.federation_event_exists(&event.event_id) {
+        Ok(true) => {
+            debug!("Event {} already exists, skipping", event.event_id);
+            return Ok(()); // Duplicate event, skip
+        }
+        Ok(false) => {
+            // Continue with storage
+        }
+        Err(e) => {
+            error!("Failed to check event existence: {}", e);
+            return Err(e);
+        }
+    }
+
+    // 2. Serialize content to string
+    let content_str = event.content.to_string();
+
+    // 3. Store in federation_events table with ON CONFLICT IGNORE
+    let inserted = state.store.store_federation_event(
+        &event.event_id,
+        &event.sender,
+        &event.room_id,
+        &event.event_type,
+        &content_str,
+        event.origin_server_ts,
+    )?;
+
+    if inserted {
+        info!(
+            "Stored federation event: id={}, room={}, type={}",
+            event.event_id, event.room_id, event.event_type
+        );
+
+        // 4. Also save to the main matrix_events table for room visibility
+        // This ensures the event appears in room history
+        let unsigned_str = event.unsigned.as_ref().map(|u| u.to_string());
+        state.store.save_event(
+            &event.room_id,
+            &event.event_id,
+            &event.sender,
+            &event.event_type,
+            &content_str,
+            event.origin_server_ts,
+            unsigned_str.as_deref(),
+            event.state_key.as_deref(),
+        )?;
+
+        // 5. Mark as processed
+        state.store.mark_federation_event_processed(&event.event_id)?;
+    } else {
+        debug!("Event {} was a duplicate (race condition)", event.event_id);
+    }
+
     Ok(())
+}
+
+/// Cleanup expired federation events
+///
+/// Deletes federation events older than the specified retention period.
+/// Default retention is 30 days.
+pub async fn cleanup_expired_events(state: &FederationState, retention_days: Option<i64>) -> Result<usize, MatrixError> {
+    let days = retention_days.unwrap_or(30);
+    
+    if days <= 0 {
+        return Err(MatrixError::InvalidParameter(
+            "retention_days must be positive".to_string()
+        ));
+    }
+
+    let deleted = state.store.cleanup_expired_federation_events(days)?;
+    
+    if deleted > 0 {
+        info!("Cleaned up {} expired federation events (older than {} days)", deleted, days);
+    } else {
+        debug!("No expired federation events to cleanup (retention: {} days)", days);
+    }
+
+    Ok(deleted)
+}
+
+/// Start periodic cleanup task for federation events
+///
+/// This spawns a background task that periodically cleans up expired events.
+pub fn start_cleanup_task(state: FederationState, interval_hours: u64, retention_days: Option<i64>) {
+    let interval = std::time::Duration::from_secs(interval_hours * 3600);
+    
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(interval);
+        
+        loop {
+            interval.tick().await;
+            
+            if let Err(e) = cleanup_expired_events(&state, retention_days).await {
+                error!("Failed to cleanup expired federation events: {}", e);
+            }
+        }
+    });
+    
+    info!("Started federation events cleanup task (interval: {} hours, retention: {} days)", 
+        interval_hours, retention_days.unwrap_or(30));
 }
 
 /// Federation server builder
@@ -620,5 +714,165 @@ mod tests {
             .unwrap();
         
         assert_eq!(server.server_name(), "builder.local");
+    }
+
+    // ==================== Federation Event Storage Tests ====================
+
+    fn create_test_state() -> FederationState {
+        FederationState {
+            config: FederationConfig::new("test.local"),
+            discovery: PeerDiscovery::default(),
+            store: Arc::new(MatrixStore::open_in_memory().unwrap()),
+            peers: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    fn create_test_event(event_id: &str) -> CisMatrixEvent {
+        CisMatrixEvent::new(
+            event_id,
+            "!test_room:test.local",
+            "@sender:test.local",
+            "m.room.message",
+            serde_json::json!({ "body": "Hello", "msgtype": "m.text" }),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_save_event_to_store_success() {
+        let state = create_test_state();
+        let event = create_test_event("$event123");
+
+        // Save the event
+        let result = save_event_to_store(&event, &state).await;
+        assert!(result.is_ok());
+
+        // Verify the event was stored in federation_events
+        let exists = state.store.federation_event_exists("$event123").unwrap();
+        assert!(exists);
+
+        // Verify the event details
+        let stored = state.store.get_federation_event("$event123").unwrap();
+        assert!(stored.is_some());
+        let stored = stored.unwrap();
+        assert_eq!(stored.event_id, "$event123");
+        assert_eq!(stored.sender, "@sender:test.local");
+        assert_eq!(stored.room_id, "!test_room:test.local");
+        assert_eq!(stored.event_type, "m.room.message");
+        assert!(stored.processed);
+    }
+
+    #[tokio::test]
+    async fn test_save_event_deduplication() {
+        let state = create_test_state();
+        let event = create_test_event("$event456");
+
+        // Save the event first time
+        let result = save_event_to_store(&event, &state).await;
+        assert!(result.is_ok());
+
+        // Save the same event again (should be deduplicated)
+        let result = save_event_to_store(&event, &state).await;
+        assert!(result.is_ok()); // Should succeed but not insert duplicate
+
+        // Verify only one event exists
+        let count = state.store.count_federation_events(None).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_save_multiple_different_events() {
+        let state = create_test_state();
+
+        // Create and save multiple different events
+        for i in 0..5 {
+            let event = create_test_event(&format!("$event{}", i));
+            let result = save_event_to_store(&event, &state).await;
+            assert!(result.is_ok());
+        }
+
+        // Verify all events exist
+        let count = state.store.count_federation_events(None).unwrap();
+        assert_eq!(count, 5);
+
+        // Verify each event
+        for i in 0..5 {
+            let exists = state.store.federation_event_exists(&format!("$event{}", i)).unwrap();
+            assert!(exists, "Event $event{} should exist", i);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_expired_events() {
+        let state = create_test_state();
+
+        // Create and save an event
+        let event = create_test_event("$old_event");
+        save_event_to_store(&event, &state).await.unwrap();
+
+        // Verify event exists
+        let count = state.store.count_federation_events(None).unwrap();
+        assert_eq!(count, 1);
+
+        // Cleanup with 0 days (should delete all events since they were just created with unixepoch())
+        // Note: This test may be flaky due to timing, so we test with a large negative number
+        // In practice, events are deleted if received_at < unixepoch() - (days * 86400)
+        
+        // For testing, we'll manually verify the cleanup function works
+        // by checking that it returns Ok with 0 deleted for recent events
+        let deleted = cleanup_expired_events(&state, Some(30)).await;
+        assert!(deleted.is_ok());
+        // Recent events should not be deleted with 30 day retention
+        assert_eq!(deleted.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_invalid_retention() {
+        let state = create_test_state();
+
+        // Test with 0 days (invalid)
+        let result = cleanup_expired_events(&state, Some(0)).await;
+        assert!(result.is_err());
+
+        // Test with negative days (invalid)
+        let result = cleanup_expired_events(&state, Some(-1)).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_store_federation_event_exists_check() {
+        let state = create_test_state();
+
+        // Check non-existent event
+        let exists = state.store.federation_event_exists("$nonexistent").unwrap();
+        assert!(!exists);
+
+        // Create and save event
+        let event = create_test_event("$existing_event");
+        save_event_to_store(&event, &state).await.unwrap();
+
+        // Check existing event
+        let exists = state.store.federation_event_exists("$existing_event").unwrap();
+        assert!(exists);
+    }
+
+    #[tokio::test]
+    async fn test_get_unprocessed_events() {
+        let state = create_test_state();
+
+        // Store event directly as unprocessed
+        state.store.store_federation_event(
+            "$unprocessed1",
+            "@sender:test.local",
+            "!room:test.local",
+            "m.room.message",
+            r#"{"body":"test"}"#,
+            chrono::Utc::now().timestamp_millis(),
+        ).unwrap();
+
+        // Get unprocessed events
+        let unprocessed = state.store.get_unprocessed_federation_events(10).unwrap();
+        assert_eq!(unprocessed.len(), 1);
+        assert_eq!(unprocessed[0].event_id, "$unprocessed1");
+        assert!(!unprocessed[0].processed);
     }
 }

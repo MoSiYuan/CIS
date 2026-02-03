@@ -23,6 +23,9 @@ use cis_core::storage::paths::Paths;
 // Telemetry imports
 use cis_core::telemetry::{RequestLogger, RequestLogBuilder, RequestResult, RequestMetrics};
 
+// Skill chain imports
+use cis_core::skill::chain::SkillChain;
+
 /// Arguments for `cis skill do` command - natural language skill invocation
 #[derive(Args, Debug)]
 pub struct SkillDoArgs {
@@ -36,6 +39,25 @@ pub struct SkillDoArgs {
     /// Show candidate skill list
     #[arg(short, long)]
     pub candidates: bool,
+}
+
+/// Arguments for `cis skill chain` command - skill chain preview and execution
+#[derive(Args, Debug)]
+pub struct SkillChainArgs {
+    /// Natural language description of the task
+    pub description: String,
+    
+    /// Preview mode - only show the chain without executing
+    #[arg(long)]
+    pub preview: bool,
+    
+    /// Show detailed matching information
+    #[arg(short, long)]
+    pub verbose: bool,
+    
+    /// Project path
+    #[arg(short, long)]
+    pub project: Option<PathBuf>,
 }
 
 /// Handle `cis skill do` command - semantic skill invocation
@@ -425,6 +447,118 @@ pub fn remove_skill(name: &str) -> Result<()> {
         .with_context(|| format!("Failed to remove skill '{}'", name))?;
     
     println!("✅ Skill '{}' removed.", name);
+    
+    Ok(())
+}
+
+/// Handle `cis skill chain` command - discover and execute skill chains
+pub async fn handle_skill_chain(args: SkillChainArgs) -> Result<()> {
+    let start = std::time::Instant::now();
+    
+    // 1. Parse intent
+    println!("🎯 解析意图: {}", args.description);
+    
+    let vector_storage = Arc::new(VectorStorage::open(
+        &Paths::vector_db(),
+        None::<&EmbeddingConfig>,
+    )?);
+    
+    let embedding_service = vector_storage.embedding_service().clone();
+    let intent_parser = IntentParser::new(embedding_service.clone());
+    
+    let intent = match intent_parser.parse(&args.description).await {
+        Ok(intent) => {
+            if args.verbose {
+                println!("  动作类型: {:?}", intent.action_type);
+                println!("  置信度: {:.2}", intent.confidence);
+                println!("  标准化意图: {}", intent.normalized_intent);
+            }
+            intent
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("Failed to parse intent: {}", e));
+        }
+    };
+    
+    // 2. Route to skills
+    let project_path = args.project.as_deref()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    
+    let project_registry = ProjectSkillRegistry::load(&project_path)
+        .or_else(|_| Ok::<_, anyhow::Error>(ProjectSkillRegistry::new(&project_path)))?;
+    
+    let router = SkillVectorRouter::new(
+        vector_storage.clone(),
+        embedding_service.clone(),
+    );
+    
+    let project_id = project_registry.project_path().to_str();
+    let candidates = router.route(&intent, project_id).await
+        .map_err(|e| anyhow::anyhow!("Failed to route intent: {}", e))?;
+    
+    if candidates.is_empty() {
+        println!("❌ 未找到匹配的技能");
+        return Ok(());
+    }
+    
+    // 3. Discover skill chain
+    let primary = &candidates[0];
+    println!("\n🔗 发现技能链:");
+    println!("   主技能: {} (置信度: {:.2})", primary.skill_name, primary.confidence);
+    
+    // Show chain if suggested
+    if let Some(chain) = &primary.suggested_chain {
+        println!("   建议链: {:?}", chain);
+    }
+    
+    // Show all candidates in verbose mode
+    if args.verbose && candidates.len() > 1 {
+        println!("\n   候选技能:");
+        for (i, c) in candidates.iter().enumerate().take(5).skip(1) {
+            println!("     {}. {} (置信度: {:.2})", i + 1, c.skill_name, c.confidence);
+        }
+    }
+    
+    // 4. Preview mode - only show chain
+    if args.preview {
+        println!("\n📋 预览模式 (不执行):");
+        println!("   将执行以下步骤:");
+        println!("   1. {} - 参数: {}", primary.skill_name, primary.extracted_params);
+        
+        if let Some(chain) = &primary.suggested_chain {
+            for (i, step) in chain.iter().enumerate() {
+                println!("   {}. {}", i + 2, step);
+            }
+        }
+        
+        println!("\n⏱️  耗时: {:?}", start.elapsed());
+        return Ok(());
+    }
+    
+    // 5. Execute chain
+    println!("\n⚡ 执行技能链...");
+    
+    // Build and execute chain
+    let initial_input = serde_json::json!({
+        "intent": intent.normalized_intent,
+        "params": primary.extracted_params,
+        "entities": intent.entities,
+    });
+    
+    let mut chain = SkillChain::new(initial_input);
+    chain.add_step(primary.skill_id.clone());
+    
+    if let Some(suggested) = &primary.suggested_chain {
+        for step in suggested {
+            chain.add_step(step.clone());
+        }
+    }
+    
+    // Execute (mock for now)
+    println!("\n✅ 技能链已构建 (执行需要 SkillManager 支持)");
+    println!("   步骤数: {}", chain.results().len() + 1);
+    println!("   总耗时: {:?}", start.elapsed());
     
     Ok(())
 }

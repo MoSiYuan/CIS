@@ -4,7 +4,7 @@
 //!
 //! ## 生命周期状态
 //!
-//! ```
+//! ```text
 //! Installed → Registered → Loaded → Active → Unloading → Unloaded → Removed
 //!                 ↑_________|___________|       |
 //!                          Pause      Resume     |
@@ -25,6 +25,7 @@ use std::sync::Arc;
 
 pub mod chain;
 pub mod cis_admin;
+pub mod compatibility_db;
 pub mod manager;
 pub mod manifest;
 pub mod project_registry;
@@ -33,13 +34,16 @@ pub mod router;
 pub mod semantics;
 pub mod types;
 
-pub use chain::{ChainBuilder, ChainContext, ChainStep, ChainTemplates, SkillChain, StepResult};
+pub use chain::{ChainBuilder, ChainContext, ChainDiscoveryResult, ChainMetadata, ChainOrchestrator,
+                ChainStep, ChainStepResult, ChainTemplates, SkillChain, SkillCompatibilityRecord, StepResult};
 pub use cis_admin::{CisAdminSkill, CisAnalyzeSkill, CisCommitSkill, CisFileSkill, CisReadSkill, register_cis_local_skills};
+pub use compatibility_db::SkillCompatibilityDb;
 pub use manager::SkillManager;
 pub use manifest::{SkillManifest, SkillPermissions, ManifestValidator};
 pub use project_registry::{ProjectSkillRegistry, ProjectSkillConfig, ProjectSkillEntry, ProjectSkillDiscovery};
 pub use registry::{SkillRegistry, SkillRegistration};
-pub use router::{RouteResult, SkillVectorRouter};
+pub use router::{ChainExecutionResult, ResolvedParameters, RouteResult, 
+                SkillCompatibility, SkillRoutingResult, SkillVectorRouter};
 pub use semantics::{SkillIoSignature, SkillScope, SkillSemanticDescription, SkillSemanticMatcher, SkillSemanticRegistry, SkillSemanticsExt};
 pub use types::{LoadOptions, SkillConfig, SkillInfo, SkillMeta, SkillRoomInfo, SkillState, SkillType};
 

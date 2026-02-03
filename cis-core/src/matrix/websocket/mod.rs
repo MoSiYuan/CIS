@@ -51,11 +51,13 @@
 //! let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
 //! let tunnel_manager = Arc::new(TunnelManager::with_event_channel(event_tx));
 //!
+//! let did_manager = Arc::new(cis_core::identity::DIDManager::generate("kitchen")?);
 //! let mut server = WebSocketServer::new(
 //!     config,
 //!     tunnel_manager,
 //!     store,
 //!     "did:cis:kitchen",
+//!     did_manager,
 //! );
 //!
 //! server.run().await?;
@@ -98,6 +100,7 @@
 //! - Fallback to HTTP if WebSocket connection fails
 
 pub mod client;
+pub mod hole_punching;
 pub mod noise;
 pub mod protocol;
 pub mod server;
@@ -107,6 +110,11 @@ pub mod tunnel;
 pub use client::{
     ConnectOptions, WebSocketClient, WebSocketClientBuilder, WsClientError,
 };
+pub use hole_punching::{
+    create_punch_socket, simultaneous_punch, HolePunchConfig, HolePunchManager,
+    HolePunchState, InMemorySignalingClient, PunchResult, SignalingClient,
+};
+pub use crate::p2p::nat::HolePunchResult;
 pub use noise::{
     keys as noise_keys, NoiseError, NoiseHandshake, NoiseTransport,
 };

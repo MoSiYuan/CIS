@@ -29,7 +29,7 @@
 //!
 //! CIS serves as infrastructure with memory as data. The integration is bidirectional:
 //!
-//! ```
+//! ```text
 //! CIS → Agent: CIS calls external LLM Agent through AgentProvider
 //! Agent → CIS: External Agent calls CIS through CLI/API
 //! ```
@@ -87,8 +87,11 @@ pub mod conversation;
 // Telemetry module - Request logging and observability
 pub mod telemetry;
 
-// Planned modules
-// pub mod p2p;
+// Task module - Task management and vector indexing
+pub mod task;
+
+// P2P module - Peer-to-peer networking
+pub mod p2p;
 
 pub use error::{CisError, Result};
 pub use identity::DIDManager;

@@ -260,11 +260,11 @@ mod tests {
         let data = b"Hello, World!";
         
         let signature = manager.sign(data);
-        assert!(DIDManager::verify(manager.verifying_key(), data, &signature));
+        assert!(DIDManager::verify(&manager.verifying_key(), data, &signature));
         
         // 验证不同的数据应该失败
         let wrong_data = b"Wrong data";
-        assert!(!DIDManager::verify(manager.verifying_key(), wrong_data, &signature));
+        assert!(!DIDManager::verify(&manager.verifying_key(), wrong_data, &signature));
     }
 
     #[test]
@@ -300,6 +300,6 @@ mod tests {
         let sig_hex = manager.sign_to_hex(data);
         let signature = DIDManager::signature_from_hex(&sig_hex).unwrap();
         
-        assert!(DIDManager::verify(manager.verifying_key(), data, &signature));
+        assert!(DIDManager::verify(&manager.verifying_key(), data, &signature));
     }
 }

@@ -1,0 +1,194 @@
+name: Nightly Build
+
+on:
+  schedule:
+    # Run at 00:00 UTC every day
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 检查是否有新提交
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check for changes in last 24 hours
+        id: check
+        run: |
+          # 检查最近24小时是否有提交
+          if git log --since="24 hours ago" --oneline | grep -q .; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Changes detected in last 24 hours"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes in last 24 hours, skipping build"
+          fi
+
+  # 夜间构建
+  build-nightly:
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: universal-apple-darwin
+            name: macOS
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: Linux
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: Windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: nightly
+      
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Build
+        run: cargo build --release --bin cis-node
+      
+      - name: Upload nightly artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cis-nightly-${{ matrix.target }}
+          path: |
+            target/release/cis-node*
+          retention-days: 7
+
+  # 性能基准测试
+  benchmark:
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+      
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Run benchmarks
+        run: cargo bench --lib 2>&1 | tee benchmark-results.txt || true
+      
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.txt
+          retention-days: 30
+
+  # 创建 Nightly Release
+  create-nightly-release:
+    needs: [build-nightly, benchmark]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          
+          # 重命名并移动文件
+          for dir in artifacts/cis-nightly-*; do
+            if [ -d "$dir" ]; then
+              target=$(basename "$dir" | sed 's/cis-nightly-//')
+              
+              # 查找二进制文件
+              for binary in "$dir"/cis-node*; do
+                if [ -f "$binary" ]; then
+                  ext=""
+                  if [[ "$binary" == *.exe ]]; then
+                    ext=".exe"
+                  fi
+                  cp "$binary" "release-assets/cis-nightly-${target}${ext}"
+                fi
+              done
+            fi
+          done
+          
+          ls -la release-assets/
+      
+      - name: Update Nightly Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Nightly Build
+          tag_name: nightly
+          body: |
+            This is an automated nightly build from the latest `main` branch.
+            
+            **Warning:** This build may be unstable. Use at your own risk.
+            
+            ## Changes since last stable release
+            
+            See [CHANGELOG.md](../blob/main/CHANGELOG.md) for details.
+            
+            ## Installation
+            
+            Download the appropriate binary for your platform and make it executable:
+            
+            ```bash
+            # macOS/Linux
+            chmod +x cis-nightly-*
+            ./cis-nightly-* --version
+            
+            # Windows
+            .\cis-nightly-windows-x86_64.exe --version
+            ```
+          draft: false
+          prerelease: true
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 报告
+  notify:
+    needs: create-nightly-release
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Report status
+        run: |
+          if [ "${{ needs.create-nightly-release.result }}" == "success" ]; then
+            echo "✅ Nightly build completed successfully"
+            echo "Download: https://github.com/${{ github.repository }}/releases/tag/nightly"
+          else
+            echo "❌ Nightly build failed"
+            echo "Check logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi

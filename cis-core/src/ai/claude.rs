@@ -1,6 +1,6 @@
 //! Claude CLI AI Provider 实现
 
-use super::{AiProvider, AiError, Message, Result};
+use super::{AiProvider, AiError, ConversationContext, Message, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -134,5 +134,29 @@ impl AiProvider for ClaudeCliProvider {
         
         serde_json::from_str(json_str)
             .map_err(|e| AiError::InvalidResponse(format!("JSON parse error: {}", e)))
+    }
+
+    /// 带 RAG 上下文的对话 (CVI-011)
+    async fn chat_with_rag(
+        &self,
+        prompt: &str,
+        ctx: Option<&ConversationContext>,
+    ) -> Result<String> {
+        // 如果提供了上下文，构建增强 Prompt
+        let enhanced_prompt = if let Some(context) = ctx {
+            match context.prepare_ai_prompt(prompt).await {
+                Ok(enhanced) => enhanced,
+                Err(e) => {
+                    // 如果构建增强 Prompt 失败，回退到原始 Prompt
+                    tracing::warn!("Failed to prepare AI prompt: {}, using original", e);
+                    prompt.to_string()
+                }
+            }
+        } else {
+            prompt.to_string()
+        };
+
+        // 使用简单的 chat 方法发送增强后的 Prompt
+        self.chat(&enhanced_prompt).await
     }
 }

@@ -178,7 +178,7 @@ fn parse_feishu_event(payload: &Value) -> Result<FeishuEventInternal, String> {
         }
         "im.chat.member.added_v1" => {
             // 用户加入群组
-            let event_data = &payload["event"];
+            let _event_data = &payload["event"];
             Ok(FeishuEventInternal::UserJoined)
         }
         "im.chat.member.removed_v1" => {
@@ -270,7 +270,7 @@ fn parse_feishu_message(data: &Value) -> Result<feishu::FeishuMessage, String> {
 
 /// 处理事件
 async fn process_event(
-    state: WebhookState,
+    _state: WebhookState,
     event: FeishuEventInternal,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match event {

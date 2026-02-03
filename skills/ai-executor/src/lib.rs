@@ -4,7 +4,6 @@
 //! 直接执行，不检查环境可用性（信任用户已配置）
 
 use std::process::{Command, Stdio};
-use std::collections::HashMap;
 
 /// AI Agent 类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -79,6 +78,6 @@ impl Default for AiExecutor {
 pub extern "C" fn skill_init() -> i32 { 0 }
 
 #[no_mangle]
-pub extern "C" fn skill_execute(input_ptr: *const u8, input_len: usize) -> i32 {
+pub extern "C" fn skill_execute(_input_ptr: *const u8, _input_len: usize) -> i32 {
     0
 }

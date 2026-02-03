@@ -498,6 +498,18 @@ impl SkillManager {
             .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
         Ok(active_skills.keys().cloned().collect())
     }
+    
+    /// 获取 Skill Registry（用于直接访问 registry 操作）
+    pub fn get_registry(&self) -> Result<std::sync::MutexGuard<'_, SkillRegistry>> {
+        self.registry.lock()
+            .map_err(|e| CisError::skill(format!("Registry lock failed: {}", e)))
+    }
+    
+    /// 获取 WASM Runtime（用于执行 WASM skills）
+    #[cfg(feature = "wasm")]
+    pub fn get_wasm_runtime(&self) -> Result<Arc<std::sync::Mutex<WasmRuntime>>> {
+        Ok(self.wasm_runtime.clone())
+    }
 
     // ==================== 工具方法 ====================
 
@@ -557,6 +569,7 @@ mod tests {
             permissions: vec![],
             subscriptions: vec![],
             config_schema: None,
+            room_config: None,
         };
 
         manager.register(meta).unwrap();

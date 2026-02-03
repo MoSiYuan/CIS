@@ -473,6 +473,15 @@ impl TunnelManager {
             }
         }
     }
+
+    /// Send a CIS Matrix event to the event channel
+    pub async fn send_event_to_channel(
+        &self,
+        node_id: String,
+        event: CisMatrixEvent,
+    ) -> Result<(), mpsc::error::SendError<(String, CisMatrixEvent)>> {
+        self.event_tx.send((node_id, event)).await
+    }
 }
 
 /// Tunnel errors

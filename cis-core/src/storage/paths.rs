@@ -1,6 +1,12 @@
 //! 跨平台目录路径管理
 //!
-//! 遵循各平台规范：
+//! 路径解析策略（优先级从高到低）：
+//! 1. 环境变量 `CIS_DATA_DIR` - 手动覆盖
+//! 2. Release 模式: 使用可执行文件所在目录
+//! 3. Git 项目: 使用 Git 根目录下的 `.cis/`
+//! 4. 系统默认目录
+//!
+//! 各平台默认：
 //! - macOS: `~/Library/Application Support/CIS`
 //! - Linux: `~/.local/share/cis` 或 `$XDG_DATA_HOME/cis`
 //! - Windows: `%LOCALAPPDATA%\CIS`
@@ -10,17 +16,89 @@ use std::path::PathBuf;
 /// 目录路径管理器
 pub struct Paths;
 
+/// 运行模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunMode {
+    /// Release 模式 - 便携版，使用当前目录
+    Release,
+    /// 开发模式 - 使用 Git 根目录或系统目录
+    Development,
+}
+
 impl Paths {
+    /// 检测当前运行模式
+    pub fn run_mode() -> RunMode {
+        // 如果可执行文件在 target/release 中，认为是 Release 模式
+        if let Ok(exe_path) = std::env::current_exe() {
+            let exe_str = exe_path.to_string_lossy();
+            if exe_str.contains("target/release/") || exe_str.contains("target\\release\\") {
+                return RunMode::Release;
+            }
+        }
+        
+        // 检查环境变量 CIS_PORTABLE=1 强制使用便携模式
+        if std::env::var("CIS_PORTABLE").unwrap_or_default() == "1" {
+            return RunMode::Release;
+        }
+        
+        RunMode::Development
+    }
+
+    /// 获取 Git 项目根目录
+    pub fn git_root() -> Option<PathBuf> {
+        // 从当前工作目录开始向上查找
+        let mut current = std::env::current_dir().ok()?;
+        
+        loop {
+            let git_dir = current.join(".git");
+            if git_dir.exists() {
+                return Some(current);
+            }
+            
+            // 尝试父目录
+            match current.parent() {
+                Some(parent) => current = parent.to_path_buf(),
+                None => break,
+            }
+        }
+        
+        None
+    }
+
     // ==================== 基础目录 ====================
 
     /// 获取 CIS 数据根目录
     ///
-    /// 环境变量 `CIS_DATA_DIR` 可覆盖默认路径
+    /// 解析优先级：
+    /// 1. 环境变量 `CIS_DATA_DIR`
+    /// 2. Release 模式: 可执行文件所在目录
+    /// 3. Git 项目: `.cis/` 目录
+    /// 4. 系统默认目录
     pub fn data_dir() -> PathBuf {
+        // 1. 环境变量覆盖
         if let Ok(dir) = std::env::var("CIS_DATA_DIR") {
             return PathBuf::from(dir);
         }
 
+        // 2. Release 模式 - 使用可执行文件所在目录
+        if Self::run_mode() == RunMode::Release {
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(exe_dir) = exe_path.parent() {
+                    return exe_dir.join(".cis");
+                }
+            }
+        }
+
+        // 3. Git 项目模式
+        if let Some(git_root) = Self::git_root() {
+            let cis_dir = git_root.join(".cis");
+            // 如果 .cis 目录已存在，优先使用它
+            if cis_dir.exists() {
+                return cis_dir;
+            }
+        }
+
+        // 4. 系统默认目录
         #[cfg(target_os = "macos")]
         {
             Self::macos_data_dir()
@@ -37,31 +115,40 @@ impl Paths {
         }
     }
 
+    /// 获取配置目录
+    pub fn config_dir() -> PathBuf {
+        // Release 模式下，配置文件也在 .cis 目录
+        if Self::run_mode() == RunMode::Release {
+            return Self::data_dir();
+        }
+        
+        // 开发模式：Git 项目使用 .cis/，否则使用系统配置目录
+        if let Some(git_root) = Self::git_root() {
+            return git_root.join(".cis");
+        }
+        
+        Self::data_dir()
+    }
+
     #[cfg(target_os = "macos")]
     fn macos_data_dir() -> PathBuf {
-        dirs::data_dir()
-            .expect("Failed to get macOS data directory")
-            .join("CIS")
+        dirs::home_dir()
+            .expect("Failed to get home directory")
+            .join(".cis")
     }
 
     #[cfg(target_os = "linux")]
     fn linux_data_dir() -> PathBuf {
-        // 优先使用 XDG_DATA_HOME
-        std::env::var("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .map(|p| p.join("cis"))
-            .unwrap_or_else(|_| {
-                dirs::home_dir()
-                    .expect("Failed to get home directory")
-                    .join(".local/share/cis")
-            })
+        dirs::home_dir()
+            .expect("Failed to get home directory")
+            .join(".cis")
     }
 
     #[cfg(target_os = "windows")]
     fn windows_data_dir() -> PathBuf {
-        dirs::data_local_dir()
-            .expect("Failed to get Windows local data directory")
-            .join("CIS")
+        dirs::home_dir()
+            .expect("Failed to get home directory")
+            .join(".cis")
     }
 
     // ==================== 核心目录 ====================
@@ -76,27 +163,27 @@ impl Paths {
         Self::node_db()
     }
 
-    /// 主数据库路径 (~/.cis/node.db)
+    /// 主数据库路径
     pub fn node_db() -> PathBuf {
         Self::data_dir().join("node.db")
     }
 
-    /// 邦联数据库路径 (~/.cis/federation.db)
+    /// 邦联数据库路径
     pub fn federation_db() -> PathBuf {
         Self::data_dir().join("federation.db")
     }
 
-    /// 记忆数据库路径 (~/.cis/memory.db)
+    /// 记忆数据库路径
     pub fn memory_db() -> PathBuf {
         Self::data_dir().join("memory.db")
     }
 
-    /// 向量数据库路径 (~/.cis/vector.db)
+    /// 向量数据库路径
     pub fn vector_db() -> PathBuf {
         Self::data_dir().join("vector.db")
     }
 
-    /// WAL 文件目录 (~/.cis/wal/)
+    /// WAL 文件目录
     pub fn wal_dir() -> PathBuf {
         Self::data_dir().join("wal")
     }
@@ -108,12 +195,32 @@ impl Paths {
 
     /// 主配置文件路径
     pub fn config_file() -> PathBuf {
-        Self::data_dir().join("config.toml")
+        Self::config_dir().join("config.toml")
     }
 
     /// 节点密钥路径
     pub fn node_key_file() -> PathBuf {
         Self::data_dir().join("node.key")
+    }
+
+    /// 获取当前项目目录
+    pub fn current_project_dir() -> Option<PathBuf> {
+        let current = std::env::current_dir().ok()?;
+        
+        // 如果在 Git 项目中，返回 Git 根目录
+        if let Some(git_root) = Self::git_root() {
+            if current.starts_with(&git_root) {
+                return Some(current);
+            }
+        }
+        
+        // 否则返回当前目录
+        Some(current)
+    }
+
+    /// 获取当前项目的 CIS 目录
+    pub fn current_project_cis_dir() -> Option<PathBuf> {
+        Self::current_project_dir().map(|d| d.join(".cis"))
     }
 
     // ==================== Skill 目录 ====================
@@ -153,7 +260,7 @@ impl Paths {
         Self::skills_data_dir().join(skill_name)
     }
 
-    /// 特定 Skill 的数据库路径 (~/.cis/skills/{skill_name}.db)
+    /// 特定 Skill 的数据库路径
     pub fn skill_db(skill_name: &str) -> PathBuf {
         Self::skills_dir().join(format!("{}.db", skill_name))
     }
@@ -260,6 +367,27 @@ impl Paths {
         }
         Ok(())
     }
+
+    /// 显示路径信息（用于诊断）
+    pub fn print_info() {
+        println!("📁 CIS 路径信息:");
+        println!("{}", "-".repeat(50));
+        println!("  运行模式: {}", match Self::run_mode() {
+            RunMode::Release => "Release (便携模式)",
+            RunMode::Development => "Development (开发模式)",
+        });
+        
+        if let Some(git_root) = Self::git_root() {
+            println!("  Git 根目录: {}", git_root.display());
+        } else {
+            println!("  Git 根目录: 未检测到");
+        }
+        
+        println!("  数据目录:   {}", Self::data_dir().display());
+        println!("  配置目录:   {}", Self::config_dir().display());
+        println!("  配置文件:   {}", Self::config_file().display());
+        println!("{}", "-".repeat(50));
+    }
 }
 
 #[cfg(test)]
@@ -273,7 +401,7 @@ mod tests {
         assert!(!data_dir.as_os_str().is_empty());
 
         let core_db = Paths::core_db();
-        assert!(core_db.to_string_lossy().contains("core"));
+        assert!(core_db.to_string_lossy().contains("node"));
         assert!(core_db.to_string_lossy().ends_with(".db"));
 
         let skill_db = Paths::skill_db("test-skill");

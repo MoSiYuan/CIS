@@ -3,8 +3,10 @@
 //! 从 AgentFlow 迁移的记忆整理功能
 //! 使用 AI 自动整理和增强记忆
 
+use std::slice;
+
 /// 记忆条目
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MemoryEntry {
     pub key: String,
     pub value: Vec<u8>,
@@ -24,7 +26,7 @@ pub struct MemoryOrganizer {
 }
 
 impl MemoryOrganizer {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self { Self {} }
     
     /// 处理记忆写入事件
     pub fn on_memory_write(&self, entry: &MemoryEntry) {
@@ -149,7 +151,7 @@ pub extern "C" fn skill_parse_keywords(input: *const u8, len: usize) -> *mut u8 
     use std::ffi::CString;
     
     if input.is_null() || len == 0 {
-        return CString::new("[]").unwrap().into_raw();
+        return CString::new("[]").unwrap().into_raw() as *mut u8;
     }
     
     let slice = unsafe { slice::from_raw_parts(input, len) };
@@ -159,5 +161,5 @@ pub extern "C" fn skill_parse_keywords(input: *const u8, len: usize) -> *mut u8 
     let keywords = organizer.parse_keywords(&response);
     
     let json = serde_json::to_string(&keywords).unwrap_or_else(|_| "[]".to_string());
-    CString::new(json).unwrap().into_raw()
+    CString::new(json).unwrap().into_raw() as *mut u8
 }

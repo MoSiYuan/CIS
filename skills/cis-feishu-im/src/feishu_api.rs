@@ -3,12 +3,11 @@
 //! 提供飞书开放平台 API 的调用封装
 
 use reqwest::{Client, Error as ReqwestError};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use thiserror::Error;
-use chrono::{DateTime, Utc};
 
 /// 飞书 API 错误
 #[derive(Error, Debug)]

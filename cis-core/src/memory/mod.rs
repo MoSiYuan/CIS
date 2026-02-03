@@ -23,7 +23,7 @@ pub mod encryption;
 pub mod service;
 
 pub use self::encryption::MemoryEncryption;
-pub use self::service::{MemoryItem, MemoryService, SearchOptions, SyncMarker};
+pub use self::service::{MemoryItem, MemoryService, SearchOptions, SyncMarker, MemorySearchResult};
 
 /// 扩展的记忆条目（包含更多元数据）
 #[derive(Debug, Clone, Serialize, Deserialize)]

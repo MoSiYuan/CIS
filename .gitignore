@@ -1,8 +1,13 @@
 # ==================== Rust build artifacts ====================
 /target/
 **/target/
+/target-*/
+**/target-*/
 /debug/
 **/debug/
+*.rlib
+*.rmeta
+*.d
 
 # Cargo lock files (optional, uncomment if needed)
 # Cargo.lock

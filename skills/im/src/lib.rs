@@ -8,11 +8,19 @@
 
 pub mod db;
 pub mod error;
+pub mod handler;
+pub mod message;
+pub mod search;
+pub mod session;
 pub mod types;
 pub mod matrix_adapter;
 
 pub use db::ImDatabase;
 pub use error::{ImError, Result};
+pub use handler::*;
+pub use message::MessageManager;
+pub use search::ImMessageSearch;
+pub use session::SessionManager;
 pub use types::*;
 
 use std::path::Path;

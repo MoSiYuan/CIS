@@ -48,9 +48,8 @@ extern crate core;
 use cis_skill_sdk::{
     Result, Skill, SkillContext, SkillConfig, Event, Error as SdkError,
 };
-use cis_core::ai::{self, AiProvider, ClaudeCliProvider, KimiCodeProvider, ProviderType};
+use cis_core::ai::{AiProvider, ClaudeCliProvider, KimiCodeProvider, ProviderType};
 use std::sync::Arc;
-use thiserror::Error;
 use tokio::sync::RwLock;
 
 // 导出核心类型

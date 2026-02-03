@@ -49,6 +49,21 @@ md5 = "0.7"
 prost = { version = "0.12", optional = true }
 tonic = { version = "0.10", optional = true }
 
+# P2P Networking
+quinn = "0.10"
+rcgen = "0.12"
+mdns-sd = "0.10"
+rustls = "0.21"
+rustls-native-certs = "0.6"
+
+# DHT for P2P discovery
+# Using a lightweight DHT implementation
+# For production, consider libp2p-kad or similar
+
+# NAT traversal
+stun = "0.5"  # STUN client
+igd = "0.12"  # UPnP IGD client for port mapping
+
 # WebSocket Federation
 tokio-tungstenite = "0.21"
 

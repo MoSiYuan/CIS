@@ -9,7 +9,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::{CisError, Result};
-use crate::storage::conversation_db::ConversationDb;
+use crate::storage::conversation_db::{Conversation, ConversationDb};
 use crate::vector::VectorStorage;
 
 /// 对话上下文
@@ -375,6 +375,273 @@ impl ConversationContext {
         self.project_path = path.into();
         self.last_updated = Utc::now();
     }
+
+    // ==================== CVI-006: RAG 增强功能 ====================
+
+    /// 查找相似对话 (跨目录恢复核心)
+    /// 
+    /// 使用 summary_embeddings 表进行语义搜索，找到与查询相关的历史对话。
+    pub async fn find_similar_conversations(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<Conversation>> {
+        if let Some(storage) = &self.vector_storage {
+            // 使用向量存储搜索相似摘要
+            let results = storage
+                .search_summaries(query, None, limit, Some(0.6))
+                .await
+                .map_err(|e| CisError::vector(format!("Failed to search summaries: {}", e)))?;
+
+            // 将搜索结果转换为 Conversation 对象
+            let mut conversations = Vec::new();
+            for result in results {
+                // 根据 room_id (conversation_id) 获取完整的对话信息
+                // 注意：这里简化处理，实际可能需要从 conversation_db 获取完整信息
+                let conv = Conversation {
+                    id: result.room_id.clone(),
+                    session_id: self.session_id.clone(),
+                    project_path: self.project_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+                    summary: Some(result.summary_text),
+                    topics: Vec::new(), // 可以从存储中检索
+                    created_at: DateTime::from_timestamp(result.start_time, 0).unwrap_or_else(Utc::now),
+                    updated_at: DateTime::from_timestamp(result.end_time, 0).unwrap_or_else(Utc::now),
+                };
+                conversations.push(conv);
+            }
+
+            Ok(conversations)
+        } else {
+            // 没有向量存储时返回空列表
+            Ok(Vec::new())
+        }
+    }
+
+    /// 保存并生成摘要
+    /// 
+    /// 生成对话摘要，保存到数据库，并建立向量索引。
+    pub async fn save_with_summary(&self, conversation_db: Arc<ConversationDb>) -> Result<()> {
+        // 1. 生成摘要
+        let summary = self.generate_summary_internal().await?;
+
+        // 2. 提取话题
+        let topics = self.extract_topics_internal().await?;
+
+        // 3. 保存到 conversation_db
+        let conv = Conversation {
+            id: self.conversation_id.clone(),
+            session_id: self.session_id.clone(),
+            project_path: self.project_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+            summary: Some(summary.clone()),
+            topics: topics.clone(),
+            created_at: self.created_at,
+            updated_at: Utc::now(),
+        };
+        conversation_db.save_conversation(&conv)?;
+
+        // 4. 保存所有消息
+        for msg in &self.messages {
+            let db_msg = crate::storage::conversation_db::ConversationMessage {
+                id: msg.id.clone(),
+                conversation_id: self.conversation_id.clone(),
+                role: msg.role.to_string(),
+                content: msg.content.clone(),
+                timestamp: msg.timestamp,
+            };
+            conversation_db.save_message(&db_msg)?;
+        }
+
+        // 5. 建立摘要向量索引
+        if let Some(storage) = &self.vector_storage {
+            let summary_id = format!("summary-{}", self.conversation_id);
+            let start_time = self.created_at.timestamp();
+            let end_time = self.last_updated.timestamp();
+            
+            storage
+                .index_summary(&summary_id, &self.conversation_id, &summary, start_time, end_time)
+                .await
+                .map_err(|e| CisError::vector(format!("Failed to index summary: {}", e)))?;
+        }
+
+        Ok(())
+    }
+
+    /// 为 AI 准备增强 Prompt
+    /// 
+    /// 构建包含相关历史、记忆和技能信息的 RAG 增强 Prompt。
+    pub async fn prepare_ai_prompt(&self, user_input: &str) -> Result<String> {
+        let mut context_parts = Vec::new();
+
+        // 1. 添加项目上下文
+        if let Some(project_path) = &self.project_path {
+            context_parts.push(format!("## 当前项目\n{}", project_path.display()));
+        }
+
+        // 2. 添加对话摘要（如果有）
+        if let Some(summary) = &self.summary {
+            context_parts.push(format!("## 对话摘要\n{}", summary));
+        }
+
+        // 3. 添加话题标签
+        if !self.topics.is_empty() {
+            context_parts.push(format!("## 相关话题\n{}", self.topics.join(", ")));
+        }
+
+        // 4. 检索相关历史消息
+        let relevant_history = self.retrieve_relevant_history(user_input, 5).await?;
+        if !relevant_history.is_empty() {
+            context_parts.push("## 相关历史对话".to_string());
+            for msg in relevant_history {
+                let role_str = match msg.role {
+                    MessageRole::User => "用户",
+                    MessageRole::Assistant => "助手",
+                    MessageRole::System => "系统",
+                    MessageRole::Tool => "工具",
+                };
+                context_parts.push(format!("{}: {}", role_str, msg.content));
+            }
+        }
+
+        // 5. 添加当前对话历史（最近的几轮）
+        let recent_dialog = self.recent_dialog(3);
+        if !recent_dialog.is_empty() {
+            context_parts.push("## 当前对话".to_string());
+            for msg in recent_dialog {
+                let role_str = match msg.role {
+                    MessageRole::User => "用户",
+                    MessageRole::Assistant => "助手",
+                    MessageRole::System => "系统",
+                    MessageRole::Tool => "工具",
+                };
+                context_parts.push(format!("{}: {}", role_str, msg.content));
+            }
+        }
+
+        // 6. 组合最终的 Prompt
+        let prompt = if context_parts.is_empty() {
+            user_input.to_string()
+        } else {
+            format!(
+                "{context}\n\n## 用户问题\n{input}",
+                context = context_parts.join("\n\n"),
+                input = user_input
+            )
+        };
+
+        Ok(prompt)
+    }
+
+    /// 生成摘要 (内部实现)
+    /// 
+    /// 基于对话内容生成简洁的摘要。
+    async fn generate_summary_internal(&self) -> Result<String> {
+        // 简化实现：提取用户问题的关键词组合
+        let user_questions: Vec<&str> = self
+            .messages
+            .iter()
+            .filter(|m| matches!(m.role, MessageRole::User))
+            .map(|m| m.content.as_str())
+            .take(3) // 取前3个问题
+            .collect();
+
+        if user_questions.is_empty() {
+            return Ok("空对话".to_string());
+        }
+
+        // 构建简单摘要
+        let summary = if user_questions.len() == 1 {
+            format!("关于: {}", Self::truncate_text(user_questions[0], 50))
+        } else {
+            format!(
+                "讨论主题: {} 等",
+                Self::truncate_text(user_questions[0], 30)
+            )
+        };
+
+        Ok(summary)
+    }
+
+    /// 提取主题 (内部实现)
+    /// 
+    /// 从对话内容中提取关键词主题。
+    async fn extract_topics_internal(&self) -> Result<Vec<String>> {
+        let mut topics = Vec::new();
+        
+        // 简单的关键词提取规则
+        let keywords = vec![
+            ("代码", vec!["代码", "函数", "类", "方法", "变量", "编程"]),
+            ("配置", vec!["配置", "设置", "选项", "参数", "config"]),
+            ("错误", vec!["错误", "异常", "bug", "问题", "失败"]),
+            ("优化", vec!["优化", "性能", "提升", "改进", "效率"]),
+            ("数据库", vec!["数据库", "sql", "表", "查询", "存储"]),
+            ("API", vec!["api", "接口", "请求", "响应", "endpoint"]),
+            ("部署", vec!["部署", "发布", "上线", "服务器", "生产环境"]),
+            ("测试", vec!["测试", "单元测试", "集成测试", "覆盖率"]),
+        ];
+
+        // 合并所有消息内容
+        let all_content: String = self
+            .messages
+            .iter()
+            .map(|m| m.content.to_lowercase())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // 检查关键词匹配
+        for (topic, words) in keywords {
+            if words.iter().any(|w| all_content.contains(w)) {
+                topics.push(topic.to_string());
+            }
+            if topics.len() >= 5 {
+                break;
+            }
+        }
+
+        // 如果没有匹配到，添加默认主题
+        if topics.is_empty() {
+            topics.push("一般讨论".to_string());
+        }
+
+        Ok(topics)
+    }
+
+    /// 辅助方法：截断文本
+    fn truncate_text(text: &str, max_len: usize) -> String {
+        if text.len() <= max_len {
+            text.to_string()
+        } else {
+            format!("{}...", &text[..max_len])
+        }
+    }
+
+    /// 开始新对话（便捷方法）
+    pub async fn start_conversation(
+        &mut self,
+        session_id: impl Into<String>,
+        project_path: Option<PathBuf>,
+    ) -> Result<()> {
+        self.session_id = session_id.into();
+        self.project_path = project_path;
+        self.messages.clear();
+        self.summary = None;
+        self.topics.clear();
+        self.created_at = Utc::now();
+        self.last_updated = Utc::now();
+        Ok(())
+    }
+
+    /// 添加用户消息（异步版本，便捷方法）
+    pub async fn add_user_message_async(&mut self, content: impl Into<String>) -> Result<String> {
+        Ok(self.add_user_message_with_index(content).await?)
+    }
+
+    /// 添加助手消息（异步版本，便捷方法）
+    pub async fn add_assistant_message_async(
+        &mut self,
+        content: impl Into<String>,
+    ) -> Result<String> {
+        Ok(self.add_assistant_message_with_index(content, None).await?)
+    }
 }
 
 /// 可恢复会话信息
@@ -580,5 +847,116 @@ mod tests {
     fn test_with_vector_storage() {
         // 注意：此测试需要一个模拟的VectorStorage
         // 在实际测试中需要使用mock或测试数据库
+    }
+
+    // ==================== CVI-006: 新增测试 ====================
+
+    #[tokio::test]
+    async fn test_prepare_ai_prompt() {
+        let mut ctx =
+            ConversationContext::new("conv-004".to_string(), "session-001".to_string());
+
+        // 设置项目路径
+        ctx.set_project_path(Some(PathBuf::from("/home/user/myproject")));
+
+        // 添加系统消息
+        ctx.add_system_message("You are a helpful assistant.");
+
+        // 添加用户消息
+        ctx.add_user_message("如何设置导航？");
+
+        // 添加助手消息
+        ctx.add_assistant_message("导航已设置完成。", None);
+
+        // 设置摘要
+        ctx.set_summary("讨论导航设置");
+
+        // 添加话题
+        ctx.add_topic("导航");
+        ctx.add_topic("配置");
+
+        // 准备 AI Prompt
+        let prompt = ctx.prepare_ai_prompt("如何优化查询？").await.unwrap();
+
+        // 验证 Prompt 包含上下文信息
+        assert!(prompt.contains("当前项目"));
+        assert!(prompt.contains("/home/user/myproject"));
+        assert!(prompt.contains("对话摘要"));
+        assert!(prompt.contains("讨论导航设置"));
+        assert!(prompt.contains("相关话题"));
+        assert!(prompt.contains("导航"));
+        assert!(prompt.contains("用户问题"));
+        assert!(prompt.contains("如何优化查询？"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_summary_internal() {
+        let mut ctx =
+            ConversationContext::new("conv-005".to_string(), "session-001".to_string());
+
+        // 空对话时返回默认摘要
+        let summary = ctx.generate_summary_internal().await.unwrap();
+        assert_eq!(summary, "空对话");
+
+        // 添加用户消息
+        ctx.add_user_message("这是一个关于数据库配置的问题");
+        let summary = ctx.generate_summary_internal().await.unwrap();
+        assert!(summary.contains("关于:"));
+        assert!(summary.contains("数据库配置"));
+
+        // 添加更多消息
+        ctx.add_user_message("第二个问题关于 API 设计");
+        let summary = ctx.generate_summary_internal().await.unwrap();
+        assert!(summary.contains("讨论主题:"));
+    }
+
+    #[tokio::test]
+    async fn test_extract_topics_internal() {
+        let mut ctx =
+            ConversationContext::new("conv-006".to_string(), "session-001".to_string());
+
+        // 添加关于代码的消息
+        ctx.add_user_message("如何优化这个函数的性能？");
+        ctx.add_user_message("变量命名有问题");
+
+        let topics = ctx.extract_topics_internal().await.unwrap();
+        assert!(!topics.is_empty());
+        assert!(topics.contains(&"代码".to_string()));
+
+        // 添加关于配置的消息
+        ctx.add_user_message("配置文件需要修改参数");
+        let topics = ctx.extract_topics_internal().await.unwrap();
+        assert!(topics.contains(&"配置".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_start_conversation() {
+        let mut ctx =
+            ConversationContext::new("conv-007".to_string(), "session-001".to_string());
+
+        // 添加一些消息
+        ctx.add_user_message("测试消息");
+        ctx.add_topic("测试");
+        ctx.set_summary("测试摘要");
+
+        // 开始新对话
+        ctx.start_conversation("session-002", Some(PathBuf::from("/new/project")))
+            .await
+            .unwrap();
+
+        assert_eq!(ctx.session_id, "session-002");
+        assert_eq!(ctx.project_path, Some(PathBuf::from("/new/project")));
+        assert!(ctx.messages.is_empty());
+        assert!(ctx.summary.is_none());
+        assert!(ctx.topics.is_empty());
+    }
+
+    #[test]
+    fn test_truncate_text() {
+        assert_eq!(ConversationContext::truncate_text("短文本", 10), "短文本");
+        assert_eq!(
+            ConversationContext::truncate_text("这是一个很长的文本内容", 5),
+            "这是一个很..."
+        );
     }
 }

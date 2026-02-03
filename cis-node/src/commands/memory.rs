@@ -6,9 +6,20 @@
 use anyhow::{Context, Result};
 use cis_core::memory::MemoryService;
 use cis_core::types::{MemoryCategory, MemoryDomain};
-use cis_core::vector::VectorStorage;
+use cis_core::vector::{VectorStorage, MemoryResult};
 use cis_core::storage::paths::Paths;
-use clap::Args;
+use clap::{Args, ValueEnum};
+
+/// Output format for search results
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum OutputFormat {
+    /// Plain text output (default)
+    Plain,
+    /// JSON format
+    Json,
+    /// Table format
+    Table,
+}
 
 /// Arguments for `cis memory search` command - semantic vector search
 #[derive(Args, Debug)]
@@ -27,6 +38,10 @@ pub struct MemorySearchArgs {
     /// Category filter
     #[arg(short, long)]
     pub category: Option<String>,
+    
+    /// Output format
+    #[arg(short, long, value_enum, default_value = "plain")]
+    pub format: OutputFormat,
 }
 
 /// Handle `cis memory search` command - semantic vector search
@@ -35,8 +50,6 @@ pub async fn handle_memory_search(args: MemorySearchArgs) -> Result<()> {
         &Paths::vector_db(),
         None::<&cis_core::ai::embedding::EmbeddingConfig>,
     )?;
-    
-    println!("🔍 搜索: {}", args.query);
     
     let results = if let Some(category) = args.category {
         // Search by category
@@ -47,6 +60,78 @@ pub async fn handle_memory_search(args: MemorySearchArgs) -> Result<()> {
         storage.search_memory(&args.query, args.limit, args.threshold).await
             .map_err(|e| anyhow::anyhow!("Search failed: {}", e))?
     };
+    
+    // Format and output results based on format argument
+    match args.format {
+        OutputFormat::Json => output_json(&results, &args.query),
+        OutputFormat::Table => output_table(&results, &args.query).await,
+        OutputFormat::Plain => output_plain(&results, &args.query).await,
+    }
+}
+
+/// Output results in JSON format
+fn output_json(results: &[MemoryResult], query: &str) -> Result<()> {
+    let output = serde_json::json!({
+        "query": query,
+        "count": results.len(),
+        "results": results.iter().map(|r| {
+            serde_json::json!({
+                "memory_id": r.memory_id,
+                "key": r.key,
+                "category": r.category,
+                "similarity": r.similarity,
+            })
+        }).collect::<Vec<_>>()
+    });
+    
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+/// Output results in table format
+async fn output_table(results: &[MemoryResult], query: &str) -> Result<()> {
+    println!("🔍 搜索: {} (找到 {} 条结果)\n", query, results.len());
+    
+    if results.is_empty() {
+        println!("❌ 未找到相关记忆");
+        return Ok(());
+    }
+    
+    // Print table header
+    println!("{:<4} {:<30} {:<15} {:>10}", "No.", "Key", "Category", "Similarity");
+    println!("{}", "-".repeat(65));
+    
+    // Print rows
+    for (i, r) in results.iter().enumerate() {
+        let key = if r.key.len() > 28 {
+            format!("{}...", &r.key[..25])
+        } else {
+            r.key.clone()
+        };
+        
+        let category = r.category.as_deref().unwrap_or("general");
+        let category = if category.len() > 13 {
+            format!("{}...", &category[..10])
+        } else {
+            category.to_string()
+        };
+        
+        println!(
+            "{:<4} {:<30} {:<15} {:>9.1}%",
+            i + 1,
+            key,
+            category,
+            r.similarity * 100.0
+        );
+    }
+    
+    println!();
+    Ok(())
+}
+
+/// Output results in plain format (default)
+async fn output_plain(results: &[MemoryResult], query: &str) -> Result<()> {
+    println!("🔍 搜索: {}", query);
     
     if results.is_empty() {
         println!("❌ 未找到相关记忆");

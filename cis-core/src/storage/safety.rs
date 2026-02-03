@@ -65,7 +65,7 @@ impl ShutdownSafety {
     ///
     /// # Arguments
     ///
-    /// * `conn` - 数据库连接（Arc<Mutex<Connection>>）
+    /// * `conn` - 数据库连接（`Arc<Mutex<rusqlite::Connection>>`）
     pub async fn register(&self, conn: Arc<Mutex<Connection>>) {
         let mut connections = self.connections.lock().await;
         connections.push(conn);

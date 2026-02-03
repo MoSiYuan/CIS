@@ -421,13 +421,29 @@ mod tests {
     use tempfile::tempdir;
 
     fn create_test_skill_info(id: &str, name: &str) -> SkillInfo {
+        use crate::skill::types::{SkillMeta, SkillRuntime, SkillState};
+        
         SkillInfo {
-            id: id.to_string(),
-            name: name.to_string(),
-            version: "0.1.0".to_string(),
-            description: Some("Test skill".to_string()),
-            author: Some("Test".to_string()),
-            skill_type: crate::skill::types::SkillType::Wasm,
+            meta: SkillMeta {
+                name: name.to_string(),
+                version: "0.1.0".to_string(),
+                description: "Test skill".to_string(),
+                author: "Test".to_string(),
+                skill_type: crate::skill::types::SkillType::Wasm,
+                path: format!("/test/{}", id),
+                db_path: format!("/test/{}/db", id),
+                permissions: vec![],
+                subscriptions: vec![],
+                config_schema: None,
+                room_config: None,
+            },
+            runtime: SkillRuntime {
+                state: SkillState::Active,
+                loaded_at: None,
+                last_active_at: None,
+                error: None,
+                pid: None,
+            },
         }
     }
 

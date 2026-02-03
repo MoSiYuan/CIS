@@ -180,12 +180,12 @@ pub extern "C" fn skill_init() -> i32 {
 
 /// 添加推送目标
 #[no_mangle]
-pub extern "C" fn skill_add_target(json_ptr: *const u8, len: usize) -> i32 {
+pub extern "C" fn skill_add_target(_json_ptr: *const u8, _len: usize) -> i32 {
     0
 }
 
 /// 执行推送
 #[no_mangle]
-pub extern "C" fn skill_push(json_ptr: *const u8, len: usize) -> i32 {
+pub extern "C" fn skill_push(_json_ptr: *const u8, _len: usize) -> i32 {
     0
 }

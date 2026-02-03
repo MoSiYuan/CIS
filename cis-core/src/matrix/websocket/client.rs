@@ -21,7 +21,9 @@ use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, Web
 use tracing::{debug, error, info, warn};
 
 use crate::matrix::federation::types::PeerInfo;
+use crate::p2p::nat::NatType;
 
+use super::hole_punching::{HolePunchConfig, HolePunchManager, PunchResult, SignalingClient};
 use super::protocol::{
     build_ws_url, AuthMessage, HandshakeMessage, WsMessage, PROTOCOL_VERSION,
     WS_PATH,
@@ -37,6 +39,8 @@ pub struct WebSocketClient {
     node_did: String,
     /// Authentication key (for DID auth)
     auth_key: Option<Vec<u8>>,
+    /// Hole punching manager
+    hole_punch_manager: Option<Arc<HolePunchManager>>,
 }
 
 /// Connection options
@@ -89,7 +93,36 @@ impl WebSocketClient {
             node_id: node_id.into(),
             node_did: node_did.into(),
             auth_key: None,
+            hole_punch_manager: None,
         }
+    }
+
+    /// Create with hole punching support
+    pub fn with_hole_punching(
+        node_id: impl Into<String>,
+        node_did: impl Into<String>,
+        config: HolePunchConfig,
+        signaling: Arc<dyn SignalingClient>,
+    ) -> Self {
+        let node_id_str = node_id.into();
+        let hole_punch_manager = Arc::new(HolePunchManager::new(
+            node_id_str.clone(),
+            config,
+            signaling,
+        ));
+        
+        Self {
+            node_id: node_id_str,
+            node_did: node_did.into(),
+            auth_key: None,
+            hole_punch_manager: Some(hole_punch_manager),
+        }
+    }
+
+    /// Set hole punching manager
+    pub fn with_hole_punch_manager(mut self, manager: Arc<HolePunchManager>) -> Self {
+        self.hole_punch_manager = Some(manager);
+        self
     }
 
     /// Set authentication key
@@ -195,17 +228,104 @@ impl WebSocketClient {
         Err(last_error.unwrap_or(WsClientError::MaxRetriesExceeded))
     }
 
-    /// Attempt UDP hole punching (placeholder)
-    pub async fn punch_hole(&self, _target_node: &str) -> Result<SocketAddr, WsClientError> {
-        // TODO: Implement UDP hole punching
-        // 1. Contact relay/anchor server
-        // 2. Get both peers' public endpoints
-        // 3. Send UDP packets simultaneously
-        // 4. Detect NAT type
-        // 5. Establish direct connection or fallback to relay
+    /// 检测 NAT 类型
+    pub async fn detect_nat_type(&self) -> Result<NatType, WsClientError> {
+        match &self.hole_punch_manager {
+            Some(manager) => {
+                manager.detect_nat_type().await
+                    .map_err(|e| WsClientError::HolePunchError(e.to_string()))
+            }
+            None => {
+                warn!("Hole punching manager not configured");
+                Err(WsClientError::HolePunchError("Hole punching not configured".to_string()))
+            }
+        }
+    }
 
-        warn!("UDP hole punching not yet implemented");
-        Err(WsClientError::NotImplemented("Hole punching".to_string()))
+    /// 执行 UDP hole punching
+    ///
+    /// 流程：
+    /// 1. 检测本机 NAT 类型
+    /// 2. 通过信令服务器注册并获取对端公网地址
+    /// 3. 双方同时发送 UDP 打洞包
+    /// 4. 建立直连或回退到 TURN 中继
+    ///
+    /// # Arguments
+    /// * `target_node` - 目标节点 ID
+    ///
+    /// # Returns
+    /// * `Ok(SocketAddr)` - 成功建立直连的对端地址
+    /// * `Err` - 打洞失败（包括 Symmetric NAT 无法穿透的情况）
+    pub async fn punch_hole(&self, target_node: &str) -> Result<SocketAddr, WsClientError> {
+        info!("Starting UDP hole punching to node: {}", target_node);
+
+        let manager = match &self.hole_punch_manager {
+            Some(m) => m,
+            None => {
+                warn!("Hole punching manager not configured");
+                return Err(WsClientError::HolePunchError(
+                    "Hole punching not configured".to_string()
+                ));
+            }
+        };
+
+        // 执行打洞
+        let result = manager.punch_hole(target_node).await
+            .map_err(|e| WsClientError::HolePunchError(e.to_string()))?;
+
+        match &result {
+            PunchResult { success: true, peer_addr: Some(addr), .. } => {
+                info!("Hole punching successful! Direct connection to {}", addr);
+                Ok(*addr)
+            }
+            PunchResult { success: true, using_relay: true, .. } => {
+                info!("Hole punching requires TURN relay");
+                Err(WsClientError::HolePunchError(
+                    "TURN relay required".to_string()
+                ))
+            }
+            PunchResult { success: false, error: Some(err), nat_type, .. } => {
+                warn!("Hole punching failed: {}, NAT type: {:?}", err, nat_type);
+                Err(WsClientError::HolePunchError(err.clone()))
+            }
+            _ => {
+                warn!("Hole punching failed with unknown error");
+                Err(WsClientError::HolePunchError("Unknown error".to_string()))
+            }
+        }
+    }
+
+    /// 尝试连接（优先使用 hole punching，失败时回退到 WebSocket）
+    ///
+    /// # Arguments
+    /// * `peer` - 对端节点信息
+    /// * `tunnel_manager` - 隧道管理器
+    /// * `target_node` - 目标节点 ID（用于 hole punching）
+    pub async fn connect_with_hole_punching(
+        &self,
+        peer: &PeerInfo,
+        tunnel_manager: Arc<TunnelManager>,
+        target_node: &str,
+    ) -> Result<Arc<Tunnel>, WsClientError> {
+        // 首先尝试 hole punching
+        match self.punch_hole(target_node).await {
+            Ok(direct_addr) => {
+                info!("Using direct connection via hole punching: {}", direct_addr);
+                // TODO: 建立 UDP 直连（当前版本回退到 WebSocket）
+                // 未来可以使用 direct_addr 建立 QUIC over UDP 连接
+            }
+            Err(e) => {
+                warn!("Hole punching failed, falling back to WebSocket: {}", e);
+            }
+        }
+
+        // 回退到 WebSocket 连接
+        self.connect(peer, tunnel_manager).await
+    }
+
+    /// 获取 hole punching 管理器
+    pub fn hole_punch_manager(&self) -> Option<Arc<HolePunchManager>> {
+        self.hole_punch_manager.clone()
     }
 
     /// Check if a peer is reachable
@@ -545,6 +665,10 @@ pub enum WsClientError {
     /// Tunnel error
     #[error("Tunnel error: {0}")]
     TunnelError(String),
+
+    /// Hole punching error
+    #[error("Hole punching error: {0}")]
+    HolePunchError(String),
 }
 
 impl From<TunnelError> for WsClientError {
@@ -559,6 +683,8 @@ pub struct WebSocketClientBuilder {
     node_id: Option<String>,
     node_did: Option<String>,
     auth_key: Option<Vec<u8>>,
+    hole_punch_config: Option<HolePunchConfig>,
+    signaling_client: Option<Arc<dyn SignalingClient>>,
 }
 
 impl WebSocketClientBuilder {
@@ -585,6 +711,17 @@ impl WebSocketClientBuilder {
         self
     }
 
+    /// Enable hole punching
+    pub fn with_hole_punching(
+        mut self,
+        config: HolePunchConfig,
+        signaling: Arc<dyn SignalingClient>,
+    ) -> Self {
+        self.hole_punch_config = Some(config);
+        self.signaling_client = Some(signaling);
+        self
+    }
+
     /// Build the client
     pub fn build(self) -> Result<WebSocketClient, WsClientError> {
         let node_id = self.node_id.ok_or_else(|| {
@@ -593,7 +730,11 @@ impl WebSocketClientBuilder {
 
         let node_did = self.node_did.unwrap_or_else(|| node_id.clone());
 
-        let client = WebSocketClient::new(node_id, node_did);
+        let client = if let (Some(config), Some(signaling)) = (self.hole_punch_config, self.signaling_client) {
+            WebSocketClient::with_hole_punching(node_id, node_did, config, signaling)
+        } else {
+            WebSocketClient::new(node_id, node_did)
+        };
 
         Ok(if let Some(key) = self.auth_key {
             client.with_auth_key(key)
@@ -606,6 +747,7 @@ impl WebSocketClientBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::matrix::websocket::hole_punching::InMemorySignalingClient;
 
     #[test]
     fn test_connect_options() {
@@ -625,11 +767,55 @@ mod tests {
         let client = client.unwrap();
         assert_eq!(client.node_id, "test-node");
         assert_eq!(client.node_did, "did:cis:test");
+        assert!(client.hole_punch_manager.is_none());
     }
 
     #[test]
     fn test_client_builder_missing_node_id() {
         let client = WebSocketClientBuilder::new().build();
         assert!(client.is_err());
+    }
+
+    #[test]
+    fn test_client_builder_with_hole_punching() {
+        use crate::matrix::websocket::HolePunchConfig;
+        
+        let signaling = Arc::new(InMemorySignalingClient::new());
+        let config = HolePunchConfig::new();
+        
+        let client = WebSocketClientBuilder::new()
+            .node_id("test-node")
+            .node_did("did:cis:test")
+            .with_hole_punching(config, signaling)
+            .build();
+
+        assert!(client.is_ok());
+        let client = client.unwrap();
+        assert_eq!(client.node_id, "test-node");
+        assert!(client.hole_punch_manager.is_some());
+    }
+
+    #[test]
+    fn test_ws_client_error_display() {
+        let err = WsClientError::HolePunchError("test error".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("Hole punching error"));
+        assert!(msg.contains("test error"));
+    }
+
+    #[tokio::test]
+    async fn test_detect_nat_type_without_manager() {
+        let client = WebSocketClient::new("test-node", "did:cis:test");
+        let result = client.detect_nat_type().await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), WsClientError::HolePunchError(_)));
+    }
+
+    #[tokio::test]
+    async fn test_punch_hole_without_manager() {
+        let client = WebSocketClient::new("test-node", "did:cis:test");
+        let result = client.punch_hole("peer-node").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), WsClientError::HolePunchError(_)));
     }
 }

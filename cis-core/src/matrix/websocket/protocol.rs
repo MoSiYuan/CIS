@@ -284,17 +284,91 @@ pub enum AckStatus {
     Pending,
 }
 
+/// Sync filter for filtering events
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct SyncFilter {
+    /// Filter by event types (None = all types)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_types: Option<Vec<String>>,
+    /// Filter by sender (None = all senders)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub senders: Option<Vec<String>>,
+    /// Exclude event types
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_event_types: Option<Vec<String>>,
+    /// Exclude senders
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_senders: Option<Vec<String>>,
+}
+
+impl SyncFilter {
+    /// Create a new empty filter
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Filter by event types
+    pub fn with_event_types(mut self, types: Vec<String>) -> Self {
+        self.event_types = Some(types);
+        self
+    }
+
+    /// Filter by senders
+    pub fn with_senders(mut self, senders: Vec<String>) -> Self {
+        self.senders = Some(senders);
+        self
+    }
+
+    /// Check if an event type passes the filter
+    pub fn matches_event_type(&self, event_type: &str) -> bool {
+        // Check exclusion first
+        if let Some(ref not_types) = self.not_event_types {
+            if not_types.iter().any(|t| t == event_type) {
+                return false;
+            }
+        }
+
+        // Check inclusion
+        if let Some(ref types) = self.event_types {
+            return types.iter().any(|t| t == event_type);
+        }
+
+        true
+    }
+
+    /// Check if a sender passes the filter
+    pub fn matches_sender(&self, sender: &str) -> bool {
+        // Check exclusion first
+        if let Some(ref not_senders) = self.not_senders {
+            if not_senders.iter().any(|s| s == sender) {
+                return false;
+            }
+        }
+
+        // Check inclusion
+        if let Some(ref senders) = self.senders {
+            return senders.iter().any(|s| s == sender);
+        }
+
+        true
+    }
+}
+
 /// Sync request message for offline event catch-up
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SyncRequest {
     /// Target room ID to sync
     pub room_id: String,
     /// Start from this event ID (None = from beginning)
+    #[serde(alias = "since")]
     pub since_event_id: Option<String>,
     /// Maximum number of events to return
     pub limit: usize,
     /// Request timestamp
     pub timestamp: u64,
+    /// Filter for events
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<SyncFilter>,
 }
 
 impl SyncRequest {
@@ -305,7 +379,14 @@ impl SyncRequest {
             since_event_id,
             limit,
             timestamp: current_timestamp(),
+            filter: None,
         }
+    }
+
+    /// Set filter
+    pub fn with_filter(mut self, filter: SyncFilter) -> Self {
+        self.filter = Some(filter);
+        self
     }
 }
 

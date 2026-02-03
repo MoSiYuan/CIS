@@ -258,6 +258,7 @@ mod tests {
             permissions: vec![],
             subscriptions: vec![],
             config_schema: None,
+            room_config: None,
         };
 
         // 注册

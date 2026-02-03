@@ -277,12 +277,12 @@ impl MessagePoller {
         context: &Arc<ConversationContext>,
         ai_provider: &Arc<dyn AiProvider>,
         session_manager: &Arc<FeishuSessionManager>,
-        node_name: &str,
+        _node_name: &str,
         conversations: Arc<RwLock<HashMap<String, ConversationState>>>,
         chat_id: &str,
     ) -> Result<(), FeishuImError> {
         // 获取会话状态
-        let (last_check_time, should_process) = {
+        let (last_check_time, _should_process) = {
             let convs = conversations.read().await;
             let state = convs.get(chat_id);
 
@@ -398,8 +398,8 @@ impl MessagePoller {
     /// 检查是否应该触发
     async fn should_trigger(
         config: &FeishuImConfig,
-        msg: &FeishuMessage,
-        chat_id: &str,
+        _msg: &FeishuMessage,
+        _chat_id: &str,
     ) -> bool {
         match config.trigger_mode {
             crate::config::TriggerMode::AtMentionOnly => {

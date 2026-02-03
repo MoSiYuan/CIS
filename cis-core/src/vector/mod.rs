@@ -39,4 +39,4 @@ pub use storage::{
     SkillMatch, SkillSemantics, SummaryResult, VectorConfig, VectorStorage, 
     DEFAULT_SIMILARITY_THRESHOLD, EMBEDDING_DIM,
 };
-pub use batch::BatchProcessor;
+pub use batch::{BatchProcessor, BatchStats};

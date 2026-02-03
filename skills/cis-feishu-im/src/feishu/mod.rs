@@ -212,7 +212,7 @@ impl FeishuClient {
     }
 
     /// 发送卡片消息
-    pub async fn send_card(&self, chat_id: &str, card: serde_json::Value) -> Result<(), FeishuApiError> {
+    pub async fn send_card(&self, chat_id: &str, _card: serde_json::Value) -> Result<(), FeishuApiError> {
         // TODO: 实现飞书 API 调用
         tracing::info!("发送卡片消息到飞书: chat_id={}", chat_id);
         Ok(())

@@ -29,6 +29,7 @@
 //! let event = SkillEventRegistry::parse_event("io.cis.task.invoke", &content);
 //! ```
 
+pub mod event_types;
 pub mod skill;
 
 // Re-export skill event types
@@ -44,4 +45,9 @@ pub use skill::{
     SkillEventRegistry,
     TaskInvokeEventContent,
     TaskResultEventContent,
+};
+
+// Re-export event type mapping types
+pub use event_types::{
+    EventCategory, EventTypeError, EventTypeMapper, MatrixEventType, TypedCisMatrixEvent,
 };

@@ -1,0 +1,268 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+
+jobs:
+  # 构建 macOS 版本
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      # 构建 Intel 版本
+      - name: Build x86_64
+        run: cargo build --release --bin cis-node --target x86_64-apple-darwin
+      
+      # 构建 ARM 版本
+      - name: Build aarch64
+        run: cargo build --release --bin cis-node --target aarch64-apple-darwin
+      
+      # 创建通用二进制
+      - name: Create universal binary
+        run: |
+          mkdir -p target/universal-apple-darwin/release
+          lipo -create \
+            target/x86_64-apple-darwin/release/cis-node \
+            target/aarch64-apple-darwin/release/cis-node \
+            -output target/universal-apple-darwin/release/cis-node
+      
+      # 创建 .app bundle
+      - name: Create .app bundle
+        run: |
+          VERSION=${RELEASE_VERSION#v}
+          scripts/build/macos/create-app.sh "$VERSION"
+      
+      # 创建 .dmg
+      - name: Create .dmg
+        run: |
+          VERSION=${RELEASE_VERSION#v}
+          scripts/build/macos/create-dmg.sh "$VERSION"
+      
+      # 签名（如果有证书）
+      - name: Sign .app (if certificate available)
+        if: env.MACOS_CERTIFICATE != ''
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security set-keychain-settings -t 3600 -u build.keychain
+          security unlock-keychain -p "" build.keychain
+          security list-keychains -s build.keychain
+          codesign --force --deep --sign "Developer ID Application" "target/CIS.app"
+      
+      # 上传产物
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: |
+            target/CIS-*.dmg
+            target/CIS-*.app.tar.gz
+            target/universal-apple-darwin/release/cis-node
+
+  # 构建 Linux 版本
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+      
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Build
+        run: cargo build --release --bin cis-node
+      
+      # 创建 AppImage
+      - name: Create AppImage
+        run: |
+          VERSION=${RELEASE_VERSION#v}
+          scripts/build/linux/create-appimage.sh "$VERSION"
+      
+      # 创建 deb 包
+      - name: Create deb package
+        run: |
+          VERSION=${RELEASE_VERSION#v}
+          scripts/build/linux/create-deb.sh "$VERSION"
+      
+      # 创建 tar.gz
+      - name: Create tar.gz
+        run: |
+          VERSION=${RELEASE_VERSION#v}
+          cd target/release
+          tar czf "cis-${VERSION}-linux-x86_64.tar.gz" cis-node
+          mv "cis-${VERSION}-linux-x86_64.tar.gz" ../
+      
+      # 上传产物
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: |
+            target/*.AppImage
+            target/*.deb
+            target/*.tar.gz
+
+  # 构建 Windows 版本
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+      
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Build
+        run: cargo build --release --bin cis-node --target x86_64-pc-windows-msvc
+      
+      # 创建 zip
+      - name: Create zip
+        shell: pwsh
+        run: |
+          $VERSION = $env:RELEASE_VERSION -replace '^v', ''
+          Compress-Archive -Path "target\x86_64-pc-windows-msvc\release\cis-node.exe" -DestinationPath "target\cis-${VERSION}-windows-x86_64.zip"
+      
+      # 创建 MSI (需要 WiX)
+      - name: Create MSI
+        shell: pwsh
+        run: |
+          $VERSION = $env:RELEASE_VERSION -replace '^v', ''
+          scripts/build/windows/create-msi.ps1 -Version $VERSION
+      
+      # 上传产物
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            target/*.zip
+            target/*.msi
+
+  # 创建 Release
+  create-release:
+    name: Create Release
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      # 下载所有产物
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      # 列出产物
+      - name: List artifacts
+        run: |
+          ls -la artifacts/
+          find artifacts/ -type f -name "*"
+      
+      # 生成 changelog
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION=${RELEASE_VERSION#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # 提取当前版本的 changelog
+          if [ -f CHANGELOG.md ]; then
+            # 提取当前版本的内容
+            awk "/^## \[$VERSION\]/{flag=1;next}/^## \[/{flag=0}flag" CHANGELOG.md > RELEASE_NOTES.md || true
+          fi
+          
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "## What's New in v$VERSION" > RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+            echo "See [CHANGELOG.md](./CHANGELOG.md) for full details." >> RELEASE_NOTES.md
+          fi
+          
+          cat RELEASE_NOTES.md
+      
+      # 创建 GitHub Release
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: CIS v${{ steps.changelog.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          files: |
+            artifacts/macos-artifacts/*
+            artifacts/linux-artifacts/*
+            artifacts/windows-artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      # 更新 latest 标签
+      - name: Update latest tag
+        if: '!contains(github.ref_name, ''alpha'') && !contains(github.ref_name, ''beta'') && !contains(github.ref_name, ''rc'')'
+        run: |
+          git tag -f latest
+          git push -f origin latest
+        continue-on-error: true

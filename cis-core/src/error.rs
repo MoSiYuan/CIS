@@ -86,6 +86,10 @@ pub enum CisError {
     #[error("Telemetry error: {0}")]
     Telemetry(String),
 
+    /// Cloud Anchor errors
+    #[error("Cloud Anchor error: {0}")]
+    CloudAnchor(String),
+
     /// Skill not found errors
     #[error("Skill not found: {0}")]
     SkillNotFound(String),
@@ -97,6 +101,10 @@ pub enum CisError {
     /// WASM runtime errors
     #[error("WASM error: {0}")]
     Wasm(String),
+
+    /// Matrix federation errors
+    #[error("Matrix error: {0}")]
+    Matrix(String),
 
     /// Generic errors with context
     #[error("{0}")]
@@ -179,6 +187,11 @@ impl CisError {
         Self::Telemetry(msg.into())
     }
 
+    /// Create a new Cloud Anchor error
+    pub fn cloud_anchor(msg: impl Into<String>) -> Self {
+        Self::CloudAnchor(msg.into())
+    }
+
     /// Create a new skill not found error
     pub fn skill_not_found(msg: impl Into<String>) -> Self {
         Self::SkillNotFound(msg.into())
@@ -192,6 +205,11 @@ impl CisError {
     /// Create a new WASM error
     pub fn wasm(msg: impl Into<String>) -> Self {
         Self::Wasm(msg.into())
+    }
+
+    /// Create a new Matrix error
+    pub fn matrix(msg: impl Into<String>) -> Self {
+        Self::Matrix(msg.into())
     }
 
     /// Create a new generic/other error

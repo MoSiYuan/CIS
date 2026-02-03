@@ -19,10 +19,11 @@ use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
 use tracing::{debug, error, info, warn};
 
 use crate::matrix::store::MatrixStore;
+use crate::identity::DIDManager;
 
 use super::protocol::{
-    AckMessage, AuthMessage, ErrorCode, ErrorMessage, HandshakeMessage, WsMessage, PROTOCOL_VERSION,
-    WS_PATH,
+    AckMessage, AuthMessage, ErrorCode, ErrorMessage, HandshakeMessage, SyncFilter, WsMessage,
+    PROTOCOL_VERSION, WS_PATH,
 };
 use super::tunnel::{TunnelManager, TunnelState};
 
@@ -36,6 +37,8 @@ pub struct WebSocketServer {
     store: Arc<MatrixStore>,
     /// This node's DID
     node_did: String,
+    /// DID manager for authentication
+    did_manager: Arc<DIDManager>,
     /// Shutdown signal sender
     shutdown_tx: Option<mpsc::Sender<()>>,
 }
@@ -112,12 +115,14 @@ impl WebSocketServer {
         tunnel_manager: Arc<TunnelManager>,
         store: Arc<MatrixStore>,
         node_did: impl Into<String>,
+        did_manager: Arc<DIDManager>,
     ) -> Self {
         Self {
             config,
             tunnel_manager,
             store,
             node_did: node_did.into(),
+            did_manager,
             shutdown_tx: None,
         }
     }
@@ -178,6 +183,7 @@ impl WebSocketServer {
         let store = self.store.clone();
         let config = self.config.clone();
         let node_did = self.node_did.clone();
+        let did_manager = self.did_manager.clone();
 
         tokio::spawn(async move {
             debug!("New WebSocket connection from {}", peer_addr);
@@ -199,6 +205,7 @@ impl WebSocketServer {
                 store,
                 config,
                 node_did,
+                did_manager,
             );
 
             if let Err(e) = handler.run().await {
@@ -240,6 +247,8 @@ struct ConnectionHandler {
     config: WsServerConfig,
     /// This node's DID
     node_did: String,
+    /// DID manager for authentication
+    did_manager: Arc<DIDManager>,
     /// Remote node ID (set after auth)
     remote_node_id: Option<String>,
     /// Authenticated flag
@@ -259,6 +268,7 @@ impl ConnectionHandler {
         store: Arc<MatrixStore>,
         config: WsServerConfig,
         node_did: String,
+        did_manager: Arc<DIDManager>,
     ) -> Self {
         let (msg_tx, msg_rx) = mpsc::unbounded_channel();
         Self {
@@ -268,6 +278,7 @@ impl ConnectionHandler {
             store,
             config,
             node_did,
+            did_manager,
             remote_node_id: None,
             authenticated: false,
             msg_tx,
@@ -477,31 +488,116 @@ impl ConnectionHandler {
                 Ok(())
             }
 
-            WsMessage::SyncRequest(_request) => {
-                debug!("Received sync request");
-                // TODO: 处理同步请求，返回历史事件
-                // 暂时返回空响应
-                let response = WsMessage::SyncResponse(super::protocol::SyncResponse::new(
-                    "!room:cis.local",
-                    vec![],
-                ));
-                self.msg_tx.send(response).map_err(|_| WsServerError::SendError)
+            WsMessage::SyncRequest(request) => {
+                debug!("Received sync request for room: {:?}, since: {:?}", 
+                    request.room_id, request.since_event_id);
+                
+                // 检查认证
+                if self.config.require_auth && !self.authenticated {
+                    return self
+                        .send_error(ErrorCode::Unauthorized, "Not authenticated")
+                        .await;
+                }
+
+                // 处理同步请求
+                match self.handle_sync_request(&request).await {
+                    Ok(response) => {
+                        self.msg_tx.send(WsMessage::SyncResponse(response))
+                            .map_err(|_| WsServerError::SendError)
+                    }
+                    Err(e) => {
+                        warn!("Failed to handle sync request: {}", e);
+                        self.send_error(ErrorCode::InternalError, format!("Sync failed: {}", e))
+                            .await
+                    }
+                }
             }
 
-            WsMessage::SyncResponse(_response) => {
-                debug!("Received sync response");
-                // TODO: 处理同步响应，保存接收到的事件
+            WsMessage::SyncResponse(response) => {
+                debug!("Received sync response with {} events for room: {}", 
+                    response.events.len(), response.room_id);
+                
+                // 处理同步响应，保存接收到的事件
+                if let Some(ref node_id) = self.remote_node_id {
+                    if let Err(e) = self.handle_sync_response(node_id, &response).await {
+                        warn!("Failed to handle sync response from {}: {}", node_id, e);
+                    }
+                }
                 Ok(())
             }
         }
     }
 
-    /// Verify authentication (placeholder)
-    async fn verify_auth(&self, _auth: &AuthMessage) -> Result<(), WsServerError> {
-        // TODO: Implement actual DID verification
-        // 1. Verify signature
-        // 2. Check challenge response
-        // 3. Validate DID
+    /// Verify DID authentication
+    /// 
+    /// Validates:
+    /// 1. DID format is valid
+    /// 2. Public key matches DID
+    /// 3. Signature is valid
+    /// 4. Timestamp is within acceptable window (prevent replay)
+    async fn verify_auth(&self, auth: &AuthMessage) -> Result<(), WsServerError> {
+        // 1. Validate DID format
+        if !DIDManager::is_valid_did(&auth.did) {
+            return Err(WsServerError::AuthFailed(
+                format!("Invalid DID format: {}", auth.did)
+            ));
+        }
+        
+        // 2. Parse DID to extract node_id and pubkey_short
+        let (node_id, pubkey_short) = DIDManager::parse_did(&auth.did)
+            .ok_or_else(|| WsServerError::AuthFailed("Failed to parse DID".to_string()))?;
+        
+        // 3. Verify public key matches DID
+        let pub_key_hex = hex::encode(&auth.public_key);
+        if !pub_key_hex.starts_with(&pubkey_short) {
+            return Err(WsServerError::AuthFailed(
+                format!("Public key mismatch: expected to start with {}", pubkey_short)
+            ));
+        }
+        
+        // 4. Parse verifying key
+        let verifying_key = DIDManager::verifying_key_from_hex(&pub_key_hex)
+            .map_err(|e| WsServerError::AuthFailed(
+                format!("Invalid public key: {}", e)
+            ))?;
+        
+        // 5. Verify timestamp (prevent replay attacks)
+        // Accept messages within 5 minutes of current time
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| WsServerError::AuthFailed("System time error".to_string()))?
+            .as_secs();
+        
+        let time_diff = if auth.timestamp > current_time {
+            auth.timestamp - current_time
+        } else {
+            current_time - auth.timestamp
+        };
+        
+        if time_diff > 300 { // 5 minutes
+            return Err(WsServerError::AuthFailed(
+                format!("Timestamp too old: {} seconds difference", time_diff)
+            ));
+        }
+        
+        // 6. Verify signature
+        // The challenge response should be a signature of: did + timestamp
+        let challenge_data = format!("{}:{}", auth.did, auth.timestamp);
+        
+        let signature = ed25519_dalek::Signature::from_slice(&auth.challenge_response)
+            .map_err(|e| WsServerError::AuthFailed(
+                format!("Invalid signature format: {}", e)
+            ))?;
+        
+        if !DIDManager::verify(&verifying_key, challenge_data.as_bytes(), &signature) {
+            return Err(WsServerError::AuthFailed(
+                "Signature verification failed".to_string()
+            ));
+        }
+        
+        // 7. Update remote node ID from DID
+        tracing::info!("DID authentication successful for {} (node_id: {})", auth.did, node_id);
+        
         Ok(())
     }
 
@@ -515,6 +611,171 @@ impl ConnectionHandler {
         self.msg_tx
             .send(error)
             .map_err(|_| WsServerError::SendError)
+    }
+
+    /// Handle sync request - query events from store and return response
+    async fn handle_sync_request(
+        &self,
+        request: &super::protocol::SyncRequest,
+    ) -> Result<super::protocol::SyncResponse, String> {
+        let room_id = &request.room_id;
+        let limit = if request.limit == 0 { 100 } else { request.limit.min(1000) };
+        
+        // Get events from store
+        let messages = if let Some(ref since_event_id) = request.since_event_id {
+            // Get events since a specific event ID
+            self.store.get_events_since_event_id(room_id, since_event_id, limit as i64)
+                .map_err(|e| format!("Failed to get events: {}", e))?
+        } else {
+            // Get all events for the room (from beginning)
+            self.store.get_room_messages(room_id, 0, limit)
+                .map_err(|e| format!("Failed to get messages: {}", e))?
+        };
+
+        // Apply filter if provided
+        let filter = request.filter.as_ref();
+        let mut events: Vec<super::protocol::EventMessage> = Vec::new();
+        let mut last_event_id: Option<String> = None;
+
+        for msg in messages {
+            // Apply event type filter
+            if let Some(ref f) = filter {
+                if !f.matches_event_type(&msg.event_type) {
+                    continue;
+                }
+                if !f.matches_sender(&msg.sender) {
+                    continue;
+                }
+            }
+
+            let event_data = serde_json::json!({
+                "event_id": msg.event_id,
+                "room_id": msg.room_id,
+                "sender": msg.sender,
+                "type": msg.event_type,
+                "content": serde_json::from_str::<serde_json::Value>(&msg.content)
+                    .unwrap_or(serde_json::json!({})),
+                "origin_server_ts": msg.origin_server_ts,
+                "unsigned": msg.unsigned.as_ref()
+                    .and_then(|u| serde_json::from_str::<serde_json::Value>(u).ok()),
+                "state_key": msg.state_key,
+            });
+
+            let event_msg = super::protocol::EventMessage::new(
+                &msg.event_id,
+                event_data.to_string().into_bytes(),
+                &msg.event_type,
+                &msg.sender,
+            )
+            .with_room_id(room_id);
+
+            last_event_id = Some(msg.event_id.clone());
+            events.push(event_msg);
+        }
+
+        // Determine next_batch token
+        let has_more = events.len() == limit;
+        let next_batch = if has_more {
+            last_event_id.clone()
+        } else {
+            None
+        };
+
+        // Build response
+        let mut response = super::protocol::SyncResponse::new(room_id, events)
+            .with_has_more(has_more);
+        
+        if let Some(batch) = next_batch {
+            response = response.with_next_batch(batch);
+        }
+
+        info!("Sync request for room {}: returned {} events, has_more: {}", 
+            room_id, response.events.len(), response.has_more);
+
+        Ok(response)
+    }
+
+    /// Handle sync response - save received events to store
+    async fn handle_sync_response(
+        &self,
+        node_id: &str,
+        response: &super::protocol::SyncResponse,
+    ) -> Result<(), String> {
+        let room_id = &response.room_id;
+        let mut saved_count = 0;
+        let mut failed_count = 0;
+
+        for event_msg in &response.events {
+            // Parse event data
+            let event_data: serde_json::Value = match serde_json::from_slice(&event_msg.event_data) {
+                Ok(data) => data,
+                Err(e) => {
+                    warn!("Failed to parse event data from {}: {}", node_id, e);
+                    failed_count += 1;
+                    continue;
+                }
+            };
+
+            // Extract event fields
+            let event_id = event_data.get("event_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&event_msg.message_id);
+            let sender = event_data.get("sender")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&event_msg.sender);
+            let event_type = event_data.get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&event_msg.event_type);
+            let origin_server_ts = event_data.get("origin_server_ts")
+                .and_then(|v| v.as_i64())
+                .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+
+            // Check if event already exists
+            match self.store.event_exists(event_id) {
+                Ok(true) => {
+                    debug!("Event {} already exists, skipping", event_id);
+                    continue;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    warn!("Failed to check event existence: {}", e);
+                }
+            }
+
+            // Save event to store
+            let content = event_data.get("content")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "{}".to_string());
+            let unsigned = event_data.get("unsigned").map(|v| v.to_string());
+            let state_key = event_data.get("state_key").and_then(|v| v.as_str());
+
+            if let Err(e) = self.store.save_event(
+                room_id,
+                event_id,
+                sender,
+                event_type,
+                &content,
+                origin_server_ts,
+                unsigned.as_deref(),
+                state_key,
+            ) {
+                warn!("Failed to save event {}: {}", event_id, e);
+                failed_count += 1;
+                continue;
+            }
+
+            // Parse as CisMatrixEvent and forward to event channel
+            if let Ok(cis_event) = serde_json::from_value::<crate::matrix::federation::types::CisMatrixEvent>(event_data.clone()) {
+                let _ = self.tunnel_manager.send_event_to_channel(node_id.to_string(), cis_event).await;
+            }
+
+            saved_count += 1;
+        }
+
+        info!("Sync response from {}: saved {} events, {} failed", 
+            node_id, saved_count, failed_count);
+
+        Ok(())
     }
 }
 
@@ -556,6 +817,7 @@ pub struct WebSocketServerBuilder {
     config: Option<WsServerConfig>,
     store_path: Option<String>,
     node_did: Option<String>,
+    did_manager: Option<Arc<DIDManager>>,
 }
 
 impl WebSocketServerBuilder {
@@ -582,6 +844,12 @@ impl WebSocketServerBuilder {
         self
     }
 
+    /// Set DID manager
+    pub fn did_manager(mut self, did_manager: Arc<DIDManager>) -> Self {
+        self.did_manager = Some(did_manager);
+        self
+    }
+
     /// Build the server
     pub fn build(self) -> Result<WebSocketServer, WsServerError> {
         let config = self.config.unwrap_or_default();
@@ -597,8 +865,12 @@ impl WebSocketServerBuilder {
         let (event_tx, _event_rx) = mpsc::channel(1000);
 
         let tunnel_manager = Arc::new(TunnelManager::with_event_channel(event_tx));
+        
+        // DID manager is required for authentication
+        let did_manager = self.did_manager
+            .ok_or_else(|| WsServerError::ConfigError("DID manager is required".to_string()))?;
 
-        Ok(WebSocketServer::new(config, tunnel_manager, Arc::new(store), node_did))
+        Ok(WebSocketServer::new(config, tunnel_manager, Arc::new(store), node_did, did_manager))
     }
 }
 
@@ -615,13 +887,235 @@ mod tests {
 
     #[test]
     fn test_server_builder() {
+        let did_manager = Arc::new(DIDManager::generate("builder").unwrap());
         let server = WebSocketServerBuilder::new()
             .config(WsServerConfig::new("builder.local"))
             .node_did("did:cis:builder")
+            .did_manager(did_manager)
             .build();
 
         assert!(server.is_ok());
         let server = server.unwrap();
         assert_eq!(server.server_name(), "builder.local");
+    }
+    
+    #[test]
+    fn test_did_verification() {
+        use super::super::protocol::AuthMessage;
+        
+        // Create a DID manager for the "client"
+        let client_did_manager = DIDManager::generate("client-node").unwrap();
+        let client_did = client_did_manager.did().to_string();
+        let client_pubkey = client_did_manager.public_key_hex();
+        
+        // Create challenge data
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let challenge_data = format!("{}:{}", client_did, timestamp);
+        
+        // Sign the challenge
+        let signature = client_did_manager.sign(challenge_data.as_bytes());
+        
+        // Create auth message
+        let auth = AuthMessage::new(
+            &client_did,
+            signature.to_bytes().to_vec(),
+            hex::decode(&client_pubkey).unwrap(),
+        );
+        
+        // Verify DID format
+        assert!(DIDManager::is_valid_did(&auth.did));
+        
+        // Parse DID
+        let (node_id, pubkey_short) = DIDManager::parse_did(&auth.did).unwrap();
+        assert_eq!(node_id, "client-node");
+        assert!(client_pubkey.starts_with(&pubkey_short));
+        
+        // Verify signature
+        let verifying_key = DIDManager::verifying_key_from_hex(&client_pubkey).unwrap();
+        assert!(DIDManager::verify(&verifying_key, challenge_data.as_bytes(), &signature));
+    }
+
+    #[tokio::test]
+    async fn test_sync_request_handling() {
+        use super::super::protocol::{SyncRequest, SyncFilter, EventMessage};
+        
+        // Create store with test data
+        let store = Arc::new(MatrixStore::open_in_memory().unwrap());
+        
+        // Create test room and events
+        let room_id = "!test-room:cis.local";
+        store.ensure_user("@alice:cis.local").unwrap();
+        store.create_room(room_id, "@alice:cis.local", Some("Test Room"), None).unwrap();
+        
+        // Save some test events
+        for i in 0..5 {
+            let event_id = format!("$event{}", i);
+            store.save_event(
+                room_id,
+                &event_id,
+                "@alice:cis.local",
+                "m.room.message",
+                &format!("{{\"body\":\"Message {}\"}}", i),
+                1000 + i as i64 * 100,
+                None,
+                None,
+            ).unwrap();
+        }
+        
+        // Create connection handler
+        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
+        let (event_tx, _event_rx) = mpsc::channel(100);
+        let tunnel_manager = Arc::new(TunnelManager::with_event_channel(event_tx));
+        let did_manager = Arc::new(DIDManager::generate("test").unwrap());
+        
+        let config = WsServerConfig::new("test.local").with_auth(false);
+        
+        let handler = ConnectionHandler {
+            peer_addr: "127.0.0.1:12345".parse().unwrap(),
+            ws_stream: None,
+            tunnel_manager,
+            store,
+            config,
+            node_did: "did:cis:test".to_string(),
+            did_manager,
+            remote_node_id: Some("remote-node".to_string()),
+            authenticated: true,
+            msg_tx,
+            msg_rx,
+        };
+        
+        // Test sync request without since (get all events)
+        let request = SyncRequest::new(room_id, None, 10);
+        let response = handler.handle_sync_request(&request).await.unwrap();
+        
+        assert_eq!(response.room_id, room_id);
+        assert_eq!(response.events.len(), 5);
+        assert!(!response.has_more);
+        assert!(response.next_batch.is_some());
+        
+        // Test sync request with since (pagination)
+        let since_event = "$event2";
+        let request = SyncRequest::new(room_id, Some(since_event.to_string()), 10);
+        let response = handler.handle_sync_request(&request).await.unwrap();
+        
+        // Should get events after $event2 (i.e., $event3, $event4)
+        assert!(response.events.len() >= 2);
+        
+        // Test sync request with filter
+        let filter = SyncFilter::new()
+            .with_event_types(vec!["m.room.message".to_string()]);
+        let request = SyncRequest::new(room_id, None, 10).with_filter(filter);
+        let response = handler.handle_sync_request(&request).await.unwrap();
+        
+        assert_eq!(response.events.len(), 5); // All events are m.room.message
+    }
+
+    #[tokio::test]
+    async fn test_sync_response_handling() {
+        use super::super::protocol::{SyncResponse, EventMessage};
+        use crate::matrix::federation::types::CisMatrixEvent;
+        
+        // Create store
+        let store = Arc::new(MatrixStore::open_in_memory().unwrap());
+        store.ensure_user("@bob:cis.local").unwrap();
+        
+        // Create connection handler
+        let (msg_tx, _msg_rx) = mpsc::unbounded_channel();
+        let (event_tx, mut event_rx) = mpsc::channel(100);
+        let tunnel_manager = Arc::new(TunnelManager::with_event_channel(event_tx));
+        let did_manager = Arc::new(DIDManager::generate("test").unwrap());
+        
+        let config = WsServerConfig::new("test.local").with_auth(false);
+        
+        let handler = ConnectionHandler {
+            peer_addr: "127.0.0.1:12346".parse().unwrap(),
+            ws_stream: None,
+            tunnel_manager,
+            store: store.clone(),
+            config,
+            node_did: "did:cis:test".to_string(),
+            did_manager,
+            remote_node_id: Some("remote-node".to_string()),
+            authenticated: true,
+            msg_tx,
+            msg_rx: mpsc::unbounded_channel().1,
+        };
+        
+        // Create test events
+        let room_id = "!sync-room:cis.local";
+        let events: Vec<EventMessage> = (0..3)
+            .map(|i| {
+                let event_data = serde_json::json!({
+                    "event_id": format!("$sync-event{}", i),
+                    "room_id": room_id,
+                    "sender": "@bob:cis.local",
+                    "type": "m.room.message",
+                    "content": {
+                        "msgtype": "m.text",
+                        "body": format!("Sync message {}", i)
+                    },
+                    "origin_server_ts": chrono::Utc::now().timestamp_millis(),
+                });
+                EventMessage::new(
+                    format!("$sync-event{}", i),
+                    event_data.to_string().into_bytes(),
+                    "m.room.message",
+                    "@bob:cis.local",
+                )
+                .with_room_id(room_id)
+            })
+            .collect();
+        
+        // Create sync response
+        let response = SyncResponse::new(room_id, events).with_has_more(false);
+        
+        // Handle sync response
+        handler.handle_sync_response("remote-node", &response).await.unwrap();
+        
+        // Verify events were saved
+        let messages = store.get_room_messages(room_id, 0, 10).unwrap();
+        assert_eq!(messages.len(), 3);
+        
+        // Verify events were forwarded to channel
+        let mut received_count = 0;
+        while let Ok((node_id, _event)) = event_rx.try_recv() {
+            assert_eq!(node_id, "remote-node");
+            received_count += 1;
+        }
+        assert_eq!(received_count, 3);
+    }
+
+    #[test]
+    fn test_sync_filter_matching() {
+        use super::super::protocol::SyncFilter;
+        
+        // Test empty filter (matches everything)
+        let filter = SyncFilter::new();
+        assert!(filter.matches_event_type("m.room.message"));
+        assert!(filter.matches_sender("@alice:cis.local"));
+        
+        // Test event type filter
+        let filter = SyncFilter::new()
+            .with_event_types(vec!["m.room.message".to_string(), "m.room.member".to_string()]);
+        assert!(filter.matches_event_type("m.room.message"));
+        assert!(filter.matches_event_type("m.room.member"));
+        assert!(!filter.matches_event_type("m.room.create"));
+        
+        // Test exclusion filter
+        let filter = SyncFilter {
+            not_event_types: Some(vec!["m.room.message".to_string()]),
+            ..Default::default()
+        };
+        assert!(!filter.matches_event_type("m.room.message"));
+        assert!(filter.matches_event_type("m.room.member"));
+        
+        // Test sender filter
+        let filter = SyncFilter::new()
+            .with_senders(vec!["@alice:cis.local".to_string()]);
+        assert!(filter.matches_sender("@alice:cis.local"));
+        assert!(!filter.matches_sender("@bob:cis.local"));
     }
 }

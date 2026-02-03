@@ -1,12 +1,35 @@
-//! # 记忆服务
+//! # MemoryService
 //!
 //! 提供私域(Private)和公域(Public)记忆分离存储。
 //!
 //! ## 特性
+//!
 //! - 私域记忆: 本地加密存储，永不同步
 //! - 公域记忆: 明文存储，可P2P同步
 //! - 向量索引: 统一语义检索
 //! - 访问控制: 基于权限的读写
+//!
+//! ## 示例
+//!
+//! ```rust,no_run
+//! use cis_core::memory::{MemoryService, MemoryDomain, MemoryCategory};
+//!
+//! # fn example() -> anyhow::Result<()> {
+//! let service = MemoryService::open_default("node-1")?;
+//!
+//! // 存储私域记忆
+//! service.set("private-key", b"secret", MemoryDomain::Private, MemoryCategory::Context)?;
+//!
+//! // 存储公域记忆
+//! service.set("public-key", b"shared", MemoryDomain::Public, MemoryCategory::Result)?;
+//!
+//! // 读取记忆
+//! if let Some(item) = service.get("private-key")? {
+//!     println!("Found: {:?}", item.value);
+//! }
+//! # Ok(())
+//! # }
+//! ```
 
 use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Utc};
@@ -18,12 +41,50 @@ use crate::storage::memory_db::{MemoryDb, MemoryEntry};
 use crate::types::{MemoryCategory, MemoryDomain};
 use crate::vector::VectorStorage;
 
+/// 记忆搜索结果
+#[derive(Debug, Clone)]
+pub struct MemorySearchResult {
+    /// 记忆键
+    pub key: String,
+    /// 记忆值
+    pub value: Vec<u8>,
+    /// 域（私域/公域）
+    pub domain: MemoryDomain,
+    /// 分类
+    pub category: MemoryCategory,
+    /// 相似度分数 (0.0 - 1.0)
+    pub similarity: f32,
+    /// 所有者节点ID
+    pub owner: String,
+}
+
 /// 记忆服务 - 私域/公域记忆分离管理
 ///
 /// 提供统一的记忆管理接口，支持：
 /// - 私域记忆：本地加密，永不同步
 /// - 公域记忆：可联邦同步
 /// - 向量索引：语义检索
+///
+/// ## 线程安全
+///
+/// `MemoryService` 是线程安全的，可以在多个线程间共享。
+///
+/// ## 示例
+///
+/// ```rust,no_run
+/// use cis_core::memory::{MemoryService, MemoryDomain, MemoryCategory, SearchOptions};
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// let service = MemoryService::open_default("node-1")?;
+///
+/// // 存储并建立向量索引
+/// service.set_with_embedding("key", b"value", MemoryDomain::Public, MemoryCategory::Context).await?;
+///
+/// // 语义搜索
+/// let results = service.semantic_search("query", 10, 0.7).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct MemoryService {
     /// 记忆数据库（私域/公域分离存储）
     memory_db: Arc<Mutex<MemoryDb>>,
@@ -140,6 +201,14 @@ pub struct SyncMarker {
 
 impl MemoryService {
     /// 创建新的记忆服务
+    ///
+    /// # 参数
+    /// - `memory_db`: 记忆数据库
+    /// - `vector_storage`: 向量存储（用于语义搜索）
+    /// - `node_id`: 节点标识符
+    ///
+    /// # 返回
+    /// - `Result<Self>`: 成功返回 MemoryService，失败返回错误
     pub fn new(
         memory_db: Arc<Mutex<MemoryDb>>,
         vector_storage: Arc<VectorStorage>,
@@ -155,6 +224,19 @@ impl MemoryService {
     }
 
     /// 从默认路径创建记忆服务
+    ///
+    /// 使用默认路径打开记忆数据库和向量存储。
+    ///
+    /// # 参数
+    /// - `node_id`: 节点标识符
+    ///
+    /// # 示例
+    ///
+    /// ```rust,no_run
+    /// use cis_core::memory::MemoryService;
+    ///
+    /// let service = MemoryService::open_default("node-1").unwrap();
+    /// ```
     pub fn open_default(node_id: impl Into<String>) -> Result<Self> {
         let memory_db = MemoryDb::open_default()?;
         let vector_storage = VectorStorage::open_default()?;
@@ -191,11 +273,31 @@ impl MemoryService {
 
     /// 存储记忆
     ///
+    /// 将记忆存储到数据库，并根据域进行加密或标记。
+    ///
     /// # 参数
     /// - `key`: 记忆键
     /// - `value`: 记忆值
     /// - `domain`: 私域或公域
     /// - `category`: 分类
+    ///
+    /// # 返回
+    /// - `Result<()>`: 成功返回 Ok，失败返回错误
+    ///
+    /// # 示例
+    ///
+    /// ```rust,no_run
+    /// use cis_core::memory::{MemoryService, MemoryDomain, MemoryCategory};
+    ///
+    /// # fn example(service: &MemoryService) -> anyhow::Result<()> {
+    /// // 存储私域记忆（加密）
+    /// service.set("api-key", b"secret123", MemoryDomain::Private, MemoryCategory::Secret)?;
+    ///
+    /// // 存储公域记忆（明文，可同步）
+    /// service.set("config", b"{\"theme\":\"dark\"}", MemoryDomain::Public, MemoryCategory::Context)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn set(
         &self,
         key: &str,
@@ -212,6 +314,28 @@ impl MemoryService {
     }
 
     /// 读取记忆
+    ///
+    /// 根据键读取记忆值。如果是私域加密记忆，会自动解密。
+    ///
+    /// # 参数
+    /// - `key`: 记忆键
+    ///
+    /// # 返回
+    /// - `Result<Option<MemoryItem>>`: 成功返回记忆项或 None，失败返回错误
+    ///
+    /// # 示例
+    ///
+    /// ```rust,no_run
+    /// use cis_core::memory::MemoryService;
+    ///
+    /// # fn example(service: &MemoryService) -> anyhow::Result<()> {
+    /// if let Some(item) = service.get("my-key")? {
+    ///     println!("Value: {:?}", item.value);
+    ///     println!("Domain: {:?}", item.domain);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn get(&self, key: &str) -> Result<Option<MemoryItem>> {
         let full_key = self.full_key(key);
         let db = self.memory_db.lock()
@@ -256,7 +380,35 @@ impl MemoryService {
 
     /// 语义搜索记忆
     ///
-    /// 同时搜索私域和公域记忆，根据选项过滤
+    /// 使用向量相似度搜索相关记忆，同时搜索私域和公域记忆，
+    /// 根据选项进行过滤。
+    ///
+    /// # 参数
+    /// - `query`: 搜索查询
+    /// - `options`: 搜索选项（域、分类、限制等）
+    ///
+    /// # 返回
+    /// - `Result<Vec<MemoryItem>>`: 搜索结果列表
+    ///
+    /// # 示例
+    ///
+    /// ```rust,no_run
+    /// use cis_core::memory::{MemoryService, SearchOptions, MemoryDomain, MemoryCategory};
+    ///
+    /// # async fn example(service: &MemoryService) -> anyhow::Result<()> {
+    /// let options = SearchOptions::new()
+    ///     .with_domain(MemoryDomain::Public)
+    ///     .with_category(MemoryCategory::Context)
+    ///     .with_limit(10)
+    ///     .with_threshold(0.7);
+    ///
+    /// let results = service.search("用户偏好", options).await?;
+    /// for item in results {
+    ///     println!("{}: {:?}", item.key, item.value);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn search(
         &self,
         query: &str,
@@ -310,6 +462,133 @@ impl MemoryService {
         items.truncate(limit);
 
         Ok(items)
+    }
+
+    /// 存储记忆并建立向量索引
+    ///
+    /// 存储记忆的同时，立即建立向量索引以便语义搜索。
+    /// 这是一个同步操作，会等待索引完成。
+    ///
+    /// # 参数
+    /// - `key`: 记忆键
+    /// - `value`: 记忆值
+    /// - `domain`: 私域或公域
+    /// - `category`: 分类
+    ///
+    /// # 返回
+    /// - `Result<()>`: 成功返回 Ok，失败返回错误
+    ///
+    /// # 示例
+    ///
+    /// ```rust,no_run
+    /// use cis_core::memory::{MemoryService, MemoryDomain, MemoryCategory};
+    ///
+    /// # async fn example(service: &MemoryService) -> anyhow::Result<()> {
+    /// service.set_with_embedding(
+    ///     "user-prefs",
+    ///     b"{\"theme\":\"dark\",\"lang\":\"zh\"}",
+    ///     MemoryDomain::Public,
+    ///     MemoryCategory::Context
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn set_with_embedding(
+        &self,
+        key: &str,
+        value: &[u8],
+        domain: MemoryDomain,
+        category: MemoryCategory,
+    ) -> Result<()> {
+        let full_key = self.full_key(key);
+        let category_str = format!("{:?}", category);
+
+        // 1. 存储到数据库
+        match domain {
+            MemoryDomain::Private => self.set_private(&full_key, value, category)?,
+            MemoryDomain::Public => self.set_public(&full_key, value, category)?,
+        }
+
+        // 2. 同步建立向量索引（等待完成）
+        let text = String::from_utf8_lossy(value);
+        self.vector_storage
+            .index_memory(&full_key, text.as_bytes(), Some(&category_str))
+            .await?;
+
+        Ok(())
+    }
+
+    /// 语义搜索记忆（返回包含相似度的详细结果）
+    ///
+    /// 执行语义搜索并返回包含相似度分数的详细结果。
+    ///
+    /// # 参数
+    /// - `query`: 搜索查询
+    /// - `limit`: 返回结果数量限制
+    /// - `threshold`: 相似度阈值 (0.0 - 1.0)
+    ///
+    /// # 返回
+    /// - `Result<Vec<MemorySearchResult>>`: 搜索结果列表，按相似度降序排列
+    ///
+    /// # 示例
+    ///
+    /// ```rust,no_run
+    /// use cis_core::memory::MemoryService;
+    ///
+    /// # async fn example(service: &MemoryService) -> anyhow::Result<()> {
+    /// let results = service.semantic_search("暗黑模式配置", 5, 0.7).await?;
+    /// for result in results {
+    ///     println!("{}: {:.2}% similar", result.key, result.similarity * 100.0);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn semantic_search(
+        &self,
+        query: &str,
+        limit: usize,
+        threshold: f32,
+    ) -> Result<Vec<MemorySearchResult>> {
+        // 1. 向量搜索
+        let results = self.vector_storage.search_memory(query, limit * 2, Some(threshold)).await?;
+
+        let mut search_results = Vec::new();
+        let db = self.memory_db.lock()
+            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+
+        for result in results {
+            // 2. 从数据库获取完整条目
+            if let Some(entry) = db.get(&result.key)? {
+                let mut item = MemoryItem::from(entry);
+                item.owner = self.node_id.clone();
+
+                // 3. 解密私域记忆
+                let value = if item.encrypted {
+                    if let Some(ref enc) = self.encryption {
+                        enc.decrypt(&item.value)?
+                    } else {
+                        item.value
+                    }
+                } else {
+                    item.value
+                };
+
+                search_results.push(MemorySearchResult {
+                    key: item.key.clone(),
+                    value,
+                    domain: item.domain,
+                    category: item.category,
+                    similarity: result.similarity,
+                    owner: item.owner,
+                });
+            }
+        }
+
+        // 按相似度降序排序并限制数量
+        search_results.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap());
+        search_results.truncate(limit);
+
+        Ok(search_results)
     }
 
     /// 列出所有记忆键

@@ -1,7 +1,36 @@
-//! AI Provider 模块
+//! # AI Provider 模块
 //!
 //! 提供统一的 AI 调用接口，支持 Claude CLI（默认）和 Kimi Code
 //! 同时提供 RAG (Retrieval Augmented Generation) 增强功能
+//!
+//! ## 功能特性
+//!
+//! - 统一 AI Provider 接口
+//! - 支持 Claude CLI 和 Kimi Code
+//! - RAG 增强生成
+//! - 向量存储集成
+//!
+//! ## 示例
+//!
+//! ```rust,no_run
+//! use cis_core::ai::{AiProvider, AiProviderFactory, Message};
+//!
+//! # async fn example() -> anyhow::Result<()> {
+//! // 创建默认 Provider（Claude CLI）
+//! let provider = AiProviderFactory::default_provider();
+//!
+//! // 简单对话
+//! let response = provider.chat("Hello!").await?;
+//! println!("{}", response);
+//!
+//! // 带上下文的对话
+//! let messages = vec![
+//!     Message::user("What is Rust?"),
+//! ];
+//! let response = provider.chat_with_context("You are a helpful assistant.", &messages).await?;
+//! # Ok(())
+//! # }
+//! ```
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -82,22 +111,91 @@ impl Message {
 }
 
 /// AI Provider 统一接口
+///
+/// 定义 AI 服务的基本操作，包括简单对话、带上下文对话和 RAG 增强对话。
+///
+/// ## 实现者
+///
+/// - `ClaudeCliProvider`: Claude CLI 实现
+/// - `KimiCodeProvider`: Kimi Code 实现
+/// - `RagProvider<P>`: RAG 增强包装器
+///
+/// ## 示例
+///
+/// ```rust,no_run
+/// use cis_core::ai::{AiProvider, Message};
+///
+/// # async fn example(provider: &dyn AiProvider) -> anyhow::Result<()> {
+/// // 检查可用性
+/// if provider.available().await {
+///     // 简单对话
+///     let response = provider.chat("Hello!").await?;
+///     println!("{}", response);
+///
+///     // 带上下文的对话
+///     let messages = vec![
+///         Message::user("What is Rust?"),
+///     ];
+///     let response = provider.chat_with_context(
+///         "You are a helpful assistant.",
+///         &messages
+///     ).await?;
+/// }
+/// # Ok(())
+/// # }
+/// ```
 #[async_trait]
 pub trait AiProvider: Send + Sync {
     /// Provider 名称
     fn name(&self) -> &str;
-    
+
     /// 检查是否可用（CLI 工具是否安装）
     async fn available(&self) -> bool;
-    
+
     /// 简单对话
+    ///
+    /// 发送单个 prompt 并获取响应。
     async fn chat(&self, prompt: &str) -> Result<String>;
-    
+
     /// 带上下文的对话
+    ///
+    /// 在多轮对话上下文中进行交互。
     async fn chat_with_context(
         &self,
         system: &str,
         messages: &[Message],
+    ) -> Result<String>;
+    
+    /// 带 RAG 上下文的对话 (CVI-011)
+    ///
+    /// 使用 ConversationContext 构建增强 Prompt，包含相关历史、记忆和技能信息。
+    ///
+    /// # 参数
+    /// - `prompt`: 用户输入
+    /// - `ctx`: 可选的对话上下文
+    ///
+    /// # 返回
+    /// - `Result<String>`: AI 响应
+    ///
+    /// # 示例
+    ///
+    /// ```rust,no_run
+    /// use cis_core::ai::AiProvider;
+    /// use cis_core::conversation::ConversationContext;
+    ///
+    /// # async fn example(provider: &dyn AiProvider) -> anyhow::Result<()> {
+    /// let mut ctx = ConversationContext::new();
+    /// ctx.add_user_message("我喜欢暗黑模式").await?;
+    ///
+    /// let response = provider.chat_with_rag("推荐什么主题？", Some(&ctx)).await?;
+    /// println!("{}", response);
+    /// # Ok(())
+    /// # }
+    /// ```
+    async fn chat_with_rag(
+        &self,
+        prompt: &str,
+        ctx: Option<&ConversationContext>,
     ) -> Result<String>;
     
     /// 生成结构化数据（JSON）
@@ -168,7 +266,7 @@ impl Default for AiProviderConfig {
 // RAG (Retrieval Augmented Generation) Support
 // ============================================
 
-use crate::conversation::context::{ConversationContext, MessageRole};
+use crate::conversation::{ConversationContext, MessageRole};
 use crate::vector::VectorStorage;
 
 /// Completion Request
@@ -214,7 +312,39 @@ pub struct TokenUsage {
     pub total_tokens: u32,
 }
 
-/// RAG增强的AI Provider
+/// RAG 增强的 AI Provider
+///
+/// 包装其他 AI Provider，提供 RAG (Retrieval Augmented Generation) 增强功能。
+/// 自动检索相关记忆、技能和对话历史来增强 prompt。
+///
+/// ## 功能
+///
+/// - 记忆检索：基于向量相似度搜索相关记忆
+/// - 技能检索：发现相关的可用技能
+/// - 对话历史：获取相关的历史消息
+///
+/// ## 示例
+///
+/// ```rust,no_run
+/// use cis_core::ai::{RagProvider, RagProviderBuilder, AiProviderFactory};
+/// use cis_core::vector::VectorStorage;
+/// use std::sync::Arc;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// let storage = Arc::new(VectorStorage::open_default()?);
+/// let inner = AiProviderFactory::default_provider();
+///
+/// let rag_provider = RagProviderBuilder::new()
+///     .with_vector_storage(storage)
+///     .with_memory_top_k(5)
+///     .build(*inner)?;
+///
+/// // 使用 RAG 增强对话
+/// let response = rag_provider.chat_with_rag("如何优化查询？", None).await?;
+/// println!("{}", response);
+/// # Ok(())
+/// # }
+/// ```
 pub struct RagProvider<P: AiProvider> {
     inner: P,
     vector_storage: Arc<VectorStorage>,
@@ -349,6 +479,34 @@ impl<P: AiProvider> AiProvider for RagProvider<P> {
         messages: &[Message],
     ) -> Result<String> {
         self.inner.chat_with_context(system, messages).await
+    }
+    
+    async fn chat_with_rag(
+        &self,
+        prompt: &str,
+        ctx: Option<&ConversationContext>,
+    ) -> Result<String> {
+        // RagProvider 本身就具备 RAG 能力，使用内部的 build_rag_prompt
+        let enhanced_prompt = if let Some(context) = ctx {
+            match self.build_rag_prompt(prompt, Some(context)).await {
+                Ok(enhanced) => enhanced,
+                Err(e) => {
+                    tracing::warn!("Failed to build RAG prompt: {}, using original", e);
+                    prompt.to_string()
+                }
+            }
+        } else {
+            // 没有上下文时也尝试使用向量存储检索记忆和技能
+            match self.build_rag_prompt(prompt, None).await {
+                Ok(enhanced) => enhanced,
+                Err(e) => {
+                    tracing::warn!("Failed to build RAG prompt: {}, using original", e);
+                    prompt.to_string()
+                }
+            }
+        };
+
+        self.inner.chat(&enhanced_prompt).await
     }
     
     async fn generate_json(

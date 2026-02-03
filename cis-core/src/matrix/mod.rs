@@ -5,11 +5,32 @@
 //!
 //! ## Architecture
 //!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                  CIS Matrix Module                          │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+//! │  │   Server     │  │   Nucleus    │  │  Federation  │       │
+//! │  │  (7676)      │  │   (Core)     │  │  (6767/6768) │       │
+//! │  └──────────────┘  └──────┬───────┘  └──────────────┘       │
+//! │                           │                                 │
+//! │         ┌─────────────────┼─────────────────┐               │
+//! │         │                 │                 │               │
+//! │    ┌────┴────┐      ┌────┴────┐      ┌────┴────┐           │
+//! │    │  Store  │      │  Sync   │      │   WS    │           │
+//! │    │         │      │  Queue  │      │ Tunnel  │           │
+//! │    └─────────┘      └─────────┘      └─────────┘           │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Components
+//!
 //! - **Server**: HTTP server handling Matrix Client-Server API (port 7676)
 //! - **Federation**: Inter-node communication (port 6767) - BMI (Between Machine Interface)
 //! - **WebSocket**: WebSocket federation (port 6768) - Low latency alternative to HTTP
-//! - **Routes**: API endpoints (discovery, login, sync, etc.)
-//! - **Store**: Event storage and retrieval
+//! - **Nucleus**: Core federation logic with sync queue and reconnection
+//! - **Store**: Event storage and retrieval with SQLite
+//! - **Sync**: Optimized sync queue with priority and batching
 //! - **Error**: Matrix-specific error types
 //!
 //! ## Phase 0 Scope
@@ -34,11 +55,13 @@
 //! - Noise protocol handshake
 //! - DID authentication
 //!
-//! ## Future Phases
+//! ## Phase 4 Scope (Complete Federation)
 //!
-//! - Full sync API
-//! - Room management
-//! - Full Matrix Federation
+//! - **FederationManager**: Centralized connection management with reconnection
+//! - **SyncQueue**: Priority-based sync queue with batching
+//! - **RoomStateSync**: Automatic room state synchronization
+//! - **EventBroadcast**: Improved event federation broadcast
+//! - **DeadLetterQueue**: Failed event handling
 
 pub mod anchor;
 pub mod bridge;
@@ -57,11 +80,80 @@ mod routes;
 // WebSocket federation module
 pub mod websocket;
 
+// Federation implementation (separate file to avoid mod.rs conflict)
+mod federation_impl;
+
+// Cloud Anchor module for NAT traversal and peer discovery
+pub mod cloud;
+
+// Re-export anchor types
 pub use anchor::{CloudAnchor, PeerEndpoint};
+
+// Re-export broadcast types
 pub use broadcast::{EventBroadcaster, BroadcastResult};
+
+// Re-export bridge types
 pub use bridge::{MatrixBridge, SkillResult, SkillTask};
+
+// Re-export error types
 pub use error::{MatrixError, MatrixResult};
-pub use nucleus::{MatrixNucleus, RoomId, EventId, UserId, RoomOptions as NucleusRoomOptions, MatrixEvent, HandlerId, RoomManager};
+
+// Re-export nucleus types (core)
+pub use nucleus::{
+    HandlerId, MatrixEvent, MatrixNucleus, MatrixRoom, RoomId, RoomManager,
+    RoomOptions as NucleusRoomOptions, RoomState, EventId, UserId,
+};
+
+// Re-export server types
 pub use server::MatrixServer;
-pub use store::{MatrixStore, RoomOptions};
-pub use sync::{SyncConsumer, SyncConfig, SyncResult};
+
+// Re-export store types
+pub use store::{MatrixStore, RoomOptions, MatrixMessage, MatrixRoom as StoreMatrixRoom};
+
+// Re-export sync types
+pub use sync::{
+    BatchOperation, SyncConsumer, SyncMetrics, SyncPriority, SyncQueue,
+    SyncQueueConfig, SyncResult, SyncStatus, SyncTask,
+};
+
+// Re-export federation types from submodules
+pub use federation::{
+    client::{FederationClient, FederationClientError, FederationClientResult},
+    discovery::PeerDiscovery,
+    server::{FederationServer, FederationServerBuilder},
+    types::{
+        CisMatrixEvent, EventReceiveResponse, FederationConfig, FederationConfig as FedConfig,
+        PeerInfo, RoomInfo, ServerKeyResponse, VerifyKey,
+        FEDERATION_PORT, FEDERATION_API_VERSION,
+    },
+};
+
+// Re-export FederationManager from federation_impl
+pub use federation_impl::{
+    ConnectionState, ConnectionStats,
+    FederationConnection, FederationManager, FederationManagerConfig,
+};
+
+// Re-export websocket types
+pub use websocket::{
+    build_ws_url, AckMessage, AuthMessage, ConnectOptions, ErrorCode, ErrorMessage,
+    EventMessage, HandshakeMessage, PingMessage, PongMessage, SyncRequest, SyncResponse,
+    WebSocketClient, WebSocketClientBuilder, WebSocketServer, WebSocketServerBuilder,
+    WsClientError, WsMessage, WsServerConfig, WsServerError,
+    Tunnel, TunnelError, TunnelManager, TunnelState, TunnelStats,
+    CONNECTION_TIMEOUT, DEFAULT_WS_PORT, HEARTBEAT_INTERVAL, PROTOCOL_VERSION, WS_PATH,
+};
+
+// Re-export noise protocol types
+pub use websocket::{
+    NoiseError, NoiseHandshake, NoiseTransport,
+    noise::keys as noise_keys,
+};
+
+// Re-export Cloud Anchor types
+pub use cloud::{
+    CloudAnchorClient, CloudAnchorConfig, CloudAnchorError, CloudAnchorResult,
+    DiscoveredPeer, HeartbeatRequest, HeartbeatResponse, HolePunchInfo, HolePunchRequest, 
+    HolePunchResponse, NatType, NodeCapabilities, NodeRegistration, PunchCoordination, 
+    RegistrationResponse, RelayMessage, QuotaInfo,
+};
