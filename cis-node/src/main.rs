@@ -112,6 +112,12 @@ enum Commands {
         action: commands::p2p::P2pAction,
     },
     
+    /// Node management (static peer discovery)
+    Node {
+        #[command(subcommand)]
+        action: commands::node::NodeAction,
+    },
+    
     /// Telemetry and request logging
     Telemetry {
         #[command(subcommand)]
@@ -908,6 +914,11 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
         Commands::P2p { action } => {
             let args = commands::p2p::P2pArgs { action };
             commands::p2p::handle_p2p(args).await
+        }
+        
+        Commands::Node { action } => {
+            let args = commands::node::NodeArgs { action };
+            commands::node::handle_node(args).await
         }
         
         Commands::Telemetry { action } => {
