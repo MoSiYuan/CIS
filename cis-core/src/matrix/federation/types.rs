@@ -136,6 +136,22 @@ pub struct PeerInfo {
     /// Additional metadata
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, String>>,
+    
+    /// Source of this peer: "mdns", "manual", "cloud_seed"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    
+    /// Expected DID for cloud seed nodes (verification key like LLM API key)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_did: Option<String>,
+    
+    /// Whether DID verification passed
+    #[serde(default)]
+    pub did_verified: bool,
+    
+    /// Connection type: "direct", "relay", "cloud"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_type: Option<String>,
 }
 
 impl PeerInfo {
@@ -151,6 +167,58 @@ impl PeerInfo {
             trusted: false,
             last_seen: None,
             metadata: None,
+            source: Some("manual".to_string()),
+            expected_did: None,
+            did_verified: false,
+            connection_type: None,
+        }
+    }
+    
+    /// Create a cloud seed node (with DID verification)
+    pub fn new_cloud_seed(
+        server_name: impl Into<String>, 
+        host: impl Into<String>,
+        expected_did: impl Into<String>
+    ) -> Self {
+        Self {
+            server_name: server_name.into(),
+            display_name: None,
+            host: host.into(),
+            port: FEDERATION_PORT,
+            use_https: false,
+            public_key: None,
+            trusted: true, // Cloud seeds are trusted by default
+            last_seen: None,
+            metadata: None,
+            source: Some("cloud_seed".to_string()),
+            expected_did: Some(expected_did.into()),
+            did_verified: false,
+            connection_type: None,
+        }
+    }
+    
+    /// Get display identifier
+    /// Local: "Munin-macmini"
+    /// Cloud: "seed.cis.dev@did:cis:seed:abc123"
+    pub fn display_id(&self) -> String {
+        match (&self.source, &self.expected_did) {
+            (Some(s), Some(did)) if s == "cloud_seed" => {
+                format!("{}@{}", self.host, did)
+            }
+            _ => self.display_name.clone().unwrap_or_else(|| self.server_name.clone()),
+        }
+    }
+    
+    /// Check if this is a cloud seed node
+    pub fn is_cloud_seed(&self) -> bool {
+        self.source.as_deref() == Some("cloud_seed")
+    }
+    
+    /// Verify DID matches expected value
+    pub fn verify_did(&self, actual_did: &str) -> bool {
+        match &self.expected_did {
+            Some(expected) => expected == actual_did,
+            None => true, // No expected DID means no verification needed
         }
     }
     
@@ -181,6 +249,20 @@ impl PeerInfo {
     /// Set trusted status
     pub fn with_trusted(mut self, trusted: bool) -> Self {
         self.trusted = trusted;
+        self
+    }
+    
+    /// Set as cloud seed with expected DID
+    pub fn with_expected_did(mut self, did: impl Into<String>) -> Self {
+        self.expected_did = Some(did.into());
+        self.source = Some("cloud_seed".to_string());
+        self.trusted = true;
+        self
+    }
+    
+    /// Set source type
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.source = Some(source.into());
         self
     }
     
