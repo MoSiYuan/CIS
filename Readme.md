@@ -18,7 +18,9 @@
 
 **解决跨设备幻觉（Cross-Device Hallucination）**：当同一用户在不同设备（工作站/笔记本/服务器）使用独立 Agent 时，由于上下文窗口差异、记忆检索延迟及网络分区，Agent 会生成与事实不符的内容（幻觉）。CIS 通过**硬件绑定的本地记忆 + P2P 联邦同步**，确保每个节点的记忆绝对一致且永不离开本地。
 
-**CIS 是面向高隐私场景的单机 LLM Agent 记忆增强框架**。每个节点都是**硬件绑定的独立 Agent**，通过 **Matrix Federation + P2P 网络** 实现节点间 0 Token 成本的互联互通，在完全离线环境下构建具身智能网络。
+**CIS 是面向高隐私场景的单机 LLM Agent 记忆增强框架**。每个节点都是**硬件绑定的独立 Agent**，通过 **Matrix Federation + P2P 网络** 实现节点间 0 Token 成本的互联互通。
+
+> ⚠️ **注意**：CIS 本身不提供 LLM，需要用户自行配置 AI Provider（Claude / Kimi / OpenAI 等）。如需完全离线使用，请自行部署本地模型（Ollama / Llama.cpp 等）。
 
 ---
 
@@ -27,7 +29,7 @@
 ### 1. 单节点绝对隐私（零数据泄露）
 - **私域记忆永不上云**：所有对话历史、任务状态、Skill 数据存储于本地 SQLite，ChaCha20-Poly1305 加密，物理层面禁止云端同步
 - **硬件绑定防复制**：DID 身份与硬件指纹（CPU/主板/网卡）强绑定，配置复制到异构硬件立即失效，防止数据泄露
-- **零云端依赖**：无需 OpenAI/Claude API 即可运行，支持本地 Ollama/Llama.cpp，断网环境完全可用
+- **灵活的 LLM 配置**：支持 Claude / Kimi / OpenAI 等云端 API，也支持 Ollama / Llama.cpp 等本地模型（完全离线需自行部署本地模型）
 
 ### 2. DID 网络安全（零信任架构）
 - **手动 DID 白名单**：基于 out-of-band 信任的节点准入控制
@@ -56,9 +58,9 @@
 - **零 LLM 状态同步**：设备间仅同步任务状态机变更（Merkle DAG 元数据），不依赖 LLM 对状态进行语义摘要，避免模型随机性引入偏差
 - **确定性记忆访问**：单节点记忆访问不依赖云端向量数据库，消除跨设备上下文窗口差异导致的幻觉
 
-### 6. 0 Token 互联（零成本组网）
+### 6. 0 Token 互联（节点间通信零成本）
 - **Agent 阵列**：多节点通过 WebSocket + QUIC P2P 直接通信，无需云端中转
-- **零 LLM 参与**：节点间使用 Protobuf 二进制协议，不消耗任何 LLM Token
+- **节点间零 Token**：节点间使用 Protobuf 二进制协议通信，**不消耗 LLM Token**（注意：调用 LLM 生成内容仍需消耗相应 Token）
 - **联邦同步**：基于 Matrix 协议的 Room 联邦机制，任务/记忆跨节点安全流转
 
 ### 7. 独联体架构（去中心化）
@@ -88,7 +90,7 @@
 | **集群开发** | 多台服务器 Agent 状态不同步 | 本地记忆 + P2P 同步，代码审查/部署状态实时共享 |
 | **具身智能** | 机器人/IoT 设备隐私数据上云风险 | 边缘节点本地推理，关键数据永不离开设备 |
 | **高隐私办公** | 企业代码/文档不能上传云端 LLM | 本地 Skill 处理敏感数据，仅脱敏元数据联邦同步，**物理层面禁止云端同步** |
-| **离线环境** | 内网/断网环境无法使用 AI 助手 | 完全离线运行，节点间 mDNS 自动发现组网 |
+| **离线环境** | 内网/断网环境无法使用 AI 助手 | 配合 Ollama 等本地模型完全离线运行，节点间 mDNS 自动发现组网 |
 
 ---
 
@@ -123,21 +125,33 @@ cargo build --release
 # 1. 初始化节点（生成 DID + 本地数据库）
 cis init
 
-# 2. 启动节点（自动发现局域网其他 CIS 节点）
+# 2. 配置 AI Provider（编辑 ~/.cis/config.toml）
+# 云端 API 示例（需要联网）：
+[ai]
+provider = "kimi"  # 或 "claude", "openai"
+api_key = "your-api-key"
+
+# 本地模型示例（完全离线）：
+[ai]
+provider = "ollama"
+base_url = "http://localhost:11434"
+model = "llama3.1"
+
+# 3. 启动节点（自动发现局域网其他 CIS 节点）
 cis node start
 
-# 3. 使用自然语言调用 Skill（本地处理，无需联网）
+# 4. 使用自然语言调用 Skill（需配置 LLM）
 cis skill do "分析今天的代码提交并生成报告"
 
-# 4. 语义搜索本地记忆（向量检索，sqlite-vec）
+# 5. 语义搜索本地记忆（向量检索，sqlite-vec，无需 LLM）
 cis memory search "暗黑模式相关的配置"
 
-# 5. 网络 ACL 管理（新增）
+# 6. 网络 ACL 管理（新增）
 cis network allow did:cis:abc123... --reason "信任的工作站"
 cis network mode whitelist
 cis network list
 
-# 6. 启动 GUI（新增）
+# 7. 启动 GUI（新增）
 cis-gui
 ```
 
@@ -298,7 +312,9 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 **Solving Cross-Device Hallucination**: When the same user uses independent Agents on different devices (workstation/laptop/server), context window differences, memory retrieval delays, and network partitions cause Agents to generate factually incorrect content (hallucinations). CIS ensures absolute memory consistency and local-only storage through **hardware-bound local memory + P2P federation sync**.
 
-**CIS is a local LLM Agent memory enhancement framework for high-privacy scenarios**. Each node is a **hardware-bound independent Agent**, interconnected via **Matrix Federation + P2P Network** at 0 Token cost, building embodied intelligence networks in fully offline environments.
+**CIS is a local LLM Agent memory enhancement framework for high-privacy scenarios**. Each node is a **hardware-bound independent Agent**, interconnected via **Matrix Federation + P2P Network** at 0 Token cost.
+
+> ⚠️ **Note**: CIS itself does not provide an LLM. Users must configure their own AI Provider (Claude / Kimi / OpenAI, etc.). For fully offline operation, please deploy local models (Ollama / Llama.cpp, etc.) yourself.
 
 ---
 
@@ -307,7 +323,7 @@ MIT License - 详见 [LICENSE](LICENSE)
 ### 1. Absolute Single-Node Privacy (Zero Data Leakage)
 - **Private Memory Never Clouds**: All conversation history, task states, and Skill data stored in local SQLite with ChaCha20-Poly1305 encryption; physical prohibition of cloud sync
 - **Hardware Binding Anti-Copy**: DID identity strongly bound to hardware fingerprints (CPU/motherboard/NIC); configuration copied to different hardware immediately fails, preventing data leakage
-- **Zero Cloud Dependency**: Runs without OpenAI/Claude API; supports local Ollama/Llama.cpp; fully functional offline
+- **Flexible LLM Configuration**: Supports cloud APIs like Claude / Kimi / OpenAI, as well as local models like Ollama / Llama.cpp (fully offline operation requires deploying local models yourself)
 
 ### 2. DID Network Security (Zero-Trust Architecture)
 - **Manual DID Whitelist**: Node admission control based on out-of-band trust
@@ -336,9 +352,9 @@ MIT License - 详见 [LICENSE](LICENSE)
 - **Zero LLM State Sync**: Devices only sync task state machine changes (Merkle DAG metadata), not relying on LLM semantic summaries, avoiding model randomness bias
 - **Deterministic Memory Access**: Single-node memory access doesn't depend on cloud vector databases, eliminating hallucinations from cross-device context window differences
 
-### 6. 0-Token Interconnection (Zero-Cost Networking)
+### 6. 0-Token Interconnection (Zero-Cost Inter-Node Communication)
 - **Agent Cluster**: Multiple nodes communicate directly via WebSocket + QUIC P2P without cloud relay
-- **Zero LLM Participation**: Nodes use Protobuf binary protocol, consuming no LLM Tokens
+- **Zero Token Between Nodes**: Nodes use Protobuf binary protocol for communication, **consuming no LLM Tokens** (Note: Calling LLM to generate content still consumes respective Tokens)
 - **Federation Sync**: Matrix protocol-based Room federation mechanism for secure task/memory transfer across nodes
 
 ### 7. CIS Architecture (Decentralized)
@@ -368,7 +384,7 @@ MIT License - 详见 [LICENSE](LICENSE)
 | **Cluster Development** | Multiple server Agents out of sync | Local memory + P2P sync; code review/deployment states shared in real-time |
 | **Embodied Intelligence** | Robot/IoT device privacy data cloud risks | Edge nodes do local inference; critical data never leaves the device |
 | **High-Privacy Office** | Enterprise code/docs can't upload to cloud LLM | Local Skill processes sensitive data; only sanitized metadata federated; **physical prohibition of cloud sync** |
-| **Offline Environment** | Intranet/disconnected environments can't use AI assistants | Fully offline operation; nodes auto-discover via mDNS |
+| **Offline Environment** | Intranet/disconnected environments can't use AI assistants | Fully offline operation with Ollama or other local models; nodes auto-discover via mDNS |
 
 ---
 
@@ -403,21 +419,33 @@ cargo build --release
 # 1. Initialize node (generate DID + local database)
 cis init
 
-# 2. Start node (auto-discover LAN CIS nodes)
+# 2. Configure AI Provider (edit ~/.cis/config.toml)
+# Cloud API example (requires internet):
+[ai]
+provider = "kimi"  # or "claude", "openai"
+api_key = "your-api-key"
+
+# Local model example (fully offline):
+[ai]
+provider = "ollama"
+base_url = "http://localhost:11434"
+model = "llama3.1"
+
+# 3. Start node (auto-discover LAN CIS nodes)
 cis node start
 
-# 3. Use natural language to invoke Skill (local processing, no internet)
+# 4. Use natural language to invoke Skill (requires LLM configuration)
 cis skill do "Analyze today's commits and generate report"
 
-# 4. Semantic search local memory (vector retrieval, sqlite-vec)
+# 5. Semantic search local memory (vector retrieval, sqlite-vec, no LLM required)
 cis memory search "Dark mode related configuration"
 
-# 5. Network ACL management (NEW)
+# 6. Network ACL management (NEW)
 cis network allow did:cis:abc123... --reason "Trusted workstation"
 cis network mode whitelist
 cis network list
 
-# 6. Launch GUI (NEW)
+# 7. Launch GUI (NEW)
 cis-gui
 ```
 
