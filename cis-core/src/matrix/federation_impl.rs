@@ -27,7 +27,7 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -39,7 +39,7 @@ use tracing::{debug, error, info, warn};
 use crate::error::{CisError, Result};
 use crate::identity::DIDManager;
 use crate::matrix::federation::{
-    client::{FederationClient, FederationClientError},
+    client::FederationClient,
     discovery::PeerDiscovery,
     types::{CisMatrixEvent, PeerInfo},
 };
@@ -47,7 +47,7 @@ use crate::matrix::RoomInfo;
 use crate::matrix::store::MatrixStore;
 use crate::matrix::websocket::{
     protocol::{PingMessage, SyncRequest, SyncResponse, WsMessage},
-    tunnel::{Tunnel, TunnelManager, TunnelError},
+    tunnel::{Tunnel, TunnelManager},
     WebSocketClient,
 };
 
@@ -402,7 +402,7 @@ impl FederationManager {
 
             // Try to connect immediately
             drop(connections);
-            self.connect_to_node(&node_id).await;
+            let _ = self.connect_to_node(&node_id).await;
         }
 
         Ok(())
@@ -675,7 +675,7 @@ impl FederationManager {
         };
 
         // Query via HTTP API
-        let url = format!("{}/_cis/v1/room/{}", connection.peer_info.federation_url(), room_id);
+        let _url = format!("{}/_cis/v1/room/{}", connection.peer_info.federation_url(), room_id);
 
         // For now, return a placeholder response
         // In a full implementation, this would make an actual HTTP request

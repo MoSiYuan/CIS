@@ -3,13 +3,11 @@
 //! Manages whitelist/blacklist for network admission control.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 
-use crate::identity::did::DIDManager;
-use crate::network::NetworkError;
+
 
 /// Network admission mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -379,6 +377,63 @@ impl NetworkAcl {
             self.bump_version();
         }
     }
+    
+    /// Verify ACL signature
+    pub fn verify(&self) -> Result<(), crate::network::NetworkError> {
+        use ed25519_dalek::Verifier;
+        use crate::identity::did::DIDManager;
+        
+        let signature = match &self.signature {
+            Some(sig) => sig,
+            None => return Err(crate::network::NetworkError::VerificationFailed(
+                "ACL has no signature".to_string()
+            )),
+        };
+        
+        // Create payload without signature for verification
+        let payload = NetworkAclPayload {
+            local_did: self.local_did.clone(),
+            mode: self.mode,
+            whitelist: self.whitelist.clone(),
+            blacklist: self.blacklist.clone(),
+            version: self.version,
+            updated_at: self.updated_at,
+        };
+        
+        let payload_bytes = serde_json::to_vec(&payload)
+            .map_err(|e| crate::network::NetworkError::VerificationFailed(format!("Serialization failed: {}", e)))?;
+        
+        // Parse signature
+        let signature_bytes = hex::decode(signature)
+            .map_err(|e| crate::network::NetworkError::VerificationFailed(format!("Invalid signature hex: {}", e)))?;
+        
+        // Get public key from local_did
+        let (_, public_key_hex) = DIDManager::parse_did(&self.local_did)
+            .ok_or_else(|| crate::network::NetworkError::VerificationFailed(format!("Invalid DID format: {}", self.local_did)))?;
+        
+        let verifying_key = DIDManager::verifying_key_from_hex(&public_key_hex)
+            .map_err(|e| crate::network::NetworkError::VerificationFailed(format!("Failed to parse public key: {}", e)))?;
+        
+        // Verify
+        let sig = ed25519_dalek::Signature::from_slice(&signature_bytes)
+            .map_err(|e| crate::network::NetworkError::VerificationFailed(format!("Invalid signature: {}", e)))?;
+        
+        verifying_key.verify(&payload_bytes, &sig)
+            .map_err(|_| crate::network::NetworkError::InvalidSignature)?;
+        
+        Ok(())
+    }
+}
+
+/// Payload for ACL signing (without signature field)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct NetworkAclPayload {
+    pub local_did: String,
+    pub mode: NetworkMode,
+    pub whitelist: Vec<AclEntry>,
+    pub blacklist: Vec<AclEntry>,
+    pub version: u64,
+    pub updated_at: i64,
 }
 
 /// ACL summary for display

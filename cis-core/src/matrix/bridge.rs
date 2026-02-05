@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::error::{CisError, Result};
 use crate::skill::manager::SkillManager;
 use crate::skill::types::{LoadOptions, SkillConfig, SkillState};
-use crate::skill::{Event, SkillContext, MemoryOp};
+use crate::skill::{Event, SkillContext};
 use crate::matrix::federation_impl::FederationManager;
 use crate::matrix::federation::types::CisMatrixEvent;
 
@@ -344,7 +344,7 @@ impl MatrixBridge {
         if !is_loaded {
             info!("Auto-loading skill '{}'", task.skill);
             self.skill_manager
-                .load(&task.skill, LoadOptions::default())
+                .load(&task.skill, LoadOptions::default()).await
                 .map_err(|e| CisError::skill(format!("Failed to load skill: {}", e)))?;
         }
 
@@ -357,6 +357,7 @@ impl MatrixBridge {
         if !is_active {
             self.skill_manager
                 .activate(&task.skill)
+                .await
                 .map_err(|e| CisError::skill(format!("Failed to activate skill: {}", e)))?;
         }
 
@@ -621,6 +622,9 @@ impl MatrixBridge {
             crate::skill::types::SkillType::Remote => {
                 Err(CisError::skill("Remote skills not yet supported".to_string()))
             }
+            crate::skill::types::SkillType::Dag => {
+                Err(CisError::skill("DAG skills not yet supported".to_string()))
+            }
         }
     }
     
@@ -635,7 +639,7 @@ impl MatrixBridge {
         // 实际实现需要通过 SkillRegistry 获取 Skill 实例并调用 handle_event
         
         // 序列化事件
-        let event_data = serde_json::to_vec(&event)
+        let _event_data = serde_json::to_vec(&event)
             .map_err(|e| CisError::skill(format!("Failed to serialize event: {}", e)))?;
         
         // 调用 SkillRegistry 处理事件

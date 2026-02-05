@@ -1,0 +1,31 @@
+[skill]
+name = "code-review-pipeline"
+version = "1.0.0"
+type = "dag"
+description = "完整的代码审查流程"
+author = "CIS Team"
+
+[dag]
+policy = "all_success"
+
+[[dag.tasks]]
+id = "fetch-diff"
+name = "获取代码变更"
+skill = "git-diff"
+level = { type = "mechanical", retry = 3 }
+deps = []
+
+[[dag.tasks]]
+id = "analyze"
+name = "AI 分析"
+skill = "ai-code-analyze"
+deps = ["fetch-diff"]
+level = { type = "confirmed" }
+
+[[dag.tasks]]
+id = "generate-report"
+name = "生成报告"
+skill = "report-generator"
+deps = ["analyze"]
+level = { type = "mechanical", retry = 3 }
+rollback = ["rm -f report.md"]

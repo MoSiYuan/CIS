@@ -2,7 +2,7 @@
 //!
 //! 使用 mDNS 在局域网发现节点，DHT 在广域网发现节点。
 
-use crate::error::{CisError, Result};
+use crate::error::Result;
 use crate::p2p::NodeInfo;
 use std::collections::HashSet;
 use std::net::SocketAddr;

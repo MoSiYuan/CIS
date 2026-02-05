@@ -146,7 +146,7 @@ async fn output_plain(results: &[MemoryResult], query: &str) -> Result<()> {
     
     for (i, r) in results.iter().enumerate() {
         // Get the actual memory value
-        let content = if let Ok(Some(entry)) = service.get(&r.key) {
+        let content = if let Ok(Some(entry)) = tokio::runtime::Handle::current().block_on(service.get(&r.key)) {
             String::from_utf8_lossy(&entry.value).to_string()
         } else {
             format!("<key: {}>", r.key)
@@ -175,7 +175,7 @@ pub fn get_memory(key: &str) -> Result<()> {
     let node_id = format!("node-{}", uuid::Uuid::new_v4());
     let service = MemoryService::open_default(node_id)?;
     
-    match service.get(key)? {
+    match tokio::runtime::Handle::current().block_on(service.get(key))? {
         Some(entry) => {
             println!("Memory Entry: {}", key);
             println!("  Domain:    {:?}", entry.domain);
@@ -204,7 +204,7 @@ pub fn set_memory(key: &str, value: &str, domain: MemoryDomain, category: Memory
     let node_id = format!("node-{}", uuid::Uuid::new_v4());
     let service = MemoryService::open_default(node_id)?;
     
-    service.set(key, value.as_bytes(), domain, category)
+    tokio::runtime::Handle::current().block_on(service.set(key, value.as_bytes(), domain, category))
         .with_context(|| format!("Failed to set memory for key '{}'", key))?;
     
     let domain_str = match domain {
@@ -222,7 +222,7 @@ pub fn delete_memory(key: &str) -> Result<()> {
     let node_id = format!("node-{}", uuid::Uuid::new_v4());
     let service = MemoryService::open_default(node_id)?;
     
-    match service.delete(key)? {
+    match tokio::runtime::Handle::current().block_on(service.delete(key))? {
         true => {
             println!("✅ Memory deleted: {}", key);
         }
@@ -275,7 +275,7 @@ pub fn list_memory(prefix: Option<&str>, domain: Option<MemoryDomain>) -> Result
     let node_id = format!("node-{}", uuid::Uuid::new_v4());
     let service = MemoryService::open_default(node_id)?;
     
-    let keys = service.list_keys(domain)?;
+    let keys = tokio::runtime::Handle::current().block_on(service.list_keys(domain))?;
     
     // Filter by prefix if provided
     let keys: Vec<String> = if let Some(prefix) = prefix {
@@ -317,7 +317,7 @@ pub fn export_memory(since: Option<i64>, output: Option<&str>) -> Result<()> {
     let service = MemoryService::open_default(node_id)?;
     
     let since = since.unwrap_or(0);
-    let entries = service.export_public(since)?;
+    let entries = tokio::runtime::Handle::current().block_on(service.export_public(since))?;
     
     if entries.is_empty() {
         println!("No public memory entries to export since timestamp {}.", since);

@@ -14,8 +14,8 @@ use std::time::Duration;
 use ed25519_dalek::VerifyingKey;
 use ruma::events::AnyMessageLikeEventContent;
 use tokio::sync::{broadcast, mpsc, RwLock};
-use tokio::time::{interval, sleep};
-use tracing::{debug, error, info, warn};
+use tokio::time::interval;
+use tracing::{debug, info, warn};
 
 use crate::error::{CisError, Result};
 use crate::identity::DIDManager;
@@ -28,9 +28,9 @@ use crate::matrix::RoomInfo;
 use crate::matrix::federation_impl::{
     FederationManager, FederationManagerConfig,
 };
-use crate::matrix::federation::{PeerDiscovery, PeerInfo};
-use crate::matrix::store::{MatrixStore, RoomOptions as StoreRoomOptions};
-use crate::matrix::sync::{SyncConsumer, SyncPriority, SyncQueue, SyncQueueConfig, SyncTask};
+use crate::matrix::federation::PeerDiscovery;
+use crate::matrix::store::MatrixStore;
+use crate::matrix::sync::{SyncPriority, SyncQueue, SyncQueueConfig, SyncTask};
 use crate::matrix::websocket::tunnel::TunnelManager;
 
 /// Matrix 事件
@@ -607,7 +607,7 @@ impl MatrixNucleus {
         nucleus.federation = Some(federation);
 
         // Spawn event handler for incoming federation events
-        let nucleus_arc = Arc::new(RwLock::new(())); // Placeholder for self reference
+        let _nucleus_arc = Arc::new(RwLock::new(())); // Placeholder for self reference
         tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {
                 // Handle incoming federation event
@@ -902,7 +902,7 @@ impl MatrixNucleus {
         // Check if room is federated
         if let Some(opts) = self.room_manager.get_room_options(room_id).await {
             if opts.federate {
-                if let Some(ref federation) = self.federation {
+                if self.federation.is_some() {
                     let fed_event = event.to_federation_event();
 
                     // Get federated nodes for this room
@@ -1044,6 +1044,13 @@ impl MatrixNucleus {
     }
 
     /// 验证事件签名
+    /// 
+    /// 对于联邦事件，验证发送者的身份：
+    /// 1. 解析发送者的 DID 获取公钥
+    /// 2. 验证事件内容的签名（如果事件中包含签名）
+    /// 
+    /// 注意：完整的 Matrix 事件签名验证需要 canonical JSON 和事件哈希，
+    /// 这里实现基础的 DID 验证。
     async fn verify_event_signature(&self, event: &MatrixEvent) -> Result<bool> {
         if !event.federated {
             // Local events don't need verification
@@ -1053,7 +1060,7 @@ impl MatrixNucleus {
         let sender = event.sender_str();
 
         // Resolve sender's DID
-        let sender_key = match self.resolve_did_for_user(sender).await {
+        let _sender_key = match self.resolve_did_for_user(sender).await {
             Ok(key) => key,
             Err(e) => {
                 warn!("Failed to resolve DID for {}: {}", sender, e);
@@ -1061,8 +1068,57 @@ impl MatrixNucleus {
             }
         };
 
-        // Verify signature (placeholder - real implementation would verify event signatures)
-        Ok(true)
+        // 检查事件中是否包含签名
+        if let Some(signatures) = event.content.get("signatures") {
+            // 验证签名
+            if let Some(sender_signatures) = signatures.get(sender) {
+                // 创建事件内容的 canonical JSON
+                let event_json = serde_json::json!({
+                    "room_id": event.room_id.to_string(),
+                    "sender": sender,
+                    "event_type": event.event_type,
+                    "content": event.content,
+                    "timestamp": event.timestamp,
+                });
+                
+                let event_bytes = serde_json::to_vec(&event_json)
+                    .map_err(|e| CisError::matrix(format!("Failed to serialize event: {}", e)))?;
+                
+                // 验证每个签名
+                for (key_id, sig_value) in sender_signatures.as_object().unwrap_or(&serde_json::Map::new()) {
+                    if let Some(sig_hex) = sig_value.as_str() {
+                        match crate::identity::did::DIDManager::signature_from_hex(sig_hex) {
+                            Ok(signature) => {
+                                // 使用 ed25519_dalek 验证签名
+                                use ed25519_dalek::Verifier;
+                                match _sender_key.verify(&event_bytes, &signature) {
+                                    Ok(()) => {
+                                        debug!("Event signature verified for {} with key {}", sender, key_id);
+                                        return Ok(true);
+                                    }
+                                    Err(e) => {
+                                        warn!("Signature verification failed for {}: {:?}", sender, e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse signature for {}: {}", sender, e);
+                            }
+                        }
+                    }
+                }
+                
+                warn!("No valid signature found for event from {}", sender);
+                Ok(false)
+            } else {
+                warn!("No signatures found for sender {} in event", sender);
+                Ok(false)
+            }
+        } else {
+            // 没有签名的旧式事件，仅验证 DID 存在性
+            debug!("Event from {} has no signatures, accepting based on DID resolution", sender);
+            Ok(true)
+        }
     }
 
     /// 解析用户 ID 获取公钥
@@ -1106,10 +1162,54 @@ impl MatrixNucleus {
     }
 
     /// 推断事件类型
-    fn infer_event_type(&self, _content: &AnyMessageLikeEventContent) -> String {
-        // TODO: 根据 content 类型返回对应的事件类型
-        // 暂时返回通用类型，实际需要根据 ruma 的类型系统来实现
-        "m.room.message".to_string()
+    fn infer_event_type(&self, content: &AnyMessageLikeEventContent) -> String {
+        // 根据 content 类型返回对应的事件类型
+        // 使用 serde_json 序列化后检查类型字段
+        if let Ok(json) = serde_json::to_value(content) {
+            // 尝试从 JSON 结构中提取类型信息
+            if let Some(obj) = json.as_object() {
+                // 检查是否有 msgtype 字段（用于 m.room.message）
+                if obj.contains_key("msgtype") {
+                    return "m.room.message".to_string();
+                }
+                // 检查是否有 membership 字段（用于 m.room.member）
+                if obj.contains_key("membership") {
+                    return "m.room.member".to_string();
+                }
+                // 检查其他特定字段
+                if obj.contains_key("name") {
+                    return "m.room.name".to_string();
+                }
+                if obj.contains_key("topic") {
+                    return "m.room.topic".to_string();
+                }
+                if obj.contains_key("url") && obj.contains_key("info") {
+                    return "m.room.avatar".to_string();
+                }
+            }
+        }
+        
+        // 使用 std::any::type_name 获取类型名称作为后备方案
+        let type_name = std::any::type_name_of_val(content);
+        if type_name.contains("RoomMessage") {
+            "m.room.message"
+        } else if type_name.contains("RoomEncrypted") {
+            "m.room.encrypted"
+        } else if type_name.contains("Reaction") {
+            "m.reaction"
+        } else if type_name.contains("Sticker") {
+            "m.sticker"
+        } else if type_name.contains("CallInvite") {
+            "m.call.invite"
+        } else if type_name.contains("CallAnswer") {
+            "m.call.answer"
+        } else if type_name.contains("CallHangup") {
+            "m.call.hangup"
+        } else if type_name.contains("RoomRedaction") {
+            "m.room.redaction"
+        } else {
+            "m.room.message" // 默认返回消息类型
+        }.to_string()
     }
 
     /// 注册事件处理器

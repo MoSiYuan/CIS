@@ -1,4 +1,6 @@
 //! # CIS Core Library
+#![allow(dead_code)]
+#![allow(private_interfaces)]
 //!
 //! Core library for CIS (Cluster of Independent Systems).
 //!
@@ -95,6 +97,12 @@ pub mod p2p;
 
 // Network module - Access control and DID-based admission
 pub mod network;
+
+// GLM module - Cloud node API for GLM integration
+pub mod glm;
+
+// Service layer - Unified data access for CLI, GUI, API
+pub mod service;
 
 pub use error::{CisError, Result};
 pub use identity::DIDManager;

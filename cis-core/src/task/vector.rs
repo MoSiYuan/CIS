@@ -463,6 +463,16 @@ mod tests {
             completed_at: None,
             node_id: None,
             metadata: HashMap::new(),
+            level: crate::types::TaskLevel::Mechanical { retry: 3 },
+            on_ambiguity: crate::types::AmbiguityPolicy::AutoBest,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            rollback: None,
+            idempotent: false,
+            failure_type: None,
+            skill_id: None,
+            skill_params: None,
+            skill_result: None,
         }
     }
 

@@ -1,0 +1,21 @@
+[skill]
+name = "test-pipeline"
+version = "1.0.0"
+type = "dag"
+description = "Test DAG pipeline"
+
+[dag]
+policy = "all_success"
+
+[[dag.tasks]]
+id = "step1"
+name = "First step"
+skill = "echo"
+level = { type = "mechanical", retry = 3 }
+
+[[dag.tasks]]
+id = "step2"
+name = "Second step"
+skill = "echo"
+deps = ["step1"]
+level = { type = "mechanical", retry = 3 }

@@ -14,6 +14,8 @@ pub enum SkillType {
     Wasm,
     /// 远程 Skill (预留)
     Remote,
+    /// DAG 编排 Skill
+    Dag,
 }
 
 /// Skill 状态
@@ -203,6 +205,7 @@ impl SkillInfo {
                     crate::skill::manifest::SkillType::Native => SkillType::Native,
                     crate::skill::manifest::SkillType::Wasm => SkillType::Wasm,
                     crate::skill::manifest::SkillType::Script => SkillType::Native,
+                    crate::skill::manifest::SkillType::Dag => SkillType::Dag,
                 },
                 path: String::new(),
                 db_path: String::new(),

@@ -4,6 +4,9 @@
 
 use clap::{Args, Subcommand};
 use anyhow::Result;
+use std::sync::Arc;
+use cis_core::storage::db::DbManager;
+use cis_core::skill::SkillManager;
 
 /// IM 命令参数
 #[derive(Args, Debug)]
@@ -165,13 +168,48 @@ async fn handle_send(args: SendArgs) -> Result<()> {
         println!("   回复: {}", reply_to);
     }
 
-    // TODO: 调用 IM Skill 发送消息
-    // 示例：
-    // let skill = ImSkill::new(data_dir)?;
-    // let message = skill.send_text(&args.session_id, &current_user(), args.message, options).await?;
-    // println!("✅ 消息已发送: {}", message.id);
-
-    println!("✅ 消息已发送");
+    // 通过 SkillManager 调用 IM Skill
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = SkillManager::new(db_manager)?;
+    
+    // 检查 IM Skill 是否已加载
+    match skill_manager.is_loaded("im") {
+        Ok(true) => {
+            println!("   IM Skill 已加载");
+            
+            // 构建消息内容
+            let content = serde_json::json!({
+                "msgtype": "m.text",
+                "body": args.message,
+                "reply_to": args.reply_to,
+            });
+            
+            // 发送事件到 IM Skill
+            let event = cis_core::skill::Event::Custom {
+                name: "im:send_message".to_string(),
+                data: serde_json::json!({
+                    "conversation_id": args.session_id,
+                    "content": content,
+                }),
+            };
+            
+            match skill_manager.send_event("im", event).await {
+                Ok(()) => {
+                    println!("✅ 消息已发送");
+                }
+                Err(e) => {
+                    eprintln!("❌ 发送失败: {}", e);
+                }
+            }
+        }
+        Ok(false) => {
+            println!("⚠️  IM Skill 未加载，请先加载: cis skill load im");
+        }
+        Err(e) => {
+            eprintln!("❌ 检查 IM Skill 状态失败: {}", e);
+        }
+    }
+    
     Ok(())
 }
 
@@ -182,19 +220,37 @@ async fn handle_list(args: ListArgs) -> Result<()> {
     println!("📋 用户 {} 的会话列表（最近 {} 个）:", user_id, args.limit);
     println!();
 
-    // TODO: 调用 IM Skill 获取会话列表
-    // 示例：
-    // let skill = ImSkill::new(data_dir)?;
-    // let sessions = skill.list_conversations(user_id).await?;
-
-    // 模拟输出
-    println!("  ┌─────────────────────────────────────┐");
-    println!("  │ {:<20} │ {:<10} │ {:<6} │", "会话名称", "类型", "未读");
-    println!("  ├─────────────────────────────────────┤");
-    println!("  │ {:<20} │ {:<10} │ {:<6} │", "张三", "direct", "2");
-    println!("  │ {:<20} │ {:<10} │ {:<6} │", "开发团队", "group", "5");
-    println!("  │ {:<20} │ {:<10} │ {:<6} │", "公告频道", "channel", "0");
-    println!("  └─────────────────────────────────────┘");
+    // 通过 SkillManager 调用 IM Skill
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = SkillManager::new(db_manager)?;
+    
+    match skill_manager.is_loaded("im") {
+        Ok(true) => {
+            // 发送事件获取会话列表
+            let event = cis_core::skill::Event::Custom {
+                name: "im:list_conversations".to_string(),
+                data: serde_json::json!({
+                    "user_id": user_id,
+                    "limit": args.limit,
+                }),
+            };
+            
+            match skill_manager.send_event("im", event).await {
+                Ok(()) => {
+                    println!("✅ 已请求会话列表（异步处理）");
+                }
+                Err(e) => {
+                    eprintln!("❌ 获取会话列表失败: {}", e);
+                }
+            }
+        }
+        Ok(false) => {
+            println!("⚠️  IM Skill 未加载，请先加载: cis skill load im");
+        }
+        Err(e) => {
+            eprintln!("❌ 检查 IM Skill 状态失败: {}", e);
+        }
+    }
 
     Ok(())
 }

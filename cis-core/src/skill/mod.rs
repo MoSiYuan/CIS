@@ -26,6 +26,7 @@ use std::sync::Arc;
 pub mod chain;
 pub mod cis_admin;
 pub mod compatibility_db;
+pub mod dag;
 pub mod manager;
 pub mod manifest;
 pub mod project_registry;
@@ -40,6 +41,7 @@ pub use cis_admin::{CisAdminSkill, CisAnalyzeSkill, CisCommitSkill, CisFileSkill
 pub use compatibility_db::SkillCompatibilityDb;
 pub use manager::SkillManager;
 pub use manifest::{SkillManifest, SkillPermissions, ManifestValidator};
+pub use dag::{SkillDagBuilder, SkillDagContext, SkillDagConverter, SkillDagStats};
 pub use project_registry::{ProjectSkillRegistry, ProjectSkillConfig, ProjectSkillEntry, ProjectSkillDiscovery};
 pub use registry::{SkillRegistry, SkillRegistration};
 pub use router::{ChainExecutionResult, ResolvedParameters, RouteResult, 

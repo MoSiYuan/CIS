@@ -18,9 +18,10 @@
 use std::sync::{Arc, Mutex};
 use wasmer::{FunctionEnv, FunctionEnvMut, Memory, Store, WasmPtr};
 
-use crate::memory::{MemoryService, MemoryServiceTrait};
+use crate::memory::{MemorySearchItem, MemoryService, MemoryServiceTrait};
 use crate::ai::AiProvider;
 use crate::error::CisError;
+use crate::storage::DbManager;
 
 /// Host 上下文
 #[derive(Clone)]
@@ -29,6 +30,8 @@ pub struct HostContext {
     pub memory: Arc<Mutex<dyn MemoryServiceTrait>>,
     /// AI Provider
     pub ai: Arc<Mutex<dyn AiProvider>>,
+    /// 数据库管理器
+    pub db_manager: Option<Arc<DbManager>>,
     /// WASM 内存
     pub memory_ref: Option<Memory>,
     /// 日志回调
@@ -44,9 +47,30 @@ impl HostContext {
         Self {
             memory,
             ai,
+            db_manager: None,
             memory_ref: None,
             log_callback: None,
         }
+    }
+
+    /// 创建新的 Host 上下文（带数据库管理器）
+    pub fn with_db_manager(
+        memory: Arc<Mutex<dyn MemoryServiceTrait>>,
+        ai: Arc<Mutex<dyn AiProvider>>,
+        db_manager: Arc<DbManager>,
+    ) -> Self {
+        Self {
+            memory,
+            ai,
+            db_manager: Some(db_manager),
+            memory_ref: None,
+            log_callback: None,
+        }
+    }
+
+    /// 设置数据库管理器
+    pub fn set_db_manager(&mut self, db_manager: Arc<DbManager>) {
+        self.db_manager = Some(db_manager);
     }
 
     /// 设置内存引用
@@ -281,8 +305,8 @@ impl HostFunctions {
     /// Host function: memory_search
     fn host_memory_search(
         env: FunctionEnvMut<HostContext>,
-        _query_ptr: WasmPtr<u8>,
-        _query_len: i32,
+        query_ptr: WasmPtr<u8>,
+        query_len: i32,
         out_ptr: WasmPtr<u8>,
         out_len: i32,
     ) -> i32 {
@@ -295,25 +319,59 @@ impl HostFunctions {
             }
         };
         
-        // TODO: 实现实际的搜索功能
-        let results: Vec<serde_json::Value> = vec![];
+        // 读取查询关键词
+        let view = memory.view(&env);
+        let query = match Self::read_string_from_view(&view, query_ptr, query_len) {
+            Ok(q) => q,
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to read query: {}", e);
+                return -2;
+            }
+        };
+        
+        // 执行搜索
+        let search_results = match ctx.memory.lock() {
+            Ok(svc) => match svc.search(&query, 10) {
+                Ok(results) => results,
+                Err(e) => {
+                    tracing::error!("[WASM Host] Search failed: {}", e);
+                    return -3;
+                }
+            },
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to lock memory service: {}", e);
+                return -3;
+            }
+        };
+        
+        // 转换为 JSON 格式
+        let results: Vec<serde_json::Value> = search_results
+            .into_iter()
+            .map(|item| {
+                serde_json::json!({
+                    "key": item.key,
+                    "value": String::from_utf8_lossy(&item.value).to_string(),
+                    "domain": format!("{:?}", item.domain),
+                    "category": format!("{:?}", item.category),
+                })
+            })
+            .collect();
         
         // 序列化结果
         let json = match serde_json::to_string(&results) {
             Ok(j) => j,
             Err(e) => {
                 tracing::error!("[WASM Host] Failed to serialize results: {}", e);
-                return -2;
+                return -4;
             }
         };
         
         // 写入 WASM 内存
-        let view = memory.view(&env);
         match Self::write_bytes_to_view(&view, out_ptr, out_len, json.as_bytes()) {
             Ok(written) => written as i32,
             Err(e) => {
                 tracing::error!("[WASM Host] Failed to write results: {}", e);
-                -3
+                -5
             }
         }
     }
@@ -464,14 +522,41 @@ impl HostFunctions {
             }
         };
         
-        // TODO: 从 core db 读取配置
-        let value = format!("config:{}", key);
+        // 从 core db 读取配置
+        let value = match &ctx.db_manager {
+            Some(db_mgr) => {
+                match db_mgr.core().lock() {
+                    Ok(core_db) => {
+                        match core_db.get_config(&key) {
+                            Ok(Some((value, _encrypted))) => {
+                                String::from_utf8_lossy(&value).to_string()
+                            }
+                            Ok(None) => {
+                                return 0; // 配置不存在，返回 0
+                            }
+                            Err(e) => {
+                                tracing::error!("[WASM Host] Failed to get config: {}", e);
+                                return -3;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("[WASM Host] Failed to lock core db: {}", e);
+                        return -3;
+                    }
+                }
+            }
+            None => {
+                tracing::warn!("[WASM Host] DbManager not available");
+                return -4;
+            }
+        };
         
         match Self::write_bytes_to_view(&view, out_ptr, out_len, value.as_bytes()) {
             Ok(written) => written as i32,
             Err(e) => {
                 tracing::error!("[WASM Host] Failed to write config value: {}", e);
-                -3
+                -5
             }
         }
     }
@@ -512,8 +597,33 @@ impl HostFunctions {
         
         tracing::debug!("[WASM Host] Setting config {} = {}", key, value);
         
-        // TODO: 实际实现配置存储
-        1
+        // 存储配置到 core db
+        match &ctx.db_manager {
+            Some(db_mgr) => {
+                match db_mgr.core().lock() {
+                    Ok(core_db) => {
+                        match core_db.set_config(&key, value.as_bytes(), false) {
+                            Ok(()) => {
+                                tracing::debug!("[WASM Host] Config saved successfully");
+                                1 // 成功
+                            }
+                            Err(e) => {
+                                tracing::error!("[WASM Host] Failed to set config: {}", e);
+                                -4
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("[WASM Host] Failed to lock core db: {}", e);
+                        -4
+                    }
+                }
+            }
+            None => {
+                tracing::warn!("[WASM Host] DbManager not available");
+                -5
+            }
+        }
     }
     
     // ==================== Helper Functions ====================

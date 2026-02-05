@@ -105,6 +105,12 @@ pub mod migration {
     /// 简单的迁移管理器
     pub struct MigrationManager;
     
+    impl Default for MigrationManager {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl MigrationManager {
         pub fn new() -> Self { Self }
         

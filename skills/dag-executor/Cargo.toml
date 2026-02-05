@@ -1,0 +1,42 @@
+[package]
+name = "dag-executor"
+version = "0.1.0"
+edition = "2021"
+description = "CIS DAG Executor Skill - 基于作用域隔离的DAG执行器"
+authors = ["CIS Team"]
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["native"]
+native = ["tokio", "async-trait"]
+wasm = []
+
+[dependencies]
+# CIS SDK
+cis-skill-sdk = { path = "../../cis-skill-sdk", features = ["native"] }
+cis-core = { path = "../../cis-core" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime (Native mode)
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "process", "time"], optional = true }
+async-trait = { version = "0.1", optional = true }
+
+# Error handling
+thiserror = "1"
+tracing = "0.1"
+
+# Utilities
+chrono = "0.4"
+uuid = { version = "1", features = ["v4"] }
+
+# Matrix (ruma)
+ruma = { version = "0.10", features = ["client-api-c"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

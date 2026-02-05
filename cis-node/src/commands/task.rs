@@ -4,62 +4,80 @@
 
 use anyhow::Result;
 use cis_core::scheduler::TaskDag;
+use cis_core::scheduler::persistence::DagPersistence;
 use cis_core::types::{Task, TaskId, TaskPriority, TaskStatus};
+use std::path::PathBuf;
 
-/// Task store for managing tasks
+/// Task store for managing tasks - 使用 DAG SQLite 数据库
 pub struct TaskStore {
-    tasks: Vec<Task>,
+    persistence: DagPersistence,
 }
 
 impl TaskStore {
-    pub fn new() -> Self {
-        Self { tasks: Vec::new() }
+    /// 获取数据库存储路径
+    fn db_path() -> PathBuf {
+        let data_dir = dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("cis");
+        
+        if !data_dir.exists() {
+            let _ = std::fs::create_dir_all(&data_dir);
+        }
+        
+        data_dir.join("cis.db")
+    }
+    
+    pub fn new() -> Result<Self> {
+        let persistence = DagPersistence::new(
+            Self::db_path().to_str().unwrap_or("cis.db")
+        )?;
+        
+        Ok(Self { persistence })
     }
     
     pub fn load() -> Result<Self> {
-        // TODO: Load from persistent storage
-        Ok(Self::new())
+        Self::new()
     }
     
     pub fn save(&self) -> Result<()> {
-        // TODO: Save to persistent storage
+        // persistence 自动保存，无需额外操作
         Ok(())
     }
     
-    pub fn list_all(&self) -> &[Task] {
-        &self.tasks
+    pub fn list_all(&self) -> Vec<Task> {
+        self.persistence.list_tasks(None).unwrap_or_default()
     }
     
-    pub fn get(&self, id: &str) -> Option<&Task> {
-        self.tasks.iter().find(|t| t.id == id)
+    pub fn get(&self, id: &str) -> Option<Task> {
+        self.persistence.load_task(id).ok().flatten()
     }
     
-    pub fn add(&mut self, task: Task) {
-        self.tasks.push(task);
+    pub fn add(&mut self, task: Task) -> Result<()> {
+        self.persistence.save_task(&task)?;
+        Ok(())
     }
     
-    pub fn remove(&mut self, id: &str) -> bool {
-        if let Some(pos) = self.tasks.iter().position(|t| t.id == id) {
-            self.tasks.remove(pos);
-            true
-        } else {
-            false
-        }
+    pub fn remove(&mut self, id: &str) -> Result<bool> {
+        let existed = self.persistence.load_task(id)?.is_some();
+        self.persistence.delete_task(id)?;
+        Ok(existed)
     }
 }
 
 impl Default for TaskStore {
     fn default() -> Self {
-        Self::new()
+        Self::new().unwrap_or_else(|_| panic!("Failed to create TaskStore"))
     }
 }
 
 /// List all tasks
 pub fn list_tasks(status: Option<TaskStatus>) -> Result<()> {
     let store = TaskStore::load()?;
-    let tasks: Vec<_> = store.list_all()
+    let tasks = store.list_all();
+    
+    let tasks: Vec<_> = tasks
         .iter()
-        .filter(|t| status.map_or(true, |s| t.status == s))
+        .filter(|t| status.map_or(true, |s| s == t.status))
         .collect();
     
     if tasks.is_empty() {
@@ -174,8 +192,7 @@ pub fn create_task(
     
     println!("Creating task '{}'...", title);
     
-    store.add(task);
-    store.save()?;
+    store.add(task)?;
     
     println!("✅ Task created with ID: {}", id);
     
@@ -186,25 +203,13 @@ pub fn create_task(
 pub fn update_task_status(id: &str, status: TaskStatus) -> Result<()> {
     let store = TaskStore::load()?;
     
-    // Find and update task
-    let mut found = false;
-    for task in store.list_all() {
-        if task.id == id {
-            found = true;
-            // In real implementation, we would update the task
-            break;
-        }
-    }
+    let updated = store.persistence.update_task_status(id, status)?;
     
-    if !found {
+    if updated {
+        println!("✅ Task {} status updated to {:?}", id, status);
+    } else {
         println!("Task not found: {}", id);
-        return Ok(());
     }
-    
-    // TODO: Implement actual update
-    println!("✅ Task {} status updated to {:?}", id, status);
-    
-    store.save()?;
     
     Ok(())
 }
@@ -213,8 +218,7 @@ pub fn update_task_status(id: &str, status: TaskStatus) -> Result<()> {
 pub fn delete_task(id: &str) -> Result<()> {
     let mut store = TaskStore::load()?;
     
-    if store.remove(id) {
-        store.save()?;
+    if store.remove(id)? {
         println!("✅ Task {} deleted.", id);
     } else {
         println!("Task not found: {}", id);
@@ -226,11 +230,12 @@ pub fn delete_task(id: &str) -> Result<()> {
 /// Execute tasks using DAG scheduler
 pub fn execute_tasks() -> Result<()> {
     let store = TaskStore::load()?;
+    let tasks = store.list_all();
     
     // Build DAG from tasks
     let mut dag = TaskDag::new();
     
-    for task in store.list_all() {
+    for task in &tasks {
         let deps: Vec<String> = task.dependencies.clone();
         dag.add_node(task.id.clone(), deps)?;
     }
@@ -263,10 +268,12 @@ fn generate_task_id() -> TaskId {
     format!("task-{}", chars.to_lowercase())
 }
 
-/// Helper: Truncate string to max length
+/// Helper: Truncate string to max length (处理中文字符)
 fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() > max_len {
-        format!("{}...", &s[..max_len - 3])
+    let chars: Vec<_> = s.chars().collect();
+    if chars.len() > max_len {
+        let truncated: String = chars.into_iter().take(max_len - 3).collect();
+        format!("{}...", truncated)
     } else {
         s.to_string()
     }

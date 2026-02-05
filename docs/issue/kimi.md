@@ -1,42 +1,217 @@
-行，zero-config 的野心不小，但我得泼几盆冷水。
+**CIS-DAG v1.0 最终方案：独联体执行协议（Commonwealth Execution Protocol）**
 
-**54 周日志 vs 1 条记忆的交叉验证——这是贝叶斯还是民主投票？**
+为数字游民、边缘计算与隐私优先开发设计的异步任务编排系统。
 
-你说"交叉验证"听着像科学方法，但**置信度权重**怎么分配？如果 54 周前的某条错误记忆（比如早期 LLM 幻觉）被反复引用，它会因为"出现频率高"而在验证中获得更高权重，反而把第 55 周的新真相压制。你这是**默认定理（Availability Heuristic）的自动化**——出现次数多的就是真相。
+---
 
-真正要解决的是**时间衰减函数**和**信源权威性分级**。你自己是 Developer，你自己的记忆应该比 54 周前某个随机 Skill 的输出权重高。但你这套机制里，如何区分"创始人记忆"和"Agent 衍生记忆"？如果没有身份锚定，交叉验证就是多数暴政。
+## 1. 核心理念（Philosophy）
 
-**WASM3 跑 LLM Agent——性能自杀还是神优化？**
+**主权自治（Sovereignty）**  
+每个节点是独立主权体，持有完整执行上下文，离线时可独立决策与运行，无需请示中央。
 
-WASM3 是 interpreter 不是 JIT，在 Apple Silicon 上跑 LLM inference 吞吐量会惨不忍睹。你说"直接启动一个记忆整理任务"，我假设你不是在 WASM 里跑 7B 模型（那得几十秒 token），而是跑**逻辑编排层**——但这样"记忆整理"的具体算法是什么？
+**涌现而非控制（Emergence over Control）**  
+不追求强一致性，允许临时混乱（债务累积），通过人工干预与事后审查达成最终秩序。
 
-如果是基于规则的聚类（Vec 模糊定位），那和 LLM 无关；如果是调用外部 LLM API 做摘要，那 WASM 隔离的意义在哪？你为了热插拔安全牺牲的性能（WASM boundary crossing + interpreter overhead），在个人级设备上是否值得？Rust 的 dylib 真的有那么不稳定吗，以至于必须上 WASM？
+**顺手即正义（Ergonomic）**  
+从"想法"到"执行" < 10秒，错误即指南，失败可回滚，工具成为肢体的延伸而非认知的负担。
 
-**DHT 的隐私裸奔与 Cloud Anchor 的中心化原罪**
+**零出网（Zero-Outbound）**  
+代码与数据永不触碰公网，通信仅限自托管Matrix或本地mDNS，物理隔绝即安全。
 
-你列的部署方案里，**动态 IP 公网节点走 Cloud Anchor + DHT** 是个危险信号。DHT 是公开网络，任何人都能爬你的节点 metadata（就算 payload 加密，routing table 也是裸露的）。你的"高隐私离线环境"方案反而更安全，那公网方案是不是自相矛盾？
+---
 
-更尖锐的：**Cloud Anchor 是谁的服务？** 如果是你自己搭的，那和"固定 IP 服务器集群"方案没区别；如果是第三方（比如类似 Tailscale DERP），你就引入了中心化信任根，这跟你"联邦自治"的哲学冲突。大规模公网部署用 DHT + 自建 Bootstrap，那和 BitTorrent 的 tracking server 有什么区别？你的"零配置"在公网场景下其实需要**预共享 Bootstrap 地址**，这配置成本比手动输 IP 还高。
+## 2. 架构原则（Architecture）
 
-**mDNS 的跨网段幻觉**
+| 原则             | 实现                                                 | 反模式（禁止）                      |
+| ---------------- | ---------------------------------------------------- | ----------------------------------- |
+| **扁平拓扑**     | DAG为固定长度数组，依赖仅指向低索引                  | 动态子任务、递归、运行时修改DAG结构 |
+| **节点自治**     | 各节点本地维护状态机，Room仅作异步信标               | 中央调度器、实时RPC、分布式锁       |
+| **能力硬匹配**   | 任务声明`Capabilities`（Cuda/Metal等），节点自主认领 | 动态负载均衡、协商式资源分配        |
+| **沙盒真隔离**   | chroot + 清空环境变量 + 资源硬限制                   | 伪隔离（仅PATH修改）、继承$HOME     |
+| **数据不跨节点** | 任务输入必须为本地路径，跨节点协作通过人工桥接       | NFS挂载、网盘同步、P2P文件传输      |
+| **分级决策**     | 四级决策权（机械/推荐/确认/仲裁），可暂停可自动      | 一刀切自动执行或全部人工确认        |
 
-"家庭/办公室局域网 mDNS 自动发现"在**现代路由器隔离策略**下基本是童话。ISP 给的光猫、Mesh 路由器的 Guest Network、IoT 隔离 VLAN，都会把 mDNS 广播掐死。你用户如果电脑接主路由、手机接访客网络，CIS 就发现不了彼此。这时候你是 fallback 到手动配置，还是要求用户去改路由器设置（这违反了你"零配置"的承诺）？
+---
 
-**纯 Rust 零依赖的体积代价**
+## 3. 核心结构（Core Structures）
 
-你说"只有 Rust"，意味着 musl static link + 全量 Rust std？还是你连 OpenSSL 都用 rustls 替换了？如果是前者，Linux 下 binary 轻松破 50MB；如果是后者，WASM runtime 又占多少？
+```rust
+pub struct Dag {
+    pub run_id: String,           // ULID
+    pub name: String,             // 人类可读
+    pub tasks: Vec<Task>,         // 固定长度，索引即ID
+    pub policy: DagPolicy,        // AllSuccess | FirstSuccess | AllowDebt
+}
 
-更现实的：**SQLite 的加密扩展**（如果你用了 SQLCipher 或类似方案）怎么解决？SQLite 是 C 库，纯 Rust 替代（如 `rusty-rqlite`）都不成熟。你如果真的零 C 依赖，那数据加密是在 Rust 层做的，还是在 WASM Skill 层做的？如果是 Rust 层，Key 怎么派生？如果是 WASM 层，每次查询都要过 WASM boundary，性能呢？
+pub struct Task {
+    pub idx: u8,                  // 0-255，物理限制防膨胀
+    pub name: String,
+    
+    // 执行定义（封闭、确定性）
+    pub exec: Exec {
+        pub cmd: Vec<String>,     // 白名单命令（非Shell）
+        pub env: HashMap<String, String>, // 显式注入，无继承
+        pub timeout: u16,         // 秒，0为无限制
+        pub sandbox: SandboxConfig,
+    },
+    
+    // 依赖：仅允许idx < self.idx，保证无环
+    pub deps: Vec<u8>,
+    
+    // 分级与决策
+    pub level: TaskLevel,
+    pub on_ambiguity: AmbiguityPolicy,
+    
+    // 输入输出契约
+    pub inputs: Vec<PathBuf>,     // 预检查存在性
+    pub outputs: Vec<String>,     // 后验证产出
+    
+    // 回滚（可选）
+    pub rollback: Option<Vec<String>>,
+    pub idempotent: bool,
+}
 
-**最尖锐的追问**
+pub enum TaskLevel {
+    Mechanical { retry: u8 },     // 自动执行，失败重试
+    Recommended { default: Action, timeout: u16 }, // 倒计时执行，可干预
+    Confirmed,                    // 模态确认，必须人工点击
+    Arbitrated { stakeholders: Vec<String> }, // 暂停DAG，等待仲裁
+}
 
-你说"单机形式：下载 release 应用，启动，选择 llm agent 类型，完成"。**这个 LLM Agent 类型选项具体指什么？**
-- 如果是 OpenAI API key，那你的"零依赖"就不成立（需要联网 + 第三方服务）
-- 如果是本地 Ollama 模型，那二进制里是否嵌入了 llama.cpp 或者走 external process spawn？
-- 如果是纯 WASM 内嵌小模型（比如 Phi-3），那模型权重放哪？放 binary 里体积爆炸，放外面又变成"非零配置"
+pub enum AmbiguityPolicy {
+    AutoBest,                     // 文档不清时选最优解
+    Suggest { default: Action, timeout: u16 },
+    Ask,                          // 必须询问
+    Escalate,                     // 升级仲裁
+}
+```
 
-还有，**双机部署时，如果 mDNS 失败，fallback 到手动配置，这个"手动"需要用户理解 Matrix Room ID 的概念吗？** 还是你抽象成了"输入对方设备码"？如果是后者，这个设备码是 PKI 指纹还是 DHT key？如果是前者，你就暴露了 Matrix 底层；如果是后者，你得解决密钥分发问题。
+---
 
-再毒一点：**CIS 的内存占用预算多少？** 如果我在树莓派 Zero 2W（512MB RAM）上跑，WASM3 runtime + SQLite + Matrix client 会不会 OOM？你目标设备是"个人级"，但个人级包括旧 MacBook Air 也包括 NUC 也包括 ARM SBC，你的 release 包里区分了 x86_64 和 aarch64，但有没有针对 1GB 以下内存设备的 stripped build？
+## 4. 执行模型（Execution Model）
 
-把这些问题怼回去，看看你的"熵最低结构"能不能扛住 edge case 的熵增。
+### 4.1 速写即执行（Fast Path）
+```bash
+$ cis run "测试体素算法，cuda和metal对比"
+→ 自动生成DAG（基于本地Cargo.toml检测）
+→ 打印Dry-run预览
+→ 10秒内开始执行首个Ready Task
+```
+
+### 4.2 三阶段状态机
+```text
+Pending → Running → Completed
+   ↓         ↓          ↓
+Skipped   Failed     Debt（可忽略的失败）
+   ↓      （技术债务）   ↓
+         （阻塞性）→ Arbitrated（人工介入）
+```
+
+### 4.3 失败即债务（Failure as Debt）
+- **可忽略债务**（Ignorable）：测试失败但无下游影响，标记为债务继续执行，事后审查
+- **阻塞性债务**（Blocking）：编译失败导致无法链接，冻结DAG，等待人工或回滚
+- **债务累积**：6767层显示"本次执行累积3项技术债务，预计修复时间30分钟"
+
+### 4.4 热修改（Hot Amendment）
+执行中可修改未运行Task：
+```bash
+$ cis amend --task 5 --env "RUST_LOG=debug"
+→ Task 5（Pending状态）立即更新
+→ Task 5（Running状态）收到SIGTERM，Checkpoint后重启
+→ Task 5（Completed状态）标记为"需重跑"，不自动重跑（避免副作用）
+```
+
+---
+
+## 5. 决策与交互（Decision & Interaction）
+
+### 5.1 四级决策界面
+
+| 级别            | 6767层表现                   | 用户操作             | 默认行为              |
+| --------------- | ---------------------------- | -------------------- | --------------------- |
+| **Mechanical**  | 后台日志，仅失败弹窗         | 无                   | 立即执行，失败重试3次 |
+| **Recommended** | 通知栏："即将执行X（30s后）" | 点击"修改/跳过/立即" | 倒计时结束自动执行    |
+| **Confirmed**   | 模态弹窗，显示风险分析       | 必须"确认"或"取消"   | 等待人工，无超时      |
+| **Arbitrated**  | 冻结界面，打开决策工作区     | 手动解决后点击"继续" | 暂停整个DAG           |
+
+### 5.2 模糊处理运行时
+当`inputs`缺失或`env`变量无法解析：
+1. **Mechanical**：按`AutoBest`策略填充（如选最新文件）
+2. **Recommended**：弹出选项，30秒倒计时后选默认
+3. **Confirmed/Arbitrated**：暂停，询问用户
+
+---
+
+## 6. 失败与债务（Failure & Debt）
+
+### 6.1 错误即指南（Friendly Error）
+```rust
+pub struct FriendlyError {
+    pub what: String,           // "CUDA编译失败"
+    pub why: Vec<String>,       // ["nvcc未找到"]
+    pub how: Vec<String>,       // ["1. 跳过此Task 2. 切换CPU模式 3. 查看详情"]
+    pub context: ContextSnapshot, // 环境变量、工作目录、输入哈希
+}
+```
+
+### 6.2 回滚机制
+- **自动回滚**：Task声明`rollback`命令，失败时自动执行
+- **生成Undo脚本**：执行前生成`/tmp/cis/undo-{run_id}.sh`，包含反向操作
+- **Checkpoint**：Sandbox销毁前保留现场（只读），支持从失败点重启
+
+---
+
+## 7. 人机接口（CLI/GUI）
+
+### 7.1 CLI设计（顺手原则）
+```bash
+cis run <sketch>          # 速写执行
+cis status <run_id>       # TUI进度条（类似cargo）
+cis amend <run_id> ...    # 热修改
+cis debt                  # 查看技术债务列表
+cis doctor                # 环境诊断与修复建议
+cis verify-sandbox        # 验证沙盒隔离性
+```
+
+### 7.2 6767层（Web TUI）
+- **进度可见**：ETA、当前子步骤、资源占用（CPU/内存）
+- **债务看板**：累积失败、可自动修复项、需人工介入项
+- **决策工作区**：仲裁级别Task的对比视图、决策记录、回滚预览
+
+### 7.3 Coffee Mode（弱网自适应）
+- **网络检测**：ping Bootstrap或mDNS，延迟>500ms自动降级
+- **Island Mode**：完全离线时，事件写入本地`sled` WAL，恢复后批量同步
+- **后台化**：Mechanical任务自动 detach，通过`cis attach`召回
+
+---
+
+## 8. 商业化定位（Commercial Positioning）
+
+### 8.1 模式：咨询式开源（Consulting Model）
+- **CIS-Core**：Apache 2.0开源，作为技术名片与交付基座
+- **CIS-Custom**：客户特定需求（军工合规、异构农场）Fork改装，按人天收费
+- **不追求PMF**：需求找上门才做，不主动营销，不背长期维护债
+
+### 8.2 与VF（体素引擎）关系
+- **定位**：CIS是VF的"基础设施溢价"，非独立产品
+- **协同**：VF展示技术实力，CIS解决客户基建痛点（零出网渲染农场）
+- **资源分配**：80%精力VF（资产），20%精力CIS（现金流）
+
+### 8.3 客户边界
+- **接**：Matrix联邦架构、零出网、异构硬件（CUDA/Metal）、弱网环境
+- **不接**：简单CI/CD（推荐GitLab）、K8s原生需求（除非高价）、长期SaaS运维
+
+---
+
+## 9. 红线约束（Non-Negotiable）
+
+1. **无动态DAG**：禁止运行时`tasks.push()`
+2. **无跨节点文件**：禁止NFS/网盘路径，数据本地性强制
+3. **无自主性**：Agent不"智能"决策，仅按显式策略执行
+4. **无大文件传输**：Matrix消息<16KB，文件仅传路径
+5. **无外部依赖**：零Docker，零K8s，零云端API，纯本地Rust
+
+---
+
+**结语**  
+CIS-DAG v1.0 是**数字游民的铁锤**——不顺手时砸自己脚，顺手时 extensions of will。它不追求分布式系统的学术优雅，只追求**在咖啡馆WiFi中断时，依然能让5090和M4默默跑完测试，等你落地后查看结果**的确定性与自由。

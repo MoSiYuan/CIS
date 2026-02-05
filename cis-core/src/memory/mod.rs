@@ -3,6 +3,15 @@
 //! 提供私域/公域记忆管理，支持加密和访问控制。
 //! 使用独立的 MemoryDb 存储，与核心数据库分离。
 
+/// 记忆搜索项
+#[derive(Debug, Clone)]
+pub struct MemorySearchItem {
+    pub key: String,
+    pub value: Vec<u8>,
+    pub domain: MemoryDomain,
+    pub category: MemoryCategory,
+}
+
 /// 记忆服务 Trait（用于 WASM Host API）
 pub trait MemoryServiceTrait: Send + Sync {
     /// 获取记忆值
@@ -11,6 +20,8 @@ pub trait MemoryServiceTrait: Send + Sync {
     fn set(&self, key: &str, value: &[u8]) -> crate::error::Result<()>;
     /// 删除记忆
     fn delete(&self, key: &str) -> crate::error::Result<()>;
+    /// 搜索记忆
+    fn search(&self, query: &str, limit: usize) -> crate::error::Result<Vec<MemorySearchItem>>;
 }
 
 use serde::{Deserialize, Serialize};

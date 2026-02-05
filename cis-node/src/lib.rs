@@ -2,6 +2,7 @@
 //!
 //! CLI tool for CIS (Cluster of Independent Systems).
 //! Provides commands for skill management, memory operations, task management, and more.
+#![allow(dead_code)]
 
 pub mod commands;
 

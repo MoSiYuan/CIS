@@ -5,14 +5,27 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
+use tokio::sync::{mpsc, oneshot};
+
 use super::registry::SkillRegistry;
 use super::types::{LoadOptions, SkillConfig, SkillInfo, SkillMeta, SkillState, SkillType};
+use super::{Event, Skill, SkillContext};
 use crate::error::{CisError, Result};
 use crate::storage::db::{DbManager, SkillDb};
 use crate::storage::paths::Paths;
 
 #[cfg(feature = "wasm")]
 use crate::wasm::WasmRuntime;
+
+/// Skill 事件循环命令
+#[derive(Debug)]
+enum SkillEventCommand {
+    /// 处理事件
+    HandleEvent(Event),
+    /// 停止事件循环
+    Stop,
+}
 
 /// 活跃的 Skill 实例
 struct ActiveSkill {
@@ -22,6 +35,80 @@ struct ActiveSkill {
     db: Arc<Mutex<SkillDb>>,
     /// 配置
     config: SkillConfig,
+    /// Skill 实例（用于事件处理）
+    skill: Arc<dyn Skill>,
+    /// 事件发送通道
+    event_sender: Option<mpsc::UnboundedSender<SkillEventCommand>>,
+    /// 停止信号
+    shutdown_tx: Option<oneshot::Sender<()>>,
+}
+
+/// 简单的 SkillContext 实现
+struct SimpleSkillContext {
+    config: SkillConfig,
+}
+
+impl SimpleSkillContext {
+    fn new(config: SkillConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl SkillContext for SimpleSkillContext {
+    fn log_info(&self, message: &str) {
+        tracing::info!("[Skill] {}", message);
+    }
+    
+    fn log_debug(&self, message: &str) {
+        tracing::debug!("[Skill] {}", message);
+    }
+    
+    fn log_warn(&self, message: &str) {
+        tracing::warn!("[Skill] {}", message);
+    }
+    
+    fn log_error(&self, message: &str) {
+        tracing::error!("[Skill] {}", message);
+    }
+    
+    fn memory_get(&self, _key: &str) -> Option<Vec<u8>> {
+        None
+    }
+    
+    fn memory_set(&self, _key: &str, _value: &[u8]) -> Result<()> {
+        Ok(())
+    }
+    
+    fn memory_delete(&self, _key: &str) -> Result<()> {
+        Ok(())
+    }
+    
+    fn config(&self) -> &SkillConfig {
+        &self.config
+    }
+}
+
+/// 占位 Skill 实现（用于未提供具体实例的情况）
+struct DummySkill {
+    name: String,
+}
+
+impl DummySkill {
+    fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+
+#[async_trait]
+impl Skill for DummySkill {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    
+    async fn handle_event(&self, _ctx: &dyn SkillContext, _event: Event) -> Result<()> {
+        // 占位实现，不处理任何事件
+        Ok(())
+    }
 }
 
 /// Skill 管理器
@@ -113,10 +200,10 @@ impl SkillManager {
     /// 注销 Skill
     ///
     /// 从系统中移除 Skill 注册信息。
-    pub fn unregister(&self, name: &str) -> Result<()> {
+    pub async fn unregister(&self, name: &str) -> Result<()> {
         // 先卸载（如果已加载）
         if self.is_loaded(name)? {
-            self.unload(name)?;
+            self.unload(name).await?;
         }
 
         let mut registry = self.registry.lock()
@@ -133,7 +220,7 @@ impl SkillManager {
     /// 加载 Skill
     ///
     /// 创建数据库连接，初始化 Skill，但不激活。
-    pub fn load(&self, name: &str, options: LoadOptions) -> Result<()> {
+    pub async fn load(&self, name: &str, options: LoadOptions) -> Result<()> {
         // 检查是否已加载
         if self.is_loaded(name)? && !options.force_reload {
             return Ok(());
@@ -141,7 +228,7 @@ impl SkillManager {
 
         // 先卸载（如果已加载且强制重载）
         if self.is_loaded(name)? && options.force_reload {
-            self.unload(name)?;
+            self.unload(name).await?;
         }
 
         // 获取 Skill 信息
@@ -181,10 +268,14 @@ impl SkillManager {
         let config = options.config.unwrap_or_default();
 
         // 4. 创建活跃 Skill 记录
+        // 使用 DummySkill 作为占位，实际的 skill 实例应该通过 register_skill_instance 注册
         let active_skill = ActiveSkill {
             _info: info.clone(),
             db: skill_db,
             config,
+            skill: Arc::new(DummySkill::new(name.to_string())),
+            event_sender: None,
+            shutdown_tx: None,
         };
 
         // 5. 添加到活跃列表
@@ -204,8 +295,9 @@ impl SkillManager {
         tracing::info!("Skill '{}' loaded successfully", name);
 
         // 7. 自动激活（如果启用）
+        // Note: auto_activate 需要调用者显式调用 activate()，因为 activate 现在是 async
         if options.auto_activate {
-            self.activate(name)?;
+            tracing::info!("Skill '{}' marked for auto-activation. Call activate() to start event loop.", name);
         }
 
         Ok(())
@@ -214,7 +306,7 @@ impl SkillManager {
     /// 卸载 Skill
     ///
     /// 关闭数据库连接，释放资源，支持热插拔。
-    pub fn unload(&self, name: &str) -> Result<()> {
+    pub async fn unload(&self, name: &str) -> Result<()> {
         if !self.is_loaded(name)? {
             return Ok(());
         }
@@ -223,7 +315,7 @@ impl SkillManager {
 
         // 1. 先停用（如果处于活跃状态）
         if self.is_active(name)? {
-            self.deactivate(name)?;
+            self.deactivate(name).await?;
         }
 
         // 2. 从活跃列表移除
@@ -277,7 +369,7 @@ impl SkillManager {
     /// 激活 Skill
     ///
     /// 使 Skill 开始处理事件。
-    pub fn activate(&self, name: &str) -> Result<()> {
+    pub async fn activate(&self, name: &str) -> Result<()> {
         if !self.is_loaded(name)? {
             return Err(CisError::skill(format!(
                 "Skill '{}' is not loaded, load first",
@@ -301,7 +393,70 @@ impl SkillManager {
 
         tracing::info!("Activating skill '{}'...", name);
 
-        // TODO: 启动 Skill 的事件循环
+        // 获取 skill 实例以启动事件循环
+        let skill_to_spawn = {
+            let active_skills = self.active_skills.lock()
+                .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+            
+            if let Some(active_skill) = active_skills.get(name) {
+                active_skill.skill.clone()
+            } else {
+                return Err(CisError::skill(format!("Skill '{}' not found in active skills", name)));
+            }
+        };
+
+        // 创建事件通道
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel::<SkillEventCommand>();
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel::<()>();
+
+        // 启动事件处理循环
+        let skill_name = name.to_string();
+        tokio::spawn(async move {
+            tracing::info!("Skill '{}' event loop started", skill_name);
+            
+            loop {
+                tokio::select! {
+                    // 接收事件命令
+                    Some(cmd) = event_rx.recv() => {
+                        match cmd {
+                            SkillEventCommand::HandleEvent(event) => {
+                                let ctx = SimpleSkillContext::new(SkillConfig::default());
+                                if let Err(e) = skill_to_spawn.handle_event(&ctx, event).await {
+                                    tracing::error!("Skill '{}' event handler error: {}", skill_name, e);
+                                }
+                            }
+                            SkillEventCommand::Stop => {
+                                tracing::info!("Skill '{}' event loop stopping", skill_name);
+                                break;
+                            }
+                        }
+                    }
+                    // 接收停止信号
+                    _ = &mut shutdown_rx => {
+                        tracing::info!("Skill '{}' received shutdown signal", skill_name);
+                        break;
+                    }
+                    // 优雅退出：当所有发送者都关闭时
+                    else => {
+                        tracing::info!("Skill '{}' event loop ended (all senders closed)", skill_name);
+                        break;
+                    }
+                }
+            }
+            
+            tracing::info!("Skill '{}' event loop stopped", skill_name);
+        });
+
+        // 保存通道到 ActiveSkill
+        {
+            let mut active_skills = self.active_skills.lock()
+                .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+            
+            if let Some(active_skill) = active_skills.get_mut(name) {
+                active_skill.event_sender = Some(event_tx);
+                active_skill.shutdown_tx = Some(shutdown_tx);
+            }
+        }
 
         registry.update_state(name, SkillState::Active)?;
 
@@ -313,7 +468,7 @@ impl SkillManager {
     /// 停用 Skill
     ///
     /// 停止 Skill 处理事件，但保持加载状态。
-    pub fn deactivate(&self, name: &str) -> Result<()> {
+    pub async fn deactivate(&self, name: &str) -> Result<()> {
         let mut registry = self.registry.lock()
             .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
 
@@ -327,7 +482,24 @@ impl SkillManager {
 
         tracing::info!("Deactivating skill '{}'...", name);
 
-        // TODO: 停止 Skill 的事件循环
+        // 停止事件循环
+        {
+            let mut active_skills = self.active_skills.lock()
+                .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+            
+            if let Some(active_skill) = active_skills.get_mut(name) {
+                // 发送停止命令
+                if let Some(ref sender) = active_skill.event_sender {
+                    let _ = sender.send(SkillEventCommand::Stop);
+                }
+                // 或者发送 shutdown 信号
+                if let Some(shutdown_tx) = active_skill.shutdown_tx.take() {
+                    let _ = shutdown_tx.send(());
+                }
+                // 清除通道
+                active_skill.event_sender = None;
+            }
+        }
 
         registry.update_state(name, SkillState::Loaded)?;
 
@@ -438,11 +610,11 @@ impl SkillManager {
     /// 移除 Skill
     ///
     /// 完全卸载并删除 Skill。
-    pub fn remove(&self, name: &str) -> Result<()> {
+    pub async fn remove(&self, name: &str) -> Result<()> {
         tracing::info!("Removing skill '{}'...", name);
 
         // 1. 注销（会先卸载）
-        self.unregister(name)?;
+        self.unregister(name).await?;
 
         // 2. 删除代码
         let native_path = Paths::skills_native_dir().join(name);
@@ -511,6 +683,142 @@ impl SkillManager {
         Ok(self.wasm_runtime.clone())
     }
 
+    /// 发送事件到指定 Skill
+    ///
+    /// 用于外部模块（如 GLM API）触发 Skill 的事件处理
+    pub async fn send_event(&self, skill_name: &str, event: Event) -> Result<()> {
+        // 检查 skill 是否活跃，并获取事件发送通道
+        let event_sender = {
+            let active_skills = self.active_skills.lock()
+                .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+            
+            if let Some(active) = active_skills.get(skill_name) {
+                active.event_sender.clone()
+            } else {
+                None
+            }
+        };
+
+        if let Some(sender) = event_sender {
+            // 通过通道发送事件
+            sender.send(SkillEventCommand::HandleEvent(event))
+                .map_err(|_| CisError::skill(format!("Skill '{}' event channel closed", skill_name)))?;
+            
+            Ok(())
+        } else {
+            // Skill 没有事件循环（可能未激活），尝试直接调用
+            let skill = {
+                let active_skills = self.active_skills.lock()
+                    .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+                
+                if let Some(active) = active_skills.get(skill_name) {
+                    Some((active.skill.clone(), active.config.clone()))
+                } else {
+                    None
+                }
+            };
+
+            if let Some((skill, config)) = skill {
+                let ctx = SimpleSkillContext::new(config);
+                skill.handle_event(&ctx, event).await
+                    .map_err(|e| CisError::skill(format!("Event handling failed: {}", e)))?;
+                Ok(())
+            } else {
+                Err(CisError::skill(format!("Skill '{}' is not loaded", skill_name)))
+            }
+        }
+    }
+
+    /// 注册 Skill 实例（用于原生 Skill，如 DagExecutorSkill）
+    ///
+    /// 允许外部模块注册一个具体的 Skill trait 对象，使其可以接收事件
+    pub async fn register_skill_instance(&self, skill: Arc<dyn Skill>, options: LoadOptions) -> Result<()> {
+        let name = skill.name().to_string();
+        
+        // 检查是否已加载
+        if self.is_loaded(&name)? && !options.force_reload {
+            return Ok(());
+        }
+        
+        // 先卸载（如果已加载且强制重载）
+        if self.is_loaded(&name)? && options.force_reload {
+            self.unload(&name).await?;
+        }
+        
+        // 获取或创建注册信息
+        let info = {
+            let registry = self.registry.lock()
+                .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+            registry.get(&name).cloned()
+        };
+        
+        // 如果未注册，自动注册
+        let info = if let Some(info) = info {
+            info
+        } else {
+            // 创建默认的 SkillInfo
+            SkillInfo {
+                meta: SkillMeta {
+                    name: name.clone(),
+                    version: skill.version().to_string(),
+                    description: skill.description().to_string(),
+                    author: "system".to_string(),
+                    skill_type: SkillType::Native,
+                    path: String::new(),
+                    db_path: String::new(),
+                    permissions: vec![],
+                    subscriptions: vec![],
+                    config_schema: None,
+                    room_config: None,
+                },
+                runtime: super::types::SkillRuntime {
+                    state: SkillState::Registered,
+                    loaded_at: None,
+                    last_active_at: None,
+                    error: None,
+                    pid: None,
+                },
+            }
+        };
+        
+        // 加载 Skill 数据库
+        let skill_db = self.db_manager.load_skill_db(&name)?;
+        
+        // 确保 Skill 数据目录存在
+        let skill_data_dir = Paths::skill_data_dir(&name);
+        std::fs::create_dir_all(&skill_data_dir)?;
+        
+        // 初始化配置
+        let config = options.config.unwrap_or_default();
+        
+        // 创建活跃 Skill 记录
+        let active_skill = ActiveSkill {
+            _info: info.clone(),
+            db: skill_db,
+            config,
+            skill,
+            event_sender: None,
+            shutdown_tx: None,
+        };
+        
+        // 添加到活跃列表
+        {
+            let mut active_skills = self.active_skills.lock()
+                .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+            active_skills.insert(name.clone(), active_skill);
+        }
+        
+        // 更新注册表状态
+        {
+            let mut registry = self.registry.lock()
+                .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+            registry.update_state(&name, SkillState::Active)?;
+        }
+        
+        tracing::info!("Skill instance '{}' registered successfully", name);
+        Ok(())
+    }
+
     // ==================== 工具方法 ====================
 
     /// 递归复制目录
@@ -550,8 +858,8 @@ mod tests {
         std::env::remove_var("CIS_DATA_DIR");
     }
 
-    #[test]
-    fn test_skill_lifecycle() {
+    #[tokio::test]
+    async fn test_skill_lifecycle() {
         setup_test_env();
 
         let db_manager = Arc::new(DbManager::new().unwrap());
@@ -576,23 +884,23 @@ mod tests {
         assert!(manager.get_info("test-skill").unwrap().is_some());
 
         // 加载
-        manager.load("test-skill", LoadOptions::default()).unwrap();
+        manager.load("test-skill", LoadOptions::default()).await.unwrap();
         assert!(manager.is_loaded("test-skill").unwrap());
 
         // 激活
-        manager.activate("test-skill").unwrap();
+        manager.activate("test-skill").await.unwrap();
         assert!(manager.is_active("test-skill").unwrap());
 
         // 停用
-        manager.deactivate("test-skill").unwrap();
+        manager.deactivate("test-skill").await.unwrap();
         assert!(!manager.is_active("test-skill").unwrap());
 
         // 卸载
-        manager.unload("test-skill").unwrap();
+        manager.unload("test-skill").await.unwrap();
         assert!(!manager.is_loaded("test-skill").unwrap());
 
         // 注销
-        manager.unregister("test-skill").unwrap();
+        manager.unregister("test-skill").await.unwrap();
         assert!(manager.get_info("test-skill").unwrap().is_none());
 
         cleanup_test_env();

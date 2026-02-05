@@ -41,7 +41,9 @@ use serde_json::Value;
 use crate::ai::embedding::EmbeddingService;
 use crate::error::{CisError, Result};
 use crate::intent::{ActionType, EntityValue, ParsedIntent};
+use crate::scheduler::{DagScheduler, SkillDagExecutor};
 use crate::skill::chain::SkillChain;
+use crate::skill::SkillManager;
 use crate::vector::storage::{SkillMatch, VectorStorage};
 
 use super::semantics::SkillSemanticsExt;
@@ -187,6 +189,8 @@ pub struct SkillVectorRouter {
     global_skills: Vec<SkillSemanticsExt>,
     /// 技能兼容性缓存
     compatibility_cache: HashMap<(String, String), SkillCompatibility>,
+    /// Skill 管理器（用于执行）
+    skill_manager: Arc<SkillManager>,
 }
 
 impl SkillVectorRouter {
@@ -195,6 +199,7 @@ impl SkillVectorRouter {
     /// # 参数
     /// - `storage`: 向量存储实例
     /// - `embedding`: 嵌入服务
+    /// - `skill_manager`: Skill 管理器
     ///
     /// # 示例
     ///
@@ -206,16 +211,22 @@ impl SkillVectorRouter {
     /// # fn example() -> anyhow::Result<()> {
     /// let storage = Arc::new(VectorStorage::open_default()?);
     /// let embedding = storage.embedding_service().clone();
-    /// let router = SkillVectorRouter::new(storage, embedding);
+    /// let skill_manager = Arc::new(SkillManager::new()?);
+    /// let router = SkillVectorRouter::new(storage, embedding, skill_manager);
     /// # Ok(())
     /// # }
     /// ```
-    pub fn new(storage: Arc<VectorStorage>, embedding: Arc<dyn EmbeddingService>) -> Self {
+    pub fn new(
+        storage: Arc<VectorStorage>,
+        embedding: Arc<dyn EmbeddingService>,
+        skill_manager: Arc<SkillManager>,
+    ) -> Self {
         Self {
             storage,
             embedding_service: embedding,
             global_skills: Vec::new(),
             compatibility_cache: HashMap::new(),
+            skill_manager,
         }
     }
 
@@ -481,6 +492,10 @@ impl SkillVectorRouter {
         let mut all_succeeded = true;
         let mut current_input = params.initial.clone();
         
+        // 创建 DAG 执行器
+        let scheduler = DagScheduler::new();
+        let mut executor = SkillDagExecutor::new(scheduler, self.skill_manager.clone());
+        
         for (idx, step) in chain.steps().iter().enumerate() {
             // 应用参数映射
             if let Some(mappings) = params.step_mappings.get(&idx) {
@@ -492,24 +507,39 @@ impl SkillVectorRouter {
             }
             
             // 执行技能
-            match self.execute_skill(&step.skill_id, current_input.clone()).await {
-                Ok(output) => {
-                    step_results.push(ChainStepResult {
-                        step_index: idx,
-                        skill_id: step.skill_id.clone(),
-                        output: output.clone(),
-                        success: true,
-                        error: None,
-                    });
-                    
-                    // 输出作为下一步的输入
-                    current_input = output;
+            match executor.execute_skill(&step.skill_id, current_input.clone()).await {
+                Ok(result) => {
+                    if result.success {
+                        step_results.push(ChainStepResult {
+                            step_index: idx,
+                            skill_id: step.skill_id.clone(),
+                            output: result.output.clone().unwrap_or_else(|| serde_json::json!({})),
+                            success: true,
+                            error: None,
+                        });
+                        
+                        // 输出作为下一步的输入
+                        current_input = result.output.clone().unwrap_or_else(|| serde_json::json!({}));
+                    } else {
+                        step_results.push(ChainStepResult {
+                            step_index: idx,
+                            skill_id: step.skill_id.clone(),
+                            output: serde_json::json!({}),
+                            success: false,
+                            error: result.error,
+                        });
+                        all_succeeded = false;
+                        
+                        // 链式失败处理：中断执行
+                        tracing::warn!("Chain execution failed at step {}: {:?}", idx, step.skill_id);
+                        break;
+                    }
                 }
                 Err(e) => {
                     step_results.push(ChainStepResult {
                         step_index: idx,
                         skill_id: step.skill_id.clone(),
-                        output: Value::Null,
+                        output: serde_json::json!({}),
                         success: false,
                         error: Some(e.to_string()),
                     });
@@ -526,7 +556,7 @@ impl SkillVectorRouter {
             .last()
             .filter(|r| r.success)
             .map(|r| r.output.clone())
-            .unwrap_or(Value::Null);
+            .unwrap_or_else(|| serde_json::json!({}));
         
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
         
@@ -986,21 +1016,23 @@ impl SkillVectorRouter {
         Ok(Value::Object(input))
     }
 
-    /// 执行单个技能（模拟）
+    /// 执行单个技能（使用 SkillDagExecutor）
+    ///
+    /// 注意：此方法会在每次调用时创建新的执行器。
+    /// 如需复用执行器上下文，请直接使用 SkillDagExecutor。
     async fn execute_skill(&self, skill_id: &str, input: Value) -> Result<Value> {
-        // 这里应该调用实际的技能执行逻辑
-        // 目前返回模拟结果
-        tracing::debug!("Executing skill {} with input: {:?}", skill_id, input);
+        let scheduler = DagScheduler::new();
+        let mut executor = SkillDagExecutor::new(scheduler, self.skill_manager.clone());
         
-        Ok(serde_json::json!({
-            "skill_id": skill_id,
-            "status": "executed",
-            "input": input,
-            "output": {
-                "result": format!("Skill {} executed successfully", skill_id),
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-            }
-        }))
+        let result = executor.execute_skill(skill_id, input).await?;
+        
+        if result.success {
+            Ok(result.output.unwrap_or_else(|| serde_json::json!({})))
+        } else {
+            Err(CisError::skill(
+                result.error.unwrap_or_else(|| "Skill execution failed".to_string())
+            ))
+        }
     }
 }
 
@@ -1078,7 +1110,9 @@ mod tests {
         let embedding = Arc::new(MockEmbeddingService);
         let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
         
-        let mut router = SkillVectorRouter::new(storage, embedding);
+        let db_manager = Arc::new(crate::storage::db::DbManager::new().unwrap());
+        let skill_manager = Arc::new(SkillManager::new(db_manager).unwrap());
+        let mut router = SkillVectorRouter::new(storage, embedding, skill_manager);
         
         // 注册测试技能
         router.register_global_skill(create_test_skill(
@@ -1099,7 +1133,7 @@ mod tests {
         
         // 测试路由
         let result = router.route_by_intent("分析今天的销售数据").await;
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "route_by_intent failed: {:?}", result.err());
         
         let routing = result.unwrap();
         assert!(routing.overall_confidence > 0.0);
@@ -1113,7 +1147,9 @@ mod tests {
         let embedding = Arc::new(MockEmbeddingService);
         let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
         
-        let mut router = SkillVectorRouter::new(storage, embedding);
+        let db_manager = Arc::new(crate::storage::db::DbManager::new().unwrap());
+        let skill_manager = Arc::new(SkillManager::new(db_manager).unwrap());
+        let mut router = SkillVectorRouter::new(storage, embedding, skill_manager);
         
         // 注册测试技能
         router.register_global_skill(create_test_skill(
@@ -1158,7 +1194,9 @@ mod tests {
         let embedding = Arc::new(MockEmbeddingService);
         let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
         
-        let router = SkillVectorRouter::new(storage, embedding);
+        let db_manager = Arc::new(crate::storage::db::DbManager::new().unwrap());
+        let skill_manager = Arc::new(SkillManager::new(db_manager).unwrap());
+        let router = SkillVectorRouter::new(storage, embedding, skill_manager);
         
         let source = create_test_skill(
             "source",

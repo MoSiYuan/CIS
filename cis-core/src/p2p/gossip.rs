@@ -1,6 +1,6 @@
 //! Gossip 协议实现
 
-use crate::error::{CisError, Result};
+use crate::error::Result;
 use crate::p2p::peer::{PeerManager, PeerInfo};
 use crate::p2p::transport::{QuicTransport, Connection};
 use std::sync::Arc as StdArc;

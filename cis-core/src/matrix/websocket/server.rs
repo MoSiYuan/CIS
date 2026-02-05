@@ -12,7 +12,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
@@ -22,7 +22,7 @@ use crate::matrix::store::MatrixStore;
 use crate::identity::DIDManager;
 
 use super::protocol::{
-    AckMessage, AuthMessage, ErrorCode, ErrorMessage, HandshakeMessage, SyncFilter, WsMessage,
+    AckMessage, AuthMessage, ErrorCode, ErrorMessage, HandshakeMessage, WsMessage,
     PROTOCOL_VERSION, WS_PATH,
 };
 use super::tunnel::{TunnelManager, TunnelState};

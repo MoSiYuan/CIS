@@ -8,11 +8,14 @@
 //! - Node tabs showing trust status (whitelist/verified/pending)
 //! - Node manager for ACL configuration
 //! - One-click remote Agent connection
+#![allow(dead_code)]
 
 use eframe::egui;
 use tracing::info;
 
 mod app;
+mod decision_panel;
+mod glm_panel;
 mod node_tabs;
 mod node_manager;
 mod terminal_panel;

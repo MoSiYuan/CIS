@@ -51,6 +51,20 @@ pub const STATUS_OFFLINE: Color32 = Color32::from_rgb(149, 165, 166);         //
 pub const STATUS_WARNING: Color32 = Color32::from_rgb(241, 196, 15);          // #F1C40F
 pub const STATUS_ERROR: Color32 = Color32::from_rgb(231, 76, 60);             // #E74C3C
 
+// ==================== Accent Colors ====================
+
+/// Accent colors for UI elements
+pub const ACCENT_BLUE: Color32 = Color32::from_rgb(100, 149, 237);            // #6495ED
+pub const ACCENT_GREEN: Color32 = Color32::from_rgb(46, 204, 113);            // #2ECC71
+pub const ACCENT_RED: Color32 = Color32::from_rgb(231, 76, 60);               // #E74C3C
+pub const ACCENT_YELLOW: Color32 = Color32::from_rgb(241, 196, 15);           // #F1C40F
+
+/// Border color
+pub const BORDER_COLOR: Color32 = Color32::from_rgb(80, 80, 80);              // #505050
+
+/// Muted text
+pub const MUTED_TEXT: Color32 = Color32::from_rgb(128, 128, 128);             // #808080
+
 // ==================== Helper Functions ====================
 
 /// Get colors for a trust state

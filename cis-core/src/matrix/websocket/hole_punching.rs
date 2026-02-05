@@ -449,7 +449,7 @@ pub async fn create_punch_socket(preferred_port: Option<u16>) -> Result<UdpSocke
 }
 
 /// 快速 NAT 类型检测
-pub async fn quick_nat_test(stun_server: &str) -> Result<(NatType, Option<SocketAddr>)> {
+pub async fn quick_nat_test(_stun_server: &str) -> Result<(NatType, Option<SocketAddr>)> {
     let nat = NatTraversal::new(0);
     nat.detect_nat_type().await
 }

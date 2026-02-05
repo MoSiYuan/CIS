@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::identity::did::DIDManager;
 use crate::network::{acl::AclEntry, acl::NetworkAcl, NetworkError};
@@ -397,14 +397,14 @@ impl AclSync {
         }
         
         // Verify signature of remote ACL
-        if let Some(ref sig) = remote_acl.signature {
-            // TODO: Verify signature
+        if let Some(ref _sig) = remote_acl.signature {
+            remote_acl.verify()?;
         }
         
         // Merge: keep local entries not in remote, update with remote
-        let old_whitelist: HashMap<String, AclEntry> = 
+        let _old_whitelist: HashMap<String, AclEntry> = 
             local.whitelist.drain(..).map(|e| (e.did.clone(), e)).collect();
-        let old_blacklist: HashMap<String, AclEntry> = 
+        let _old_blacklist: HashMap<String, AclEntry> = 
             local.blacklist.drain(..).map(|e| (e.did.clone(), e)).collect();
         
         // Apply remote whitelist
@@ -452,11 +452,19 @@ fn parse_mode(mode: &str) -> Result<crate::network::acl::NetworkMode, NetworkErr
     }
 }
 
-/// Resolve DID to verifying key (placeholder)
+/// Resolve DID to verifying key
+/// 
+/// 解析 DID 格式 `did:cis:{node_id}:{public_key_hex}` 提取公钥
 fn resolve_did_to_verifying_key(did: &str) -> Result<ed25519_dalek::VerifyingKey, NetworkError> {
-    // TODO: Implement proper DID resolution
-    // For now, this is a placeholder that would query storage or network
-    Err(NetworkError::VerificationFailed("DID resolution not implemented".into()))
+    use crate::identity::did::DIDManager;
+    
+    // 解析 DID
+    let (_, public_key_hex) = DIDManager::parse_did(did)
+        .ok_or_else(|| NetworkError::VerificationFailed(format!("Invalid DID format: {}", did)))?;
+    
+    // 从十六进制解析公钥
+    DIDManager::verifying_key_from_hex(&public_key_hex)
+        .map_err(|e| NetworkError::VerificationFailed(format!("Failed to parse public key: {}", e)))
 }
 
 /// Current timestamp

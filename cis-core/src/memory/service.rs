@@ -31,11 +31,12 @@
 //! # }
 //! ```
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{CisError, Result};
+use crate::error::Result;
 use crate::memory::{MemoryEncryption, MemoryEntryExt};
 use crate::storage::memory_db::{MemoryDb, MemoryEntry};
 use crate::types::{MemoryCategory, MemoryDomain};
@@ -87,7 +88,7 @@ pub struct MemorySearchResult {
 /// ```
 pub struct MemoryService {
     /// 记忆数据库（私域/公域分离存储）
-    memory_db: Arc<Mutex<MemoryDb>>,
+    memory_db: Arc<tokio::sync::Mutex<MemoryDb>>,
     /// 向量存储（用于语义搜索）
     vector_storage: Arc<VectorStorage>,
     /// 加密器（用于私域记忆）
@@ -215,7 +216,7 @@ impl MemoryService {
         node_id: impl Into<String>,
     ) -> Result<Self> {
         Ok(Self {
-            memory_db,
+            memory_db: memory_db as Arc<tokio::sync::Mutex<MemoryDb>>,
             vector_storage,
             encryption: None,
             node_id: node_id.into(),
@@ -242,7 +243,7 @@ impl MemoryService {
         let vector_storage = VectorStorage::open_default()?;
         
         Ok(Self {
-            memory_db: Arc::new(Mutex::new(memory_db)),
+            memory_db: Arc::new(tokio::sync::Mutex::new(memory_db)),
             vector_storage: Arc::new(vector_storage),
             encryption: None,
             node_id: node_id.into(),
@@ -298,7 +299,7 @@ impl MemoryService {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn set(
+    pub async fn set(
         &self,
         key: &str,
         value: &[u8],
@@ -308,8 +309,8 @@ impl MemoryService {
         let full_key = self.full_key(key);
         
         match domain {
-            MemoryDomain::Private => self.set_private(&full_key, value, category),
-            MemoryDomain::Public => self.set_public(&full_key, value, category),
+            MemoryDomain::Private => self.set_private(&full_key, value, category).await,
+            MemoryDomain::Public => self.set_public(&full_key, value, category).await,
         }
     }
 
@@ -336,10 +337,9 @@ impl MemoryService {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn get(&self, key: &str) -> Result<Option<MemoryItem>> {
+    pub async fn get(&self, key: &str) -> Result<Option<MemoryItem>> {
         let full_key = self.full_key(key);
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+        let db = self.memory_db.lock().await;
 
         match db.get(&full_key)? {
             Some(entry) => {
@@ -363,10 +363,9 @@ impl MemoryService {
     }
 
     /// 删除记忆
-    pub fn delete(&self, key: &str) -> Result<bool> {
+    pub async fn delete(&self, key: &str) -> Result<bool> {
         let full_key = self.full_key(key);
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+        let db = self.memory_db.lock().await;
 
         let deleted = db.delete(&full_key)?;
 
@@ -425,8 +424,7 @@ impl MemoryService {
         ).await?;
 
         let mut items = Vec::new();
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+        let db = self.memory_db.lock().await;
 
         for result in results {
             // 2. 从数据库获取完整条目
@@ -505,8 +503,8 @@ impl MemoryService {
 
         // 1. 存储到数据库
         match domain {
-            MemoryDomain::Private => self.set_private(&full_key, value, category)?,
-            MemoryDomain::Public => self.set_public(&full_key, value, category)?,
+            MemoryDomain::Private => self.set_private(&full_key, value, category).await?,
+            MemoryDomain::Public => self.set_public(&full_key, value, category).await?,
         }
 
         // 2. 同步建立向量索引（等待完成）
@@ -553,8 +551,7 @@ impl MemoryService {
         let results = self.vector_storage.search_memory(query, limit * 2, Some(threshold)).await?;
 
         let mut search_results = Vec::new();
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+        let db = self.memory_db.lock().await;
 
         for result in results {
             // 2. 从数据库获取完整条目
@@ -592,9 +589,8 @@ impl MemoryService {
     }
 
     /// 列出所有记忆键
-    pub fn list_keys(&self, domain: Option<MemoryDomain>) -> Result<Vec<String>> {
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+    pub async fn list_keys(&self, domain: Option<MemoryDomain>) -> Result<Vec<String>> {
+        let db = self.memory_db.lock().await;
         
         let prefix = match &self.namespace {
             Some(ns) => format!("{}/", ns),
@@ -606,7 +602,7 @@ impl MemoryService {
 
     // ==================== 私域记忆操作 ====================
 
-    fn set_private(
+    async fn set_private(
         &self,
         key: &str,
         value: &[u8],
@@ -621,8 +617,7 @@ impl MemoryService {
         };
 
         // 2. 存储到 memory_db
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+        let db = self.memory_db.lock().await;
         db.set_private(key, &encrypted, category)?;
 
         // 3. 更新向量索引（使用原始值）
@@ -631,9 +626,8 @@ impl MemoryService {
         Ok(())
     }
 
-    fn get_private(&self, key: &str) -> Result<Option<MemoryItem>> {
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+    async fn get_private(&self, key: &str) -> Result<Option<MemoryItem>> {
+        let db = self.memory_db.lock().await;
 
         if let Some(entry) = db.get(key)? {
             if entry.domain != MemoryDomain::Private {
@@ -656,9 +650,8 @@ impl MemoryService {
         Ok(None)
     }
 
-    fn delete_private(&self, key: &str) -> Result<bool> {
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+    async fn delete_private(&self, key: &str) -> Result<bool> {
+        let db = self.memory_db.lock().await;
 
         // 检查是否是私域记忆
         if let Some(entry) = db.get(key)? {
@@ -672,15 +665,14 @@ impl MemoryService {
 
     // ==================== 公域记忆操作 ====================
 
-    fn set_public(
+    async fn set_public(
         &self,
         key: &str,
         value: &[u8],
         category: MemoryCategory,
     ) -> Result<()> {
         // 1. 明文存储
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+        let db = self.memory_db.lock().await;
         db.set_public(key, value, category)?;
 
         // 2. 更新向量索引
@@ -691,9 +683,8 @@ impl MemoryService {
         Ok(())
     }
 
-    fn get_public(&self, key: &str) -> Result<Option<MemoryItem>> {
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+    async fn get_public(&self, key: &str) -> Result<Option<MemoryItem>> {
+        let db = self.memory_db.lock().await;
 
         if let Some(entry) = db.get(key)? {
             if entry.domain != MemoryDomain::Public {
@@ -708,9 +699,8 @@ impl MemoryService {
         Ok(None)
     }
 
-    fn delete_public(&self, key: &str) -> Result<bool> {
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+    async fn delete_public(&self, key: &str) -> Result<bool> {
+        let db = self.memory_db.lock().await;
 
         // 检查是否是公域记忆
         if let Some(entry) = db.get(key)? {
@@ -751,9 +741,8 @@ impl MemoryService {
     // ==================== P2P 同步 ====================
 
     /// 获取待同步的公域记忆
-    pub fn get_pending_sync(&self, limit: usize) -> Result<Vec<SyncMarker>> {
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+    pub async fn get_pending_sync(&self, limit: usize) -> Result<Vec<SyncMarker>> {
+        let db = self.memory_db.lock().await;
 
         let entries = db.get_pending_sync(limit)?;
         
@@ -771,17 +760,15 @@ impl MemoryService {
     }
 
     /// 标记已同步
-    pub fn mark_synced(&self, key: &str) -> Result<()> {
+    pub async fn mark_synced(&self, key: &str) -> Result<()> {
         let full_key = self.full_key(key);
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+        let db = self.memory_db.lock().await;
         db.mark_synced(&full_key)
     }
 
     /// 导出公域记忆（用于 P2P 同步）
-    pub fn export_public(&self, since: i64) -> Result<Vec<MemoryItem>> {
-        let db = self.memory_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+    pub async fn export_public(&self, since: i64) -> Result<Vec<MemoryItem>> {
+        let db = self.memory_db.lock().await;
 
         // 获取所有公域条目
         let all_keys = db.list_keys("", Some(MemoryDomain::Public))?;
@@ -801,21 +788,21 @@ impl MemoryService {
     }
 
     /// 导入公域记忆
-    pub fn import_public(&self, items: Vec<MemoryItem>) -> Result<()> {
+    pub async fn import_public(&self, items: Vec<MemoryItem>) -> Result<()> {
         for item in items {
             if item.domain == MemoryDomain::Public {
-                self.set_public(&item.key, &item.value, item.category)?;
+                self.set_public(&item.key, &item.value, item.category).await?;
             }
         }
         Ok(())
     }
 
     /// 同步完成回调
-    pub fn on_sync_complete(&self, key: &str, peer_id: &str) -> Result<()> {
+    pub async fn on_sync_complete(&self, key: &str, peer_id: &str) -> Result<()> {
         tracing::info!("Memory {} synced to peer {}", key, peer_id);
         
         // 标记为已同步
-        self.mark_synced(key)
+        self.mark_synced(key).await
     }
 
     // ==================== 工具方法 ====================
@@ -836,14 +823,81 @@ impl MemoryService {
     }
 
     /// 关闭服务
-    pub fn close(self) -> Result<()> {
+    pub async fn close(self) -> Result<()> {
         // 尝试获取锁并关闭数据库
         if let Ok(db) = Arc::try_unwrap(self.memory_db) {
-            if let Ok(db) = db.into_inner() {
-                db.close()?;
-            }
+            let db = db.into_inner();
+            db.close()?;
         }
         Ok(())
+    }
+}
+
+// ==================== MemoryServiceTrait Implementation ====================
+
+use crate::memory::{MemoryServiceTrait, MemorySearchItem};
+
+impl MemoryServiceTrait for MemoryService {
+    fn get(&self, key: &str) -> Option<Vec<u8>> {
+        // 创建运行时来执行异步调用
+        let rt = tokio::runtime::Handle::try_current()
+            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
+            .ok()?;
+        
+        rt.block_on(async {
+            match self.get(key).await {
+                Ok(Some(item)) => Some(item.value),
+                _ => None,
+            }
+        })
+    }
+
+    fn set(&self, key: &str, value: &[u8]) -> crate::error::Result<()> {
+        // 创建运行时来执行异步调用
+        let rt = tokio::runtime::Handle::try_current()
+            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
+            .map_err(|e| crate::error::CisError::Memory(format!("Failed to create runtime: {}", e)))?;
+        
+        rt.block_on(async {
+            self.set(key, value, MemoryDomain::Public, MemoryCategory::Context).await
+        })
+    }
+
+    fn delete(&self, key: &str) -> crate::error::Result<()> {
+        // 创建运行时来执行异步调用
+        let rt = tokio::runtime::Handle::try_current()
+            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
+            .map_err(|e| crate::error::CisError::Memory(format!("Failed to create runtime: {}", e)))?;
+        
+        rt.block_on(async {
+            self.delete(key).await.map(|_| ())
+        })
+    }
+
+    fn search(&self, query: &str, limit: usize) -> crate::error::Result<Vec<MemorySearchItem>> {
+        // 创建运行时来执行异步调用
+        let rt = tokio::runtime::Handle::try_current()
+            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
+            .map_err(|e| crate::error::CisError::Memory(format!("Failed to create runtime: {}", e)))?;
+        
+        rt.block_on(async {
+            let options = SearchOptions::new()
+                .with_limit(limit)
+                .with_threshold(0.5);
+            
+            let results = self.search(query, options).await?;
+            
+            let items = results.into_iter()
+                .map(|item| MemorySearchItem {
+                    key: item.key,
+                    value: item.value,
+                    domain: item.domain,
+                    category: item.category,
+                })
+                .collect();
+            
+            Ok(items)
+        })
     }
 }
 
@@ -865,7 +919,7 @@ mod tests {
         let vector_storage = VectorStorage::open(&vector_path, None).unwrap();
         
         MemoryService {
-            memory_db: Arc::new(Mutex::new(memory_db)),
+            memory_db: Arc::new(tokio::sync::Mutex::new(memory_db)),
             vector_storage: Arc::new(vector_storage),
             encryption: None,
             node_id: "test-node".to_string(),
@@ -878,49 +932,49 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    #[test]
-    fn test_memory_service_basic() {
+    #[tokio::test]
+    async fn test_memory_service_basic() {
         let service = setup_test_service();
 
         // 存储私域记忆
-        service.set_private("private_key", b"private_value", MemoryCategory::Context).unwrap();
+        service.set_private("private_key", b"private_value", MemoryCategory::Context).await.unwrap();
 
         // 存储公域记忆
-        service.set_public("public_key", b"public_value", MemoryCategory::Result).unwrap();
+        service.set_public("public_key", b"public_value", MemoryCategory::Result).await.unwrap();
 
         // 读取
-        let item = service.get("private_key").unwrap().unwrap();
+        let item = service.get("private_key").await.unwrap().unwrap();
         assert_eq!(item.key, "private_key");
         assert_eq!(item.value, b"private_value");
         assert!(matches!(item.domain, MemoryDomain::Private));
         assert_eq!(item.owner, "test-node");
 
-        let item = service.get("public_key").unwrap().unwrap();
+        let item = service.get("public_key").await.unwrap().unwrap();
         assert_eq!(item.key, "public_key");
         assert_eq!(item.value, b"public_value");
         assert!(matches!(item.domain, MemoryDomain::Public));
 
-        service.close().unwrap();
+        service.close().await.unwrap();
         cleanup_test_service();
     }
 
-    #[test]
-    fn test_memory_service_delete() {
+    #[tokio::test]
+    async fn test_memory_service_delete() {
         let service = setup_test_service();
 
-        service.set_private("to_delete", b"value", MemoryCategory::Context).unwrap();
-        assert!(service.get("to_delete").unwrap().is_some());
+        service.set_private("to_delete", b"value", MemoryCategory::Context).await.unwrap();
+        assert!(service.get("to_delete").await.unwrap().is_some());
 
-        let deleted = service.delete("to_delete").unwrap();
+        let deleted = service.delete("to_delete").await.unwrap();
         assert!(deleted);
-        assert!(service.get("to_delete").unwrap().is_none());
+        assert!(service.get("to_delete").await.unwrap().is_none());
 
-        service.close().unwrap();
+        service.close().await.unwrap();
         cleanup_test_service();
     }
 
-    #[test]
-    fn test_memory_service_with_encryption() {
+    #[tokio::test]
+    async fn test_memory_service_with_encryption() {
         let temp_dir = env::temp_dir().join("cis_test_memory_enc_v2");
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
@@ -934,7 +988,7 @@ mod tests {
         let encryption = MemoryEncryption::from_node_key(b"test-key");
         
         let service = MemoryService {
-            memory_db: Arc::new(Mutex::new(memory_db)),
+            memory_db: Arc::new(tokio::sync::Mutex::new(memory_db)),
             vector_storage: Arc::new(vector_storage),
             encryption: Some(encryption),
             node_id: "test-node".to_string(),
@@ -942,19 +996,19 @@ mod tests {
         };
 
         // 存储私域记忆（会被加密）
-        service.set_private("encrypted_key", b"secret_value", MemoryCategory::Context).unwrap();
+        service.set_private("encrypted_key", b"secret_value", MemoryCategory::Context).await.unwrap();
 
         // 读取（自动解密）
-        let item = service.get("encrypted_key").unwrap().unwrap();
+        let item = service.get("encrypted_key").await.unwrap().unwrap();
         assert_eq!(item.value, b"secret_value");
         assert!(item.encrypted);
 
-        service.close().unwrap();
+        service.close().await.unwrap();
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    #[test]
-    fn test_memory_service_namespace() {
+    #[tokio::test]
+    async fn test_memory_service_namespace() {
         let temp_dir = env::temp_dir().join("cis_test_memory_ns_v2");
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
@@ -965,7 +1019,7 @@ mod tests {
         let vector_path = temp_dir.join("vector.db");
         let vector_storage = VectorStorage::open(&vector_path, None).unwrap();
         
-        let memory_db_arc = Arc::new(Mutex::new(memory_db));
+        let memory_db_arc = Arc::new(tokio::sync::Mutex::new(memory_db));
         let vector_storage_arc = Arc::new(vector_storage);
         
         let service1 = MemoryService {
@@ -977,9 +1031,9 @@ mod tests {
         };
         
         // 需要先存储，再读取
-        service1.set_private("key", b"value1", MemoryCategory::Context).unwrap();
+        service1.set_private("key", b"value1", MemoryCategory::Context).await.unwrap();
 
-        let item = service1.get("key").unwrap().unwrap();
+        let item = service1.get("key").await.unwrap().unwrap();
         assert_eq!(item.value, b"value1");
 
         // Note: 实际上两个服务共享同一个底层数据库，

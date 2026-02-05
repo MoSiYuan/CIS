@@ -5,9 +5,12 @@
 use eframe::egui::{self, CentralPanel, Frame, TopBottomPanel};
 use tracing::info;
 
+use crate::decision_panel::{DecisionAction, DecisionPanel, PendingDecision};
+use crate::glm_panel::{GlmPanel, GlmPanelResponse};
 use crate::node_manager::{ManagedNode, NodeManager, NodeStatus, TrustState};
 use crate::node_tabs::{NodeTabInfo, NodeTabs};
 use crate::theme::*;
+use cis_core::types::{TaskLevel, Action};
 
 /// Main CIS application
 pub struct CisApp {
@@ -16,8 +19,14 @@ pub struct CisApp {
     terminal_history: Vec<String>,
     command_input: String,
     
+    // Decision panel for four-tier decision mechanism
+    decision_panel: DecisionPanel,
+    
     // Demo data (will be replaced with real data)
     demo_nodes: Vec<ManagedNode>,
+    
+    // GLM API panel
+    glm_panel: GlmPanel,
 }
 
 impl CisApp {
@@ -86,6 +95,8 @@ impl CisApp {
                 .online(),
         ]);
         
+        let decision_panel = DecisionPanel::new();
+        
         let mut app = Self {
             node_tabs,
             node_manager: NodeManager::new(),
@@ -95,11 +106,16 @@ impl CisApp {
                 "".to_string(),
             ],
             command_input: String::new(),
+            decision_panel,
             demo_nodes,
+            glm_panel: GlmPanel::new(),
         };
         
         // Open manager by default for demo
         app.node_manager.open();
+        
+        // Load demo data for GLM panel
+        app.glm_panel.load_demo_data();
         
         app
     }
@@ -114,6 +130,7 @@ impl CisApp {
                 self.terminal_history.push("  node list     - List nodes".to_string());
                 self.terminal_history.push("  agent         - Call agent".to_string());
                 self.terminal_history.push("  clear         - Clear terminal".to_string());
+                self.terminal_history.push("  demo decision - Demo decision panel".to_string());
             }
             "node list" => {
                 self.terminal_history.push("Nodes:".to_string());
@@ -134,6 +151,48 @@ impl CisApp {
                     );
                 }
             }
+            "demo decision" => {
+                self.terminal_history.push("Demo: Triggering Recommended decision level...".to_string());
+                // Demo: trigger a Recommended level decision
+                let decision = PendingDecision::new(
+                    "task-demo-1".to_string(),
+                    "编译测试".to_string(),
+                    TaskLevel::Recommended { default_action: Action::Execute, timeout_secs: 30 },
+                )
+                .with_description("执行 cargo test 进行测试");
+                self.decision_panel.set_pending_decision(decision);
+            }
+            "demo confirm" => {
+                self.terminal_history.push("Demo: Triggering Confirmed decision level...".to_string());
+                // Demo: trigger a Confirmed level decision
+                let decision = PendingDecision::new(
+                    "task-demo-2".to_string(),
+                    "部署到生产环境".to_string(),
+                    TaskLevel::Confirmed,
+                )
+                .with_description("此操作将影响线上服务")
+                .with_risk("可能导致服务中断");
+                self.decision_panel.set_pending_decision(decision);
+            }
+            "demo arbitrate" => {
+                self.terminal_history.push("Demo: Triggering Arbitrated decision level...".to_string());
+                // Demo: trigger an Arbitrated level decision
+                let decision = PendingDecision::new(
+                    "task-demo-3".to_string(),
+                    "解决合并冲突".to_string(),
+                    TaskLevel::Arbitrated { stakeholders: vec!["user1".to_string(), "user2".to_string()] },
+                )
+                .with_description("Git merge 产生冲突，需要手动解决")
+                .with_conflicts(vec![
+                    "src/main.rs".to_string(),
+                    "config.toml".to_string(),
+                ]);
+                self.decision_panel.set_pending_decision(decision);
+            }
+            "glm" => {
+                self.terminal_history.push("Opening GLM API panel...".to_string());
+                self.glm_panel.open();
+            }
             "clear" => {
                 self.terminal_history.clear();
             }
@@ -145,6 +204,41 @@ impl CisApp {
         }
         
         self.terminal_history.push(String::new());
+    }
+    
+    /// Handle decision actions from the decision panel
+    fn handle_decision_action(&mut self, action: DecisionAction) {
+        use crate::decision_panel::DecisionAction;
+        
+        match action {
+            DecisionAction::AutoProceed => {
+                self.terminal_history.push("[Decision] Auto-proceeding with task...".to_string());
+            }
+            DecisionAction::Proceed => {
+                self.terminal_history.push("[Decision] User confirmed: Proceed".to_string());
+            }
+            DecisionAction::Skip => {
+                self.terminal_history.push("[Decision] User chose: Skip task".to_string());
+            }
+            DecisionAction::Abort => {
+                self.terminal_history.push("[Decision] User chose: Abort DAG".to_string());
+            }
+            DecisionAction::Modify { .. } => {
+                self.terminal_history.push("[Decision] User modified task parameters".to_string());
+            }
+            DecisionAction::MarkResolved => {
+                self.terminal_history.push("[Decision] Arbitration: Marked as resolved".to_string());
+            }
+            DecisionAction::RequestAssistance => {
+                self.terminal_history.push("[Decision] Arbitration: Requested assistance".to_string());
+            }
+            DecisionAction::Rollback => {
+                self.terminal_history.push("[Decision] Arbitration: Rollback initiated".to_string());
+            }
+            DecisionAction::ViewDetails => {
+                self.terminal_history.push("[Decision] Arbitration: Viewing details...".to_string());
+            }
+        }
     }
 }
 
@@ -249,6 +343,36 @@ impl eframe::App for CisApp {
         if let Some(node_id) = manager_response.verify_node {
             info!("Verify node: {}", node_id);
             // TODO: Open verification dialog
+        }
+        
+        // Handle decision panel UI
+        if let Some(action) = self.decision_panel.ui(ctx) {
+            self.handle_decision_action(action);
+        }
+        
+        // Handle GLM panel UI
+        if let Some(response) = self.glm_panel.ui(ctx) {
+            match response {
+                GlmPanelResponse::ConfirmDag(dag_id) => {
+                    self.terminal_history.push(format!("[GLM] Confirming DAG: {}", dag_id));
+                    // TODO: Call API to confirm DAG
+                    self.glm_panel.set_status(format!("DAG {} confirmed", dag_id), false);
+                }
+                GlmPanelResponse::RejectDag(dag_id) => {
+                    self.terminal_history.push(format!("[GLM] Rejecting DAG: {}", dag_id));
+                    // TODO: Call API to reject DAG
+                    self.glm_panel.set_status(format!("DAG {} rejected", dag_id), false);
+                }
+                GlmPanelResponse::Refresh => {
+                    self.terminal_history.push("[GLM] Refreshing pending DAGs...".to_string());
+                    // TODO: Fetch from API
+                    self.glm_panel.load_demo_data();
+                    self.glm_panel.set_status("Refreshed".to_string(), false);
+                }
+                GlmPanelResponse::Close => {
+                    self.glm_panel.close();
+                }
+            }
         }
     }
 }

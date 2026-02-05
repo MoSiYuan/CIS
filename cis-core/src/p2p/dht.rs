@@ -80,7 +80,7 @@ impl DhtService {
 
     /// 启动维护任务
     async fn start_maintenance(&self) -> Result<()> {
-        let node_id = self.node_id.clone();
+        let _node_id = self.node_id.clone();
         let routing_table = Arc::clone(&self.routing_table);
 
         tokio::spawn(async move {
@@ -95,7 +95,7 @@ impl DhtService {
                 // 移除过期的节点
                 let expired: Vec<String> = table
                     .iter()
-                    .filter(|(_, info)| {
+                    .filter(|(_, _info)| {
                         // 检查节点是否过期（超过 10 分钟未更新）
                         // 实际实现中应该有 last_seen 字段
                         false

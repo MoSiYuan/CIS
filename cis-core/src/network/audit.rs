@@ -12,13 +12,13 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::path::Path;
+
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// Security event types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

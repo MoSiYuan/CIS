@@ -448,19 +448,101 @@ fn extract_sender_server(event: &CisMatrixEvent, headers: &HeaderMap) -> Option<
     None
 }
 
-/// Verify event signature (placeholder implementation)
+/// Verify event signature
+/// 
+/// 验证联邦事件的签名：
+/// 1. 从事件中提取签名
+/// 2. 解析发送者的 DID 获取公钥
+/// 3. 验证事件内容的签名
 async fn verify_event_signature(
-    _event: &CisMatrixEvent,
-    _state: &FederationState,
+    event: &CisMatrixEvent,
+    state: &FederationState,
 ) -> Result<(), String> {
-    // In a full implementation, this would:
-    // 1. Fetch the sender's public key from their server
-    // 2. Verify the signature using the key
-    // 3. Check that the event hash matches
+    // 如果配置禁用签名验证，直接通过
+    if !state.config.verify_signatures {
+        return Ok(());
+    }
     
-    // For the simplified scheme B, we accept all events
-    // when verify_signatures is false (default)
-    Ok(())
+    // 获取签名
+    let signatures = match &event.signatures {
+        Some(sigs) if !sigs.is_empty() => sigs,
+        _ => {
+            // 没有签名的事件在严格模式下被拒绝
+            if state.config.verify_signatures {
+                return Err("Event has no signatures".to_string());
+            }
+            return Ok(());
+        }
+    };
+    
+    // 解析发送者 DID 获取公钥
+    let sender_did = format!("did:cis:{}", event.sender.replace(':', ":"));
+    let verifying_key = match resolve_did_to_key(&sender_did).await {
+        Ok(key) => key,
+        Err(e) => {
+            return Err(format!("Failed to resolve DID for {}: {}", event.sender, e));
+        }
+    };
+    
+    // 创建事件内容的 canonical 表示
+    let event_canonical = serde_json::json!({
+        "event_id": &event.event_id,
+        "room_id": &event.room_id,
+        "sender": &event.sender,
+        "event_type": &event.event_type,
+        "content": &event.content,
+        "origin_server_ts": event.origin_server_ts,
+    });
+    
+    let event_bytes = serde_json::to_vec(&event_canonical)
+        .map_err(|e| format!("Failed to serialize event: {}", e))?;
+    
+    // 验证每个签名
+    for (server_name, server_sigs) in signatures {
+        for (key_id, sig_hex) in server_sigs {
+            match crate::identity::did::DIDManager::signature_from_hex(sig_hex) {
+                Ok(signature) => {
+                    use ed25519_dalek::Verifier;
+                    match verifying_key.verify(&event_bytes, &signature) {
+                        Ok(()) => {
+                            debug!(
+                                "Event {} signature verified from {} with key {}",
+                                event.event_id, server_name, key_id
+                            );
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Signature verification failed for event {} from {}: {:?}",
+                                event.event_id, server_name, e
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to parse signature for event {}: {}", event.event_id, e);
+                }
+            }
+        }
+    }
+    
+    Err(format!(
+        "No valid signature found for event {} from {}",
+        event.event_id, event.sender
+    ))
+}
+
+/// Resolve DID to verifying key
+async fn resolve_did_to_key(did: &str) -> Result<ed25519_dalek::VerifyingKey, String> {
+    use crate::identity::did::DIDManager;
+    
+    // 解析 DID
+    let (_, public_key_hex) = DIDManager::parse_did(did)
+        .ok_or_else(|| format!("Invalid DID format: {}", did))?;
+    
+    // 从十六进制解析公钥
+    DIDManager::verifying_key_from_hex(&public_key_hex)
+        .map_err(|e| format!("Failed to parse public key: {}", e))
 }
 
 /// Save event to Matrix store

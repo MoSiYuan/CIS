@@ -5,6 +5,7 @@
 
 use anyhow::{Context, Result};
 use cis_core::skill::types::LoadOptions;
+use cis_core::skill::router::ResolvedParameters;
 use cis_core::skill::SkillManager;
 use cis_core::storage::db::DbManager;
 use std::sync::Arc;
@@ -73,6 +74,10 @@ pub async fn handle_skill_do(args: SkillDoArgs) -> Result<()> {
     // Create log builder
     let mut log_builder = RequestLogBuilder::new(&session_id, &args.description);
     
+    // Initialize SkillManager and DbManager (needed for router)
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone())?);
+    
     // 1. Initialize vector storage
     log_builder.start_stage("vector_storage_init");
     let vector_storage = Arc::new(VectorStorage::open(
@@ -128,9 +133,11 @@ pub async fn handle_skill_do(args: SkillDoArgs) -> Result<()> {
     let project_registry = ProjectSkillRegistry::load(&project_path)
         .or_else(|_| Ok::<_, anyhow::Error>(ProjectSkillRegistry::new(&project_path)))?;
     
+    // Create router with SkillManager for execution
     let router = SkillVectorRouter::new(
         vector_storage,
         embedding_service,
+        skill_manager.clone(),
     );
     
     let project_id = project_registry.project_path().to_str();
@@ -219,35 +226,108 @@ pub async fn handle_skill_do(args: SkillDoArgs) -> Result<()> {
         println!("🔗 建议技能链: {:?}", chain);
     }
     
-    // Execute skill (using existing skill execution mechanism)
-    // For now, we just show what would be executed
-    println!("📦 技能ID: {}", best.skill_id);
-    println!("📋 提取参数: {}", best.extracted_params);
-    println!("⚠️  注意: 实际执行需要 SkillManager 支持");
+    // Execute skill chain
+    let params = ResolvedParameters::new(serde_json::json!({
+        "prompt": args.description,
+        "intent": intent.normalized_intent,
+        "entities": intent.entities,
+        "params": best.extracted_params,
+    }));
     
-    log_builder.end_stage(true, Some(format!("skill={}", best.skill_id)), None);
+    // Build and execute skill chain
+    let mut chain = SkillChain::new(params.initial.clone());
+    chain.add_step(best.skill_id.clone());
     
-    // 5. Save final log
-    let total_duration = total_start.elapsed().as_millis() as u64;
-    let log = log_builder
-        .set_result(RequestResult::Success { 
-            skill_id: best.skill_id.clone(), 
-            output_summary: format!("Executed skill '{}' with params: {}", best.skill_name, best.extracted_params)
-        })
-        .set_metrics(RequestMetrics {
-            total_duration_ms: total_duration,
-            intent_duration_ms: 0,  // Calculated from stage durations if needed
-            routing_duration_ms: 0,
-            execution_duration_ms: 0,
-        })
-        .add_metadata("candidate_count", candidates.len().to_string())
-        .add_metadata("confidence", format!("{:.2}", best.confidence))
-        .build();
+    if let Some(suggested) = &best.suggested_chain {
+        for step in suggested {
+            chain.add_step(step.clone());
+        }
+    }
     
-    logger.log_request(&log)?;
+    match router.execute_chain(&chain, &params).await {
+        Ok(result) => {
+            println!("\n✅ 执行完成 (耗时: {}ms)", result.execution_time_ms);
+            
+            if result.all_succeeded {
+                println!("✓ 所有步骤执行成功");
+                println!("\n📤 最终输出:");
+                println!("{}", serde_json::to_string_pretty(&result.final_output)?);
+                
+                log_builder.end_stage(true, Some(format!("skill={}, success", best.skill_id)), None);
+                
+                // Save final log
+                let total_duration = total_start.elapsed().as_millis() as u64;
+                let log = log_builder
+                    .set_result(RequestResult::Success { 
+                        skill_id: best.skill_id.clone(), 
+                        output_summary: format!("Executed skill '{}' successfully", best.skill_name)
+                    })
+                    .set_metrics(RequestMetrics {
+                        total_duration_ms: total_duration,
+                        intent_duration_ms: 0,
+                        routing_duration_ms: 0,
+                        execution_duration_ms: result.execution_time_ms,
+                    })
+                    .add_metadata("candidate_count", candidates.len().to_string())
+                    .add_metadata("confidence", format!("{:.2}", best.confidence))
+                    .add_metadata("steps", chain.len().to_string())
+                    .build();
+                let _ = logger.log_request(&log);
+            } else {
+                println!("⚠️ 部分步骤执行失败:");
+                for step in &result.step_results {
+                    let status = if step.success { "✓" } else { "✗" };
+                    println!("  {} 步骤 {}: {}", status, step.step_index, step.skill_id);
+                    if let Some(ref error) = step.error {
+                        println!("    错误: {}", error);
+                    }
+                }
+                
+                log_builder.end_stage(false, None, Some("Some steps failed".to_string()));
+                
+                // Save final log
+                let total_duration = total_start.elapsed().as_millis() as u64;
+                let log = log_builder
+                    .set_result(RequestResult::Error { 
+                        error: "Some steps failed".to_string(),
+                    })
+                    .set_metrics(RequestMetrics {
+                        total_duration_ms: total_duration,
+                        intent_duration_ms: 0,
+                        routing_duration_ms: 0,
+                        execution_duration_ms: result.execution_time_ms,
+                    })
+                    .add_metadata("candidate_count", candidates.len().to_string())
+                    .add_metadata("confidence", format!("{:.2}", best.confidence))
+                    .add_metadata("skill_id", best.skill_id.clone())
+                    .build();
+                let _ = logger.log_request(&log);
+            }
+        }
+        Err(e) => {
+            println!("\n❌ 执行失败: {}", e);
+            
+            log_builder.end_stage(false, None, Some(e.to_string()));
+            
+            // Save final log
+            let total_duration = total_start.elapsed().as_millis() as u64;
+            let log = log_builder
+                .set_result(RequestResult::Error { error: e.to_string() })
+                .set_metrics(RequestMetrics {
+                    total_duration_ms: total_duration,
+                    intent_duration_ms: 0,
+                    routing_duration_ms: 0,
+                    execution_duration_ms: 0,
+                })
+                .build();
+            let _ = logger.log_request(&log);
+            
+            return Err(e.into());
+        }
+    }
     
     if logger.config().verbose {
-        println!("\n📝 请求已记录 (耗时: {}ms)", total_duration);
+        println!("\n📝 请求已记录");
     }
     
     Ok(())
@@ -291,7 +371,7 @@ pub fn list_skills() -> Result<()> {
 }
 
 /// Load a skill by name
-pub fn load_skill(name: &str, activate: bool) -> Result<()> {
+pub async fn load_skill(name: &str, activate: bool) -> Result<()> {
     let db_manager = Arc::new(DbManager::new()?);
     let manager = SkillManager::new(db_manager)?;
     
@@ -304,9 +384,14 @@ pub fn load_skill(name: &str, activate: bool) -> Result<()> {
     };
     
     manager.load(name, options)
+        .await
         .with_context(|| format!("Failed to load skill '{}'", name))?;
     
+    // 如果启用了自动激活，调用 activate
     if activate {
+        manager.activate(name)
+            .await
+            .with_context(|| format!("Failed to activate skill '{}'", name))?;
         println!("✅ Skill '{}' loaded and activated.", name);
     } else {
         println!("✅ Skill '{}' loaded. Use 'cis skill activate {}' to activate.", name, name);
@@ -316,13 +401,14 @@ pub fn load_skill(name: &str, activate: bool) -> Result<()> {
 }
 
 /// Unload a skill by name
-pub fn unload_skill(name: &str) -> Result<()> {
+pub async fn unload_skill(name: &str) -> Result<()> {
     let db_manager = Arc::new(DbManager::new()?);
     let manager = SkillManager::new(db_manager)?;
     
     println!("Unloading skill '{}'...", name);
     
     manager.unload(name)
+        .await
         .with_context(|| format!("Failed to unload skill '{}'", name))?;
     
     println!("✅ Skill '{}' unloaded.", name);
@@ -331,13 +417,14 @@ pub fn unload_skill(name: &str) -> Result<()> {
 }
 
 /// Activate a skill
-pub fn activate_skill(name: &str) -> Result<()> {
+pub async fn activate_skill(name: &str) -> Result<()> {
     let db_manager = Arc::new(DbManager::new()?);
     let manager = SkillManager::new(db_manager)?;
     
     println!("Activating skill '{}'...", name);
     
     manager.activate(name)
+        .await
         .with_context(|| format!("Failed to activate skill '{}'", name))?;
     
     println!("✅ Skill '{}' activated.", name);
@@ -346,13 +433,14 @@ pub fn activate_skill(name: &str) -> Result<()> {
 }
 
 /// Deactivate a skill
-pub fn deactivate_skill(name: &str) -> Result<()> {
+pub async fn deactivate_skill(name: &str) -> Result<()> {
     let db_manager = Arc::new(DbManager::new()?);
     let manager = SkillManager::new(db_manager)?;
     
     println!("Deactivating skill '{}'...", name);
     
     manager.deactivate(name)
+        .await
         .with_context(|| format!("Failed to deactivate skill '{}'", name))?;
     
     println!("✅ Skill '{}' deactivated.", name);
@@ -413,12 +501,48 @@ pub fn call_skill(name: &str, method: &str, args: Option<&str>) -> Result<()> {
 
 /// Install a skill from path
 pub fn install_skill(path: &str) -> Result<()> {
-    let db_manager = Arc::new(DbManager::new()?);
-    let manager = SkillManager::new(db_manager)?;
+    use cis_core::skill::manifest::SkillManifest;
     
     let path = std::path::Path::new(path);
     
     println!("Installing skill from '{}'...", path.display());
+    
+    // 检查是否是 DAG 文件（.toml 或 .json）
+    let is_dag_file = path.extension().map_or(false, |ext| {
+        ext == "toml" || ext == "json"
+    });
+    
+    if is_dag_file {
+        // 尝试作为 DAG 文件加载
+        match SkillManifest::from_dag_file(path) {
+            Ok(manifest) => {
+                println!("📦 Loading DAG skill: {}", manifest.skill.name);
+                
+                // 转换为 SkillMeta 并注册
+                let skill_info = cis_core::skill::types::SkillInfo::from_manifest(&manifest);
+                
+                let db_manager = Arc::new(DbManager::new()?);
+                let manager = SkillManager::new(db_manager)?;
+                manager.register(skill_info.meta)?;
+                
+                println!("✅ DAG skill '{}' installed successfully!", manifest.skill.name);
+                if let Some(ref dag) = manifest.dag {
+                    println!("   Tasks: {}", dag.tasks.len());
+                    println!("   Policy: {:?}", dag.policy);
+                }
+                
+                return Ok(());
+            }
+            Err(e) => {
+                tracing::debug!("Not a valid DAG file: {}", e);
+                // 继续尝试其他加载方式
+            }
+        }
+    }
+    
+    // 原有的加载逻辑（Native/WASM）
+    let db_manager = Arc::new(DbManager::new()?);
+    let manager = SkillManager::new(db_manager)?;
     
     // Detect skill type from path
     let skill_type = if path.extension().map_or(false, |ext| ext == "wasm") {
@@ -437,13 +561,14 @@ pub fn install_skill(path: &str) -> Result<()> {
 }
 
 /// Remove a skill
-pub fn remove_skill(name: &str) -> Result<()> {
+pub async fn remove_skill(name: &str) -> Result<()> {
     let db_manager = Arc::new(DbManager::new()?);
     let manager = SkillManager::new(db_manager)?;
     
     println!("Removing skill '{}'...", name);
     
     manager.remove(name)
+        .await
         .with_context(|| format!("Failed to remove skill '{}'", name))?;
     
     println!("✅ Skill '{}' removed.", name);
@@ -454,6 +579,10 @@ pub fn remove_skill(name: &str) -> Result<()> {
 /// Handle `cis skill chain` command - discover and execute skill chains
 pub async fn handle_skill_chain(args: SkillChainArgs) -> Result<()> {
     let start = std::time::Instant::now();
+    
+    // Initialize SkillManager and DbManager (needed for router)
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone())?);
     
     // 1. Parse intent
     println!("🎯 解析意图: {}", args.description);
@@ -491,6 +620,7 @@ pub async fn handle_skill_chain(args: SkillChainArgs) -> Result<()> {
     let router = SkillVectorRouter::new(
         vector_storage.clone(),
         embedding_service.clone(),
+        skill_manager.clone(),
     );
     
     let project_id = project_registry.project_path().to_str();
@@ -546,7 +676,7 @@ pub async fn handle_skill_chain(args: SkillChainArgs) -> Result<()> {
         "entities": intent.entities,
     });
     
-    let mut chain = SkillChain::new(initial_input);
+    let mut chain = SkillChain::new(initial_input.clone());
     chain.add_step(primary.skill_id.clone());
     
     if let Some(suggested) = &primary.suggested_chain {
@@ -555,9 +685,35 @@ pub async fn handle_skill_chain(args: SkillChainArgs) -> Result<()> {
         }
     }
     
-    // Execute (mock for now)
-    println!("\n✅ 技能链已构建 (执行需要 SkillManager 支持)");
-    println!("   步骤数: {}", chain.results().len() + 1);
+    // Execute chain using router
+    let params = ResolvedParameters::new(initial_input);
+    
+    match router.execute_chain(&chain, &params).await {
+        Ok(result) => {
+            println!("\n✅ 执行完成 (耗时: {}ms)", result.execution_time_ms);
+            
+            if result.all_succeeded {
+                println!("✓ 所有步骤执行成功");
+                println!("\n📤 最终输出:");
+                println!("{}", serde_json::to_string_pretty(&result.final_output)?);
+            } else {
+                println!("⚠️ 部分步骤执行失败:");
+                for step in &result.step_results {
+                    let status = if step.success { "✓" } else { "✗" };
+                    println!("  {} 步骤 {}: {}", status, step.step_index, step.skill_id);
+                    if let Some(ref error) = step.error {
+                        println!("    错误: {}", error);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            println!("\n❌ 执行失败: {}", e);
+            return Err(e.into());
+        }
+    }
+    
+    println!("\n   步骤数: {}", chain.len());
     println!("   总耗时: {:?}", start.elapsed());
     
     Ok(())

@@ -1,0 +1,8 @@
+[skill]
+name = "test-echo"
+version = "1.0.0"
+type = "native"
+description = "Test echo skill"
+
+[execution]
+binary = "echo"

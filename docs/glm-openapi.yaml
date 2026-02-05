@@ -1,0 +1,770 @@
+openapi: 3.0.3
+info:
+  title: CIS GLM API
+  description: |
+    CIS (Cluster of Independent Systems) GLM 云端节点可信接口。
+    
+    为智谱 GLM-4.7 提供 Function Calling 支持，用于在 Matrix Room 中向指定节点发送任务。
+    
+    ## 认证方式
+    
+    使用 Bearer DID 认证，与 CIS 节点间通信保持一致：
+    ```
+    Authorization: Bearer did:cis:{node_id}:{pub_key_short}
+    ```
+    
+    示例: `Bearer did:cis:glm-cloud:abc123`
+    
+    ## GLM Function Calling 核心三接口
+    
+    | 接口 | 方法 | 路径 | 说明 |
+    |------|------|------|------|
+    | **推送创建任务** | POST | `/api/v1/dag/publish` | GLM 推送 DAG 任务，需本地确认后执行 |
+    | **拉取任务列表** | GET | `/api/v1/tasks` | GLM 拉取任务状态列表 |
+    | **任务卡点诊断** | POST | `/api/v1/dag/{dag_id}/analyze` | GLM 获取卡点分析和建议 |
+    
+    ## 其他功能接口
+    
+    - `POST /api/v1/task/issue` - 发布单个任务
+    - `GET /api/v1/task/{task_id}/status` - 查询任务状态
+    - `GET /api/v1/dag/{dag_id}/status` - 查询 DAG 状态
+    - `POST /api/v1/dag/{dag_id}/confirm` - 确认 DAG
+    - `GET /api/v1/pending` - 列出待确认任务
+  version: 1.0.0
+  contact:
+    name: CIS Team
+servers:
+  - url: http://localhost:6767
+    description: 本地开发服务器
+  - url: http://{host}:{port}
+    description: 自定义服务器
+    variables:
+      host:
+        default: localhost
+        description: 服务器地址
+      port:
+        default: "6767"
+        description: 服务端口
+
+# 安全定义
+security:
+  - bearerDid: []
+
+components:
+  securitySchemes:
+    bearerDid:
+      type: http
+      scheme: bearer
+      bearerFormat: "did:cis:{node_id}:{pub_key_short}"
+      description: |
+        GLM 智能体作为 CIS 终端接入时使用 DID 认证。
+        
+        格式: `Bearer did:cis:{node_id}:{pub_key_short}`
+        
+        与 CIS 其他节点间通信的 DID 格式保持一致。
+        
+        示例: `Bearer did:cis:glm-cloud:abc123`
+
+  schemas:
+    # 通用响应
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: 错误信息
+        code:
+          type: integer
+          description: HTTP 状态码
+      required:
+        - error
+
+    # 任务相关
+    TaskType:
+      type: string
+      enum:
+        - SHELL_COMMAND
+        - OPEN_APP
+        - FILE_SEARCH
+        - SYSTEM_CONTROL
+        - DAG_PUBLISH
+      description: 任务类型
+
+    TaskStatus:
+      type: string
+      enum:
+        - PENDING
+        - RUNNING
+        - SUCCESS
+        - FAILED
+        - WAITING_CONFIRMATION
+      description: 任务状态
+
+    IssueTaskRequest:
+      type: object
+      properties:
+        task_type:
+          $ref: '#/components/schemas/TaskType'
+        target:
+          type: string
+          description: 操作目标（应用名、命令、文件路径等）
+          example: "rsync"
+        args:
+          type: string
+          description: 额外参数
+          example: "-avz ~/Docs/ nas:/backup/"
+          default: ""
+        target_node:
+          type: string
+          description: 目标节点 Matrix User ID（可选，默认广播到 Room）
+          example: "@user:example.com"
+        room_id:
+          type: string
+          description: 指定 Room ID（可选）
+          example: "!myroom:matrix.org"
+      required:
+        - task_type
+        - target
+
+    IssueTaskResponse:
+      type: object
+      properties:
+        task_id:
+          type: string
+          description: 任务唯一标识
+          example: "glm_a1b2c3d4e5f67890"
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+      required:
+        - task_id
+        - status
+
+    TaskStatusResponse:
+      type: object
+      properties:
+        task_id:
+          type: string
+          description: 任务 ID
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        progress:
+          type: string
+          description: 进度描述（可选）
+          example: "45%"
+        result_data:
+          type: string
+          description: 执行结果（成功时）
+        error_message:
+          type: string
+          description: 错误信息（失败时）
+      required:
+        - task_id
+        - status
+
+    TaskListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 任务总数
+          example: 10
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskInfo'
+          description: 任务列表
+      required:
+        - count
+        - tasks
+
+    TaskInfo:
+      type: object
+      properties:
+        task_id:
+          type: string
+          description: 任务 ID
+        task_type:
+          $ref: '#/components/schemas/TaskType'
+        target:
+          type: string
+          description: 操作目标
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        result:
+          type: string
+          description: 执行结果
+        error:
+          type: string
+          description: 错误信息
+        created_at:
+          type: string
+          format: date-time
+          description: 创建时间
+        updated_at:
+          type: string
+          format: date-time
+          description: 更新时间
+        target_node:
+          type: string
+          description: 目标节点
+      required:
+        - task_id
+        - task_type
+        - target
+        - status
+        - created_at
+
+    # DAG 相关
+    DagTaskDef:
+      type: object
+      properties:
+        id:
+          type: string
+          description: 任务唯一标识
+          example: "sync"
+        type:
+          type: string
+          description: 任务类型
+          enum:
+            - shell
+            - skill
+            - matrix
+          example: "shell"
+        command:
+          type: string
+          description: 执行命令
+          example: "rsync -avz ~/Docs/ nas:/backup/"
+        depends_on:
+          type: array
+          description: 依赖任务列表
+          items:
+            type: string
+          example: ["prepare"]
+          default: []
+      required:
+        - id
+        - type
+        - command
+
+    PublishDagRequest:
+      type: object
+      properties:
+        dag_id:
+          type: string
+          description: DAG 唯一标识
+          example: "backup_nas_daily"
+        description:
+          type: string
+          description: DAG 描述
+          example: "每日凌晨3点rsync备份文档到NAS"
+        tasks:
+          type: array
+          description: 任务列表
+          items:
+            $ref: '#/components/schemas/DagTaskDef'
+          minItems: 1
+        schedule:
+          type: string
+          description: Cron 表达式（可选，用于定时任务）
+          example: "0 3 * * *"
+        target_node:
+          type: string
+          description: 目标节点（可选）
+          example: "@nas-node:example.com"
+      required:
+        - dag_id
+        - description
+        - tasks
+
+    PublishDagResponse:
+      type: object
+      properties:
+        dag_id:
+          type: string
+          description: DAG ID
+        status:
+          type: string
+          description: 状态
+          example: "waiting_confirmation"
+        confirm_url:
+          type: string
+          description: 确认 URL
+          example: "/api/v1/dag/backup_nas_daily/confirm"
+        expire_sec:
+          type: integer
+          description: 过期时间（秒）
+          example: 300
+      required:
+        - dag_id
+        - status
+        - confirm_url
+        - expire_sec
+
+    DagStatusResponse:
+      type: object
+      properties:
+        dag_id:
+          type: string
+          description: DAG ID
+        status:
+          type: string
+          description: DAG 状态
+          example: "running"
+        last_run:
+          type: string
+          format: date-time
+          description: 上次运行时间
+        completed_tasks:
+          type: integer
+          description: 已完成任务数
+          example: 3
+        total_tasks:
+          type: integer
+          description: 总任务数
+          example: 5
+        raw_data:
+          type: object
+          description: 原始数据
+      required:
+        - dag_id
+        - status
+        - completed_tasks
+        - total_tasks
+
+    AnalyzeDagRequest:
+      type: object
+      properties:
+        dag_id:
+          type: string
+          description: DAG ID
+        stuck_task_hint:
+          type: string
+          description: 用户观察到的卡住位置（可选）
+          example: "sync 任务"
+      required:
+        - dag_id
+
+    DiagnosticResponse:
+      type: object
+      properties:
+        dag_id:
+          type: string
+          description: DAG ID
+        stuck_task_hint:
+          type: string
+          description: 卡住提示
+        analysis:
+          type: string
+          description: 分析结果
+        suggestions:
+          type: array
+          items:
+            type: string
+          description: 建议列表
+      required:
+        - dag_id
+        - analysis
+
+    # 待确认 DAG
+    PendingDagInfo:
+      type: object
+      properties:
+        dag_id:
+          type: string
+          description: DAG ID
+        description:
+          type: string
+          description: DAG 描述
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DagTaskDef'
+        schedule:
+          type: string
+          description: 定时表达式
+        created_at:
+          type: string
+          format: date-time
+          description: 创建时间
+        expires_at:
+          type: string
+          format: date-time
+          description: 过期时间
+        requested_by:
+          type: string
+          description: 请求者
+      required:
+        - dag_id
+        - description
+        - tasks
+        - created_at
+        - expires_at
+
+    PendingListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 待确认数量
+          example: 2
+        pending:
+          type: array
+          items:
+            $ref: '#/components/schemas/PendingDagInfo'
+      required:
+        - count
+        - pending
+
+    # 确认响应
+    ConfirmResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        dag_id:
+          type: string
+          description: DAG ID
+        message:
+          type: string
+          example: "DAG confirmed and published"
+        tasks_count:
+          type: integer
+          description: 任务数量
+          example: 3
+      required:
+        - success
+        - dag_id
+
+    # 健康检查
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "ok"
+        service:
+          type: string
+          example: "glm-api"
+      required:
+        - status
+        - service
+
+# 路径定义
+#
+# GLM Function Calling 核心三接口:
+# 1. POST /api/v1/dag/publish    - 推送创建任务/DAG
+# 2. GET  /api/v1/tasks          - 拉取获取任务列表
+# 3. POST /api/v1/dag/{id}/analyze - 任务卡点判断回复
+#
+paths:
+  /health:
+    get:
+      summary: 健康检查
+      description: 检查服务是否正常运行
+      operationId: healthCheck
+      security: []  # 不需要认证
+      tags:
+        - System
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/task/issue:
+    post:
+      summary: 发布任务
+      description: |
+        发布一个新任务到 CIS 节点。
+        任务将通过 Matrix Room 分发给指定节点执行。
+      operationId: issueTask
+      tags:
+        - Task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueTaskRequest'
+            examples:
+              shell_command:
+                summary: Shell 命令
+                value:
+                  task_type: SHELL_COMMAND
+                  target: "echo"
+                  args: "Hello World"
+              dag_publish:
+                summary: DAG 发布
+                value:
+                  task_type: DAG_PUBLISH
+                  target: "backup_daily"
+      responses:
+        '200':
+          description: 任务创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueTaskResponse'
+        '401':
+          description: 认证失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: 服务器错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/tasks:
+    get:
+      summary: 获取任务列表【GLM核心接口】
+      description: |
+        **GLM Function Calling 核心接口 #2: 拉取获取任务列表**
+        
+        获取所有任务的列表，支持状态过滤。
+        GLM 可通过此接口拉取任务状态更新。
+      operationId: listTasks
+      tags:
+        - GLM-Core
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: 状态过滤（可选）
+          schema:
+            type: string
+            enum: [PENDING, RUNNING, SUCCESS, FAILED]
+        - name: limit
+          in: query
+          required: false
+          description: 返回数量限制
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+
+  /api/v1/task/{task_id}/status:
+    get:
+      summary: 查询任务状态
+      description: |
+        获取指定任务的当前状态和结果。
+        GLM 使用此接口轮询任务执行状态。
+      operationId: queryTaskStatus
+      tags:
+        - Task
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          description: 任务 ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskStatusResponse'
+        '404':
+          description: 任务不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/dag/publish:
+    post:
+      summary: 发布 DAG【GLM核心接口】
+      description: |
+        **GLM Function Calling 核心接口 #1: 推送创建任务**
+        
+        发布一个新的 DAG 工作流。
+        
+        DAG 不会立即执行，而是进入**待确认**状态。
+        用户需要通过 GUI/CLI 确认后，才会真正发布到 Matrix Room。
+        
+        这是安全门闩机制，防止 GLM 误操作。
+      operationId: publishDag
+      tags:
+        - GLM-Core
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishDagRequest'
+            examples:
+              simple_backup:
+                summary: 简单备份 DAG
+                value:
+                  dag_id: "backup_daily"
+                  description: "每日备份到NAS"
+                  schedule: "0 3 * * *"
+                  tasks:
+                    - id: "sync"
+                      type: "shell"
+                      command: "rsync -avz ~/Docs/ nas:/backup/"
+                    - id: "notify"
+                      type: "matrix"
+                      command: "备份完成"
+                      depends_on: ["sync"]
+      responses:
+        '200':
+          description: DAG 创建成功，等待确认
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishDagResponse'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 认证失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/dag/{dag_id}/confirm:
+    post:
+      summary: 确认 DAG
+      description: |
+        确认并发布待处理的 DAG。
+        确认后，DAG 将通过 Matrix Room 广播到集群执行。
+      operationId: confirmDag
+      tags:
+        - DAG
+      parameters:
+        - name: dag_id
+          in: path
+          required: true
+          description: DAG ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 确认成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmResponse'
+        '404':
+          description: DAG 不存在或已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/dag/{dag_id}/status:
+    get:
+      summary: 查询 DAG 状态
+      description: 获取 DAG 的执行状态和进度
+      operationId: queryDagStatus
+      tags:
+        - DAG
+      parameters:
+        - name: dag_id
+          in: path
+          required: true
+          description: DAG ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DagStatusResponse'
+        '404':
+          description: DAG 不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/dag/{dag_id}/analyze:
+    post:
+      summary: 分析 DAG 卡点【GLM核心接口】
+      description: |
+        **GLM Function Calling 核心接口 #3: 任务卡点判断回复**
+        
+        分析 DAG 卡住的根因，结合日志、依赖状态给出诊断建议。
+        使用向量检索查找历史类似故障。
+        
+        GLM 可根据返回的诊断信息生成回复建议。
+      operationId: analyzeDag
+      tags:
+        - GLM-Core
+      parameters:
+        - name: dag_id
+          in: path
+          required: true
+          description: DAG ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeDagRequest'
+      responses:
+        '200':
+          description: 分析完成
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagnosticResponse'
+        '404':
+          description: DAG 不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/pending:
+    get:
+      summary: 列出待确认任务
+      description: 获取所有等待确认的 DAG 列表
+      operationId: listPending
+      tags:
+        - DAG
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingListResponse'
+
+# 标签分组
+tags:
+  - name: System
+    description: 系统相关
+  - name: GLM-Core
+    description: |
+      GLM Function Calling 核心三接口
+      - 推送创建任务 (POST /api/v1/dag/publish)
+      - 拉取任务列表 (GET /api/v1/tasks)  
+      - 任务卡点诊断 (POST /api/v1/dag/{dag_id}/analyze)
+  - name: Task
+    description: 任务管理
+  - name: DAG
+    description: DAG 工作流

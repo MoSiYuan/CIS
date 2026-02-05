@@ -238,7 +238,7 @@ CIS Node Architecture
 - **硬件绑定**：DID = `助记词 + 机器指纹`，复制到另一台机器立即失效，**物理层面防止数据复制**
 - **记忆加密**：SQLite 使用 ChaCha20-Poly1305，密钥派生自硬件指纹，**内存中不存储明文密钥**
 - **零云端同步**：私域记忆**永不出网**，公域仅同步 Merkle DAG 元数据（无内容载荷）
-- **Docker 禁用**：容器化会破坏硬件指纹真实性，系统**明确禁止虚拟化部署**
+- **不建议 Docker 虚拟环境部署**：容器化会带来严重的网络穿透问题，且破坏硬件指纹真实性
 - **迁移机制**：硬件损毁后通过助记词在新硬件恢复记忆所有权，但生成**新 DID**（新硬件 = 新身份）
 
 ---
@@ -532,7 +532,7 @@ CIS Node Architecture
 - **Hardware Binding**: DID = `mnemonic + hardware fingerprint`; copying to another machine immediately fails, **physically preventing data replication**
 - **Memory Encryption**: SQLite uses ChaCha20-Poly1305; keys derived from hardware fingerprints; **plaintext keys never stored in memory**
 - **Zero Cloud Sync**: Private memory **never leaves the network**; public domain only syncs Merkle DAG metadata (no content payload)
-- **Docker Disabled**: Containerization destroys hardware fingerprint authenticity; system **explicitly prohibits virtualized deployment**
+- **Docker Not Recommended**: Containerization causes serious network穿透 (NAT traversal) issues and destroys hardware fingerprint authenticity
 - **Migration Mechanism**: Hardware failure recovery via mnemonic on new hardware restores memory ownership but generates **new DID** (new hardware = new identity)
 
 ---

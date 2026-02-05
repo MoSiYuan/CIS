@@ -9,8 +9,8 @@ members = [
     "skills/init-wizard",
     "skills/push-client",
     "skills/memory-organizer",
-    "skills/cis-feishu-im",
     "skills/ai-executor",
     "skills/im",
+    "skills/dag-executor",
     "cis-gui",
 ]

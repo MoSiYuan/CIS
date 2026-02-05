@@ -1,0 +1,10 @@
+{
+  "tasks": [
+    {
+      "id": "task1",
+      "name": "Task 1",
+      "skill": "echo",
+      "level": { "type": "mechanical", "retry": 3 }
+    }
+  ]
+}

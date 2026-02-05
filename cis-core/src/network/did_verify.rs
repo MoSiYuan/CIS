@@ -30,10 +30,10 @@
 //!     │     - Check whitelist     │
 //! ```
 
-use ed25519_dalek::{Signature, Signer, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::identity::did::DIDManager;
 use crate::network::{AclResult, NetworkAcl, NetworkError};
@@ -297,19 +297,22 @@ fn parse_did_to_public_key(did: &str) -> Result<VerifyingKey, NetworkError> {
 /// Resolve DID to full public key bytes
 /// 
 /// In production, this would:
-/// 1. Check local cache
-/// 2. Query peer for full public key
-/// 3. Verify against pub_key_short
+/// Resolve DID to full public key
+/// 
+/// 从 DID 格式 `did:cis:{node_id}:{public_key_hex}` 提取完整公钥
 fn resolve_did_to_full_key(did: &str) -> Option<[u8; 32]> {
-    // TODO: Implement proper DID resolution
-    // For now, this is a placeholder
+    use crate::identity::did::DIDManager;
     
-    // In the actual implementation:
-    // - Query the peer directly for their full public key
-    // - Verify it matches the pub_key_short in their DID
-    // - Cache for future use
+    // 解析 DID
+    let (_, public_key_hex) = DIDManager::parse_did(did)?;
     
-    None
+    // 从十六进制解码公钥
+    let bytes = hex::decode(&public_key_hex).ok()?;
+    if bytes.len() != 32 {
+        return None;
+    }
+    
+    bytes.try_into().ok()
 }
 
 /// Generate cryptographically secure nonce

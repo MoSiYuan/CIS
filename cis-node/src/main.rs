@@ -1,6 +1,7 @@
 //! # CIS Node CLI
 //!
 //! Command-line interface for CIS (Cluster of Independent Systems).
+#![allow(dead_code)]
 
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info};
@@ -128,6 +129,36 @@ enum Commands {
     Telemetry {
         #[command(subcommand)]
         action: TelemetryAction,
+    },
+    
+    /// Task level management (four-tier decision mechanism)
+    TaskLevel {
+        #[command(subcommand)]
+        action: commands::task_level::TaskLevelCommands,
+    },
+    
+    /// Technical debt management
+    Debt {
+        #[command(subcommand)]
+        action: commands::debt::DebtCommands,
+    },
+    
+    /// DAG execution management
+    Dag {
+        #[command(subcommand)]
+        action: commands::dag::DagCommands,
+    },
+    
+    /// GLM API service management
+    Glm {
+        #[command(subcommand)]
+        action: commands::glm::GlmCommands,
+    },
+    
+    /// DAG worker process
+    Worker {
+        #[command(subcommand)]
+        action: commands::worker::WorkerCommands,
     },
 }
 
@@ -748,16 +779,16 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
         
         Commands::Skill { action } => match action {
             SkillAction::List => commands::skill::list_skills(),
-            SkillAction::Load { name, activate } => commands::skill::load_skill(&name, activate),
-            SkillAction::Unload { name } => commands::skill::unload_skill(&name),
-            SkillAction::Activate { name } => commands::skill::activate_skill(&name),
-            SkillAction::Deactivate { name } => commands::skill::deactivate_skill(&name),
+            SkillAction::Load { name, activate } => commands::skill::load_skill(&name, activate).await,
+            SkillAction::Unload { name } => commands::skill::unload_skill(&name).await,
+            SkillAction::Activate { name } => commands::skill::activate_skill(&name).await,
+            SkillAction::Deactivate { name } => commands::skill::deactivate_skill(&name).await,
             SkillAction::Info { name } => commands::skill::skill_info(&name),
             SkillAction::Call { name, method, args } => {
                 commands::skill::call_skill(&name, &method, args.as_deref())
             }
             SkillAction::Install { path } => commands::skill::install_skill(&path),
-            SkillAction::Remove { name } => commands::skill::remove_skill(&name),
+            SkillAction::Remove { name } => commands::skill::remove_skill(&name).await,
             SkillAction::Do { description, project, candidates } => {
                 let args = commands::skill::SkillDoArgs {
                     description,
@@ -923,8 +954,7 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
         }
         
         Commands::Node { action } => {
-            let args = commands::node::NodeArgs { action };
-            commands::node::handle_node(args).await
+            commands::node::handle(action).await
         }
         
         Commands::Network { action } => {
@@ -933,6 +963,26 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
         
         Commands::Telemetry { action } => {
             commands::telemetry::handle_telemetry(action)
+        }
+        
+        Commands::TaskLevel { action } => {
+            commands::task_level::handle(action).await
+        }
+        
+        Commands::Debt { action } => {
+            commands::debt::handle(action).await
+        }
+        
+        Commands::Dag { action } => {
+            commands::dag::handle(action).await
+        }
+        
+        Commands::Glm { action } => {
+            commands::glm::execute(action).await
+        }
+        
+        Commands::Worker { action } => {
+            commands::worker::handle(action).await
         }
     }
 }

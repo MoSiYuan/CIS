@@ -178,7 +178,7 @@ impl MemorySyncManager {
     /// 合并条目（使用 LWW 策略）
     async fn merge_entry(&self, entry: SyncMemoryEntry) -> Result<()> {
         // 检查本地是否存在
-        let local = self.memory_service.get(&entry.key)?;
+        let local = self.memory_service.get(&entry.key).await?;
 
         let should_update = if let Some(local_item) = local {
             // 比较向量时钟
@@ -216,7 +216,7 @@ impl MemorySyncManager {
                 &entry.value,
                 MemoryDomain::Public,
                 entry.category,
-            )?;
+            ).await?;
 
             // 更新向量索引
             if let Some(_vector) = &entry.vector {
@@ -283,11 +283,11 @@ impl MemorySyncManager {
         -> Result<Vec<SyncMemoryEntry>>
     {
         // 查询公域记忆
-        let keys = self.memory_service.list_keys(Some(MemoryDomain::Public))?;
+        let keys = self.memory_service.list_keys(Some(MemoryDomain::Public)).await?;
 
         let mut entries = Vec::new();
         for key in keys {
-            if let Some(item) = self.memory_service.get(&key)? {
+            if let Some(item) = self.memory_service.get(&key).await? {
                 // 检查时间戳
                 if let Some(since_time) = since {
                     if item.updated_at < since_time {
@@ -315,7 +315,7 @@ impl MemorySyncManager {
 
     /// 获取本地公域键列表
     async fn get_local_public_keys(&self) -> Result<Vec<String>> {
-        self.memory_service.list_keys(Some(MemoryDomain::Public))
+        self.memory_service.list_keys(Some(MemoryDomain::Public)).await
     }
     
     /// 获取已删除的键
@@ -330,7 +330,7 @@ impl MemorySyncManager {
     async fn get_item_vector_clock(&self, key: &str) -> Result<VectorClock> {
         // 尝试从 metadata 获取
         let clock_key = format!("__vc__/{}", key);
-        match self.memory_service.get(&clock_key)? {
+        match self.memory_service.get(&clock_key).await? {
             Some(item) => {
                 serde_json::from_slice(&item.value)
                     .map_err(|e| CisError::storage(format!("Serialization error: {}", e)))
@@ -348,7 +348,7 @@ impl MemorySyncManager {
             &clock_data,
             MemoryDomain::Private,
             MemoryCategory::Context,
-        )?;
+        ).await?;
         Ok(())
     }
 
@@ -483,7 +483,7 @@ impl MemorySyncHandle {
 
     /// 合并条目（使用 LWW 策略）
     async fn merge_entry(&self, entry: SyncMemoryEntry) -> Result<()> {
-        let local = self.memory_service.get(&entry.key)?;
+        let local = self.memory_service.get(&entry.key).await?;
 
         let should_update = if let Some(local_item) = local {
             let local_clock = self.get_item_vector_clock(&entry.key).await?;
@@ -510,7 +510,7 @@ impl MemorySyncHandle {
                 &entry.value,
                 MemoryDomain::Public,
                 entry.category,
-            )?;
+            ).await?;
 
             self.save_item_vector_clock(&entry.key, &entry.vector_clock).await?;
 
@@ -524,11 +524,11 @@ impl MemorySyncHandle {
     async fn get_local_public_memories(&self, since: Option<DateTime<Utc>>)
         -> Result<Vec<SyncMemoryEntry>>
     {
-        let keys = self.memory_service.list_keys(Some(MemoryDomain::Public))?;
+        let keys = self.memory_service.list_keys(Some(MemoryDomain::Public)).await?;
 
         let mut entries = Vec::new();
         for key in keys {
-            if let Some(item) = self.memory_service.get(&key)? {
+            if let Some(item) = self.memory_service.get(&key).await? {
                 if let Some(since_time) = since {
                     if item.updated_at < since_time {
                         continue;
@@ -568,7 +568,7 @@ impl MemorySyncHandle {
         let request = SyncRequest {
             node_id: self.node_id.clone(),
             since: self.get_last_sync_time(node_id).await?,
-            known_keys: self.memory_service.list_keys(Some(MemoryDomain::Public))?,
+            known_keys: self.memory_service.list_keys(Some(MemoryDomain::Public)).await?,
         };
 
         let message = SyncMessage::Request(request);

@@ -78,13 +78,17 @@ impl Default for EmbeddingConfig {
 ///
 /// 使用 ONNX Runtime 本地运行 all-MiniLM-L6-v2 模型，输出 768 维向量。
 /// 首次加载模型可能需要 1-3 秒，后续调用是毫秒级。
+#[cfg(feature = "vector")]
 pub struct LocalEmbeddingService {
-    #[cfg(feature = "vector")]
     tokenizer: tokenizers::Tokenizer,
-    #[cfg(feature = "vector")]
+    model_path: std::path::PathBuf,
     normalize: bool,
     dimension: usize,
-    #[cfg(not(feature = "vector"))]
+}
+
+#[cfg(not(feature = "vector"))]
+pub struct LocalEmbeddingService {
+    dimension: usize,
     _phantom: std::marker::PhantomData<()>,
 }
 
@@ -97,15 +101,70 @@ impl LocalEmbeddingService {
     /// 使用配置创建服务
     #[cfg(feature = "vector")]
     pub fn with_config(config: &EmbeddingConfig) -> Result<Self> {
-        // 尝试加载 tokenizer
-        // 在实际应用中，需要从模型目录加载 tokenizer.json
-        // 这里简化处理，创建一个基本的 tokenizer
-        let tokenizer = tokenizers::Tokenizer::new(
-            tokenizers::models::wordpiece::WordPiece::default()
-        );
+        // 确定模型路径
+        let model_dir = config.model_path.as_ref()
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                // 尝试默认路径
+                let default_paths = [
+                    "models/all-MiniLM-L6-v2",
+                    "models/all-MiniLM-L6-v2.onnx",
+                    "/usr/share/cis/models/all-MiniLM-L6-v2",
+                ];
+                default_paths.iter()
+                    .map(|p| std::path::PathBuf::from(p))
+                    .find(|p| p.exists())
+            })
+            .ok_or_else(|| CisError::configuration(
+                "Model path not specified and default model not found. \
+                 Please specify model_path in config or place model at models/all-MiniLM-L6-v2/"
+            ))?;
+
+        // 加载 tokenizer
+        let tokenizer_path = model_dir.join("tokenizer.json");
+        let tokenizer = if tokenizer_path.exists() {
+            tokenizers::Tokenizer::from_file(&tokenizer_path)
+                .map_err(|e| CisError::configuration(format!("Failed to load tokenizer: {}", e)))?
+        } else {
+            // 尝试从 Hugging Face 格式加载
+            let vocab_path = model_dir.join("vocab.txt");
+            if vocab_path.exists() {
+                let tokenizer = tokenizers::Tokenizer::new(
+                    tokenizers::models::wordpiece::WordPiece::builder()
+                        .files(vocab_path.to_string_lossy().to_string())
+                        .build()
+                        .map_err(|e| CisError::configuration(format!("Failed to load WordPiece: {}", e)))?
+                );
+                tokenizer
+            } else {
+                return Err(CisError::configuration(
+                    format!("Tokenizer not found at {:?}", tokenizer_path)
+                ));
+            }
+        };
+
+        // 检查 ONNX 模型文件
+        let model_path = if model_dir.extension().map(|e| e == "onnx").unwrap_or(false) {
+            model_dir.clone()
+        } else {
+            model_dir.join("model.onnx")
+        };
+
+        if !model_path.exists() {
+            return Err(CisError::configuration(
+                format!("ONNX model not found at {:?}", model_path)
+            ));
+        }
+
+        // TODO: 初始化 ONNX Runtime 会话
+        // 由于 ort 2.0 API 变化较大，需要更仔细地适配
+        // 目前返回一个占位服务，提示用户使用 OpenAI 降级
+        tracing::warn!("ONNX Runtime embedding not yet fully implemented. Found model at {:?}", model_path);
+        tracing::info!("Please use OpenAI embedding service as fallback: set OPENAI_API_KEY environment variable");
 
         Ok(Self {
             tokenizer,
+            model_path,
             normalize: config.normalize,
             dimension: DEFAULT_EMBEDDING_DIM,
         })
@@ -134,35 +193,14 @@ impl LocalEmbeddingService {
     }
 
     #[cfg(feature = "vector")]
-    fn encode_internal(&self, text: &str) -> Result<Vec<f32>> {
-        // Tokenize
-        let encoding = self
-            .tokenizer
-            .encode(text, true)
-            .map_err(|e| CisError::other(format!("Tokenization failed: {}", e)))?;
-
-        let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
-        let _attention_mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&m| m as i64).collect();
-        let _token_type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&t| t as i64).collect();
-
-        // 简化的 embedding 实现：使用确定性向量作为占位
-        // 在完整实现中，这里应该使用 ONNX Runtime 进行推理
-        // 由于 ort 2.0 API 有较大变化，这里提供一个基础实现
-        let mut embedding = vec![0.0f32; self.dimension];
-        
-        // 基于输入文本生成确定性向量（简化方案）
-        let bytes = text.as_bytes();
-        for i in 0..embedding.len() {
-            let idx = i % bytes.len().max(1);
-            let mut val = ((bytes.get(idx).copied().unwrap_or(0) as f32) / 255.0) * 2.0 - 1.0;
-            if i > 0 {
-                val += embedding[i - 1] * 0.1;
-            }
-            embedding[i] = val;
-        }
-        
-        // 应用归一化设置
-        Ok(self.normalize_vec(embedding))
+    fn encode_internal(&self, _text: &str) -> Result<Vec<f32>> {
+        // ONNX Runtime 推理尚未完全实现
+        // 返回错误提示用户使用 OpenAI 降级
+        Err(CisError::configuration(
+            "Local ONNX embedding not yet fully implemented. \
+             Please use OpenAI embedding service by setting OPENAI_API_KEY environment variable. \
+             Model found at: ".to_string() + &self.model_path.to_string_lossy()
+        ))
     }
 
     #[cfg(not(feature = "vector"))]

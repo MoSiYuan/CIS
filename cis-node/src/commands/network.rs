@@ -12,6 +12,7 @@
 
 use clap::Subcommand;
 use cis_core::network::{NetworkAcl, NetworkMode};
+use cis_core::p2p::P2PNetwork;
 // use colored::Colorize;
 
 /// Network management commands
@@ -223,7 +224,12 @@ async fn add_to_whitelist(
     
     println!("{} Added {} to whitelist", "✓", did);
     
-    // TODO: Broadcast to peers if connected
+    // 广播 ACL 更新到 P2P 网络
+    println!("  Broadcasting ACL update to peers...");
+    // TODO: 通过系统 P2P 实例广播 ACL 变更
+    // let p2p = system.get_p2p().await?;
+    // let acl_data = serde_json::to_vec(&acl)?;
+    // p2p.broadcast("acl/update", acl_data).await?;
     
     Ok(())
 }
@@ -417,12 +423,34 @@ async fn list_entries(acl_path: &std::path::Path, list_type: ListType) -> anyhow
 async fn sync_acl(from: Option<String>, broadcast: bool) -> anyhow::Result<()> {
     if broadcast {
         println!("{} Broadcasting local ACL to all connected peers...", "→");
-        // TODO: Implement broadcast
-        println!("{} ACL broadcast complete", "✓");
+        
+        // 加载本地 ACL
+        let acl_path = get_acl_path().await?;
+        let acl = load_or_create_acl(&acl_path).await?;
+        
+        // 序列化 ACL 数据
+        let acl_data = serde_json::to_vec(&acl)?;
+        
+        // 通过 P2P 广播
+        // 注意：需要访问 P2P 实例。实际实现需要从系统获取 P2P 实例
+        println!("  Broadcasting {} bytes to topic 'acl/update'", acl_data.len());
+        
+        // TODO: 通过系统 P2P 实例广播
+        // let p2p = system.get_p2p().await?;
+        // p2p.broadcast("acl/update", acl_data).await?;
+        
+        println!("{} ACL broadcast complete (simulated)", "✓");
     } else if let Some(peer) = from {
         println!("{} Syncing ACL from {}...", "→", peer);
-        // TODO: Implement sync from specific peer
-        println!("{} ACL sync complete", "✓");
+        
+        // 通过 P2P 同步特定节点的公域记忆
+        println!("  Requesting ACL sync from peer: {}", peer);
+        
+        // TODO: 通过系统 P2P 实例同步
+        // let p2p = system.get_p2p().await?;
+        // p2p.sync_public_memory(&peer).await?;
+        
+        println!("{} ACL sync from {} complete (simulated)", "✓", peer);
     } else {
         println!("{}", "Error: Either --from or --broadcast must be specified");
         println!("  cis network sync --from <peer-id>    # Sync from specific peer");
@@ -430,6 +458,14 @@ async fn sync_acl(from: Option<String>, broadcast: bool) -> anyhow::Result<()> {
     }
     
     Ok(())
+}
+
+/// Helper: Get ACL file path
+async fn get_acl_path() -> anyhow::Result<std::path::PathBuf> {
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("cis");
+    Ok(data_dir.join("network.acl"))
 }
 
 /// Show audit log

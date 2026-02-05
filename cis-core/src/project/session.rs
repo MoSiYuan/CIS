@@ -67,9 +67,45 @@ impl ProjectSession {
             // 创建本地 skill 数据库
             let skill_db = self.db_manager.load_skill_db(&skill_info.name)?;
 
-            // 注册并加载
-            // TODO: 从 manifest 解析 skill 元数据
-            let _ = skill_db;
+            // 从 manifest 解析 skill 元数据
+            if let Some(ref manifest_content) = skill_info.manifest {
+                match crate::skill::manifest::SkillManifest::from_str(manifest_content) {
+                    Ok(manifest) => {
+                        // 从 manifest 构建 SkillMeta
+                        let skill_meta = crate::skill::types::SkillMeta {
+                            name: manifest.skill.name.clone(),
+                            version: manifest.skill.version.clone(),
+                            description: manifest.skill.description.clone(),
+                            author: manifest.skill.author.clone(),
+                            skill_type: match manifest.skill.skill_type {
+                                crate::skill::manifest::SkillType::Native => crate::skill::types::SkillType::Native,
+                                crate::skill::manifest::SkillType::Wasm => crate::skill::types::SkillType::Wasm,
+                                crate::skill::manifest::SkillType::Script => crate::skill::types::SkillType::Native,
+                                crate::skill::manifest::SkillType::Dag => crate::skill::types::SkillType::Dag,
+                            },
+                            path: skill_info.path.to_string_lossy().to_string(),
+                            db_path: skill_db.lock()
+                                .map_err(|e| crate::error::CisError::storage(format!("Lock failed: {}", e)))?
+                                .path()
+                                .to_string_lossy()
+                                .to_string(),
+                            permissions: manifest.permissions.custom.clone(),
+                            subscriptions: Vec::new(),
+                            config_schema: None,
+                            room_config: None,
+                        };
+
+                        // 注册 skill 元数据
+                        self.skill_manager.register(skill_meta)?;
+                        tracing::info!("Registered skill '{}' from manifest", manifest.skill.name);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to parse manifest for skill '{}': {}", skill_info.name, e);
+                    }
+                }
+            } else {
+                tracing::warn!("No manifest found for local skill: {}", skill_info.name);
+            }
         }
 
         // 加载配置中标记为 auto_load 的 skills
@@ -78,7 +114,7 @@ impl ProjectSession {
                 tracing::info!("Auto-loading skill: {}", skill_config.name);
 
                 self.skill_manager
-                    .load(&skill_config.name, LoadOptions::default())?;
+                    .load(&skill_config.name, LoadOptions::default()).await?;
             }
         }
 
@@ -182,26 +218,50 @@ impl ProjectSession {
         &self,
         skill_name: &str,
         method: &str,
-        _params: serde_json::Value,
+        params: serde_json::Value,
     ) -> Result<serde_json::Value> {
-        // 通过 skill_manager 执行
-        // TODO: 实现具体的执行逻辑
-        tracing::info!("Executing skill: {}::{}", skill_name, method);
-        Ok(serde_json::json!({"status": "ok"}))
+        // 检查 skill 是否已加载
+        if !self.skill_manager.is_loaded(skill_name)? {
+            // 尝试加载 skill
+            self.skill_manager.load(skill_name, LoadOptions::default()).await?;
+        }
+
+        // 构建执行事件（使用 Custom 事件传递执行请求）
+        let event = crate::skill::Event::Custom {
+            name: format!("execute:{}", method),
+            data: serde_json::json!({
+                "method": method,
+                "params": params
+            }),
+        };
+
+        // 发送执行事件到 skill
+        self.skill_manager.send_event(skill_name, event).await?;
+
+        tracing::info!("Executed skill: {}::{}", skill_name, method);
+        Ok(serde_json::json!({
+            "status": "ok",
+            "skill": skill_name,
+            "method": method
+        }))
     }
 
     /// 存储项目记忆
-    pub fn set_memory(&self, key: &str, _value: &[u8]) -> Result<()> {
+    pub fn set_memory(&self, key: &str, value: &[u8]) -> Result<()> {
         let full_key = self.project.memory_key(key);
 
         // 获取 core_db 并存储
         let core_db = self.db_manager.core();
-        let _db = core_db.lock()
+        let db = core_db.lock()
             .map_err(|e| crate::error::CisError::storage(format!("Lock failed: {}", e)))?;
 
-        // 实际存储逻辑
-        // TODO: 实现记忆存储
-        tracing::info!("Setting memory: {}", full_key);
+        // 使用 core_db 的 config 表存储记忆数据
+        db.set_config(&full_key, value, false)?;
+
+        // 更新记忆索引
+        db.register_memory_index(&full_key, None, "core", Some("project"))?;
+
+        tracing::info!("Memory stored: {}", full_key);
 
         Ok(())
     }
@@ -210,10 +270,25 @@ impl ProjectSession {
     pub fn get_memory(&self, key: &str) -> Option<Vec<u8>> {
         let full_key = self.project.memory_key(key);
 
-        // TODO: 实现记忆读取
-        tracing::debug!("Getting memory: {}", full_key);
+        // 获取 core_db 并读取
+        let core_db = self.db_manager.core();
+        let db = core_db.lock().ok()?;
 
-        None
+        // 从 core_db 的 config 表读取记忆数据
+        match db.get_config(&full_key) {
+            Ok(Some((value, _encrypted))) => {
+                tracing::debug!("Memory retrieved: {}", full_key);
+                Some(value)
+            }
+            Ok(None) => {
+                tracing::debug!("Memory not found: {}", full_key);
+                None
+            }
+            Err(e) => {
+                tracing::error!("Failed to get memory {}: {}", full_key, e);
+                None
+            }
+        }
     }
 
     /// 关闭会话
@@ -222,7 +297,7 @@ impl ProjectSession {
 
         // 卸载所有 skills
         for skill_name in self.skill_manager.list_loaded()? {
-            self.skill_manager.unload(&skill_name)?;
+            self.skill_manager.unload(&skill_name).await?;
         }
 
         Ok(())

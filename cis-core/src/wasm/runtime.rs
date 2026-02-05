@@ -9,6 +9,7 @@ use crate::wasm::host::{HostContext, HostFunctions};
 use crate::memory::MemoryServiceTrait;
 use crate::ai::AiProvider;
 use crate::error::{CisError, Result};
+use crate::storage::DbManager;
 
 /// WASM Skill Runtime
 /// 
@@ -131,11 +132,34 @@ impl WasmModule {
         memory_service: Arc<Mutex<dyn MemoryServiceTrait>>,
         ai_provider: Arc<Mutex<dyn AiProvider>>,
     ) -> Result<WasmSkillInstance> {
+        self.instantiate_with_db(memory_service, ai_provider, None)
+    }
+
+    /// 实例化模块（带数据库管理器）
+    ///
+    /// # 参数
+    ///
+    /// - `memory_service`: 记忆服务
+    /// - `ai_provider`: AI Provider
+    /// - `db_manager`: 可选的数据库管理器
+    ///
+    /// # 返回
+    ///
+    /// 返回已实例化的 WASM Skill
+    pub fn instantiate_with_db(
+        &self,
+        memory_service: Arc<Mutex<dyn MemoryServiceTrait>>,
+        ai_provider: Arc<Mutex<dyn AiProvider>>,
+        db_manager: Option<Arc<DbManager>>,
+    ) -> Result<WasmSkillInstance> {
         let mut store = self.store.lock()
             .map_err(|e| CisError::wasm(format!("Store lock failed: {}", e)))?;
         
         // 创建 Host 上下文
-        let mut host_ctx = HostContext::new(memory_service, ai_provider);
+        let mut host_ctx = match db_manager {
+            Some(db) => HostContext::with_db_manager(memory_service, ai_provider, db),
+            None => HostContext::new(memory_service, ai_provider),
+        };
         
         // 创建线性内存
         let memory_type = MemoryType::new(1, Some(100), false);

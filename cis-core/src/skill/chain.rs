@@ -385,11 +385,260 @@ impl SkillChain {
         serde_json::Value::Object(input)
     }
 
-    /// 评估条件
-    fn evaluate_condition(&self, _condition: &str) -> bool {
-        // 简化实现：始终执行
-        // TODO: 实现条件表达式解析
-        true
+    /// 评估条件表达式
+    /// 
+    /// 支持的条件格式：
+    /// - 简单变量检查: `variable` (检查变量是否存在且不为 null/false/空)
+    /// - 比较操作: `variable == value`, `variable != value`, `variable > number`, `variable < number`
+    /// - 逻辑操作: `condition1 && condition2`, `condition1 || condition2`
+    /// - 取反: `!condition`
+    /// - 括号分组: `(condition1 && condition2) || condition3`
+    fn evaluate_condition(&self, condition: &str) -> bool {
+        let condition = condition.trim();
+        
+        if condition.is_empty() {
+            return true;
+        }
+        
+        // 处理括号分组
+        if condition.starts_with('(') && condition.ends_with(')') {
+            let inner = &condition[1..condition.len()-1];
+            return self.evaluate_condition(inner);
+        }
+        
+        // 处理逻辑 OR
+        if let Some(idx) = self.find_operator_at_top_level(condition, "||") {
+            let left = &condition[..idx];
+            let right = &condition[idx+2..];
+            return self.evaluate_condition(left) || self.evaluate_condition(right);
+        }
+        
+        // 处理逻辑 AND
+        if let Some(idx) = self.find_operator_at_top_level(condition, "&&") {
+            let left = &condition[..idx];
+            let right = &condition[idx+2..];
+            return self.evaluate_condition(left) && self.evaluate_condition(right);
+        }
+        
+        // 处理取反
+        if condition.starts_with('!') {
+            let inner = &condition[1..];
+            return !self.evaluate_condition(inner);
+        }
+        
+        // 处理比较操作
+        self.evaluate_comparison(condition)
+    }
+    
+    /// 查找顶层操作符（不在括号内）
+    fn find_operator_at_top_level(&self, expr: &str, op: &str) -> Option<usize> {
+        let mut depth = 0;
+        let mut chars = expr.char_indices().peekable();
+        
+        while let Some((idx, ch)) = chars.next() {
+            match ch {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ if depth == 0 => {
+                    // 检查是否匹配操作符
+                    if expr[idx..].starts_with(op) {
+                        // 确保操作符前后是空白或表达式边界
+                        let after_idx = idx + op.len();
+                        let before_ok = idx == 0 || expr[..idx].ends_with(|c: char| c.is_whitespace());
+                        let after_ok = after_idx >= expr.len() || expr[after_idx..].starts_with(|c: char| c.is_whitespace());
+                        if before_ok && after_ok {
+                            return Some(idx);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        None
+    }
+    
+    /// 评估比较表达式
+    fn evaluate_comparison(&self, expr: &str) -> bool {
+        let expr = expr.trim();
+        
+        // 支持的操作符
+        let operators = ["==", "!=", ">=", "<=", ">", "<"];
+        
+        for op in &operators {
+            if let Some(idx) = expr.find(op) {
+                // 确保操作符前后有内容
+                let left = expr[..idx].trim();
+                let right = expr[idx + op.len()..].trim();
+                
+                if !left.is_empty() && !right.is_empty() {
+                    let left_val = self.resolve_value(left);
+                    return self.compare_values(&left_val, op, right);
+                }
+            }
+        }
+        
+        // 没有操作符，检查变量是否存在且为真
+        let val = self.resolve_value(expr);
+        self.is_truthy(&val)
+    }
+    
+    /// 解析变量值
+    fn resolve_value(&self, var_path: &str) -> Value {
+        let var_path = var_path.trim();
+        
+        // 处理字符串字面量
+        if (var_path.starts_with('"') && var_path.ends_with('"')) ||
+           (var_path.starts_with('\'') && var_path.ends_with('\'')) {
+            return Value::String(var_path[1..var_path.len()-1].to_string());
+        }
+        
+        // 处理数字
+        if let Ok(n) = var_path.parse::<i64>() {
+            return Value::Number(n.into());
+        }
+        if let Ok(n) = var_path.parse::<f64>() {
+            return serde_json::Number::from_f64(n)
+                .map(Value::Number)
+                .unwrap_or(Value::Null);
+        }
+        
+        // 处理布尔值
+        match var_path {
+            "true" => return Value::Bool(true),
+            "false" => return Value::Bool(false),
+            "null" => return Value::Null,
+            _ => {}
+        }
+        
+        // 从上下文中解析变量路径 (e.g., "input.user" or "steps.0.output.result")
+        let parts: Vec<&str> = var_path.split('.').collect();
+        
+        if parts.is_empty() {
+            return Value::Null;
+        }
+        
+        match parts[0] {
+            "input" => {
+                self.get_nested_value(&self.context.initial_input, &parts[1..])
+            }
+            "steps" => {
+                if parts.len() >= 2 {
+                    if let Ok(step_idx) = parts[1].parse::<usize>() {
+                        if let Some(step_result) = self.context.intermediate_results.get(step_idx) {
+                            if parts.len() >= 3 && parts[2] == "output" {
+                                self.get_nested_value(&step_result.output, &parts[3..])
+                            } else {
+                                serde_json::to_value(step_result).unwrap_or(Value::Null)
+                            }
+                        } else {
+                            Value::Null
+                        }
+                    } else {
+                        Value::Null
+                    }
+                } else {
+                    Value::Null
+                }
+            }
+            _ => {
+                // 尝试从输入中查找
+                self.get_nested_value(&self.context.initial_input, &parts)
+            }
+        }
+    }
+    
+    /// 获取嵌套值
+    fn get_nested_value(&self, base: &Value, path: &[&str]) -> Value {
+        let mut current = base;
+        
+        for part in path {
+            match current {
+                Value::Object(map) => {
+                    current = map.get(*part).unwrap_or(&Value::Null);
+                }
+                Value::Array(arr) => {
+                    if let Ok(idx) = part.parse::<usize>() {
+                        current = arr.get(idx).unwrap_or(&Value::Null);
+                    } else {
+                        return Value::Null;
+                    }
+                }
+                _ => return Value::Null,
+            }
+        }
+        
+        current.clone()
+    }
+    
+    /// 检查值是否为真
+    fn is_truthy(&self, value: &Value) -> bool {
+        match value {
+            Value::Null => false,
+            Value::Bool(b) => *b,
+            Value::Number(n) => n.as_f64().map(|n| n != 0.0).unwrap_or(false),
+            Value::String(s) => !s.is_empty(),
+            Value::Array(a) => !a.is_empty(),
+            Value::Object(o) => !o.is_empty(),
+        }
+    }
+    
+    /// 比较值
+    fn compare_values(&self, left: &Value, op: &str, right: &str) -> bool {
+        // 解析右侧值
+        let right_val = self.resolve_value(right);
+        
+        match op {
+            "==" => left == &right_val,
+            "!=" => left != &right_val,
+            ">" | "<" | ">=" | "<=" => {
+                // 数值比较
+                let left_num = self.value_to_f64(left);
+                let right_num = self.value_to_f64(&right_val);
+                
+                match (left_num, right_num) {
+                    (Some(l), Some(r)) => match op {
+                        ">" => l > r,
+                        "<" => l < r,
+                        ">=" => l >= r,
+                        "<=" => l <= r,
+                        _ => false,
+                    },
+                    _ => {
+                        // 回退到字符串比较
+                        let left_str = self.value_to_string(left);
+                        let right_str = self.value_to_string(&right_val);
+                        match op {
+                            ">" => left_str > right_str,
+                            "<" => left_str < right_str,
+                            ">=" => left_str >= right_str,
+                            "<=" => left_str <= right_str,
+                            _ => false,
+                        }
+                    }
+                }
+            }
+            _ => false,
+        }
+    }
+    
+    /// 转换值为 f64
+    fn value_to_f64(&self, value: &Value) -> Option<f64> {
+        match value {
+            Value::Number(n) => n.as_f64(),
+            Value::String(s) => s.parse().ok(),
+            Value::Bool(true) => Some(1.0),
+            Value::Bool(false) => Some(0.0),
+            _ => None,
+        }
+    }
+    
+    /// 转换值为字符串
+    fn value_to_string(&self, value: &Value) -> String {
+        match value {
+            Value::String(s) => s.clone(),
+            _ => value.to_string(),
+        }
     }
 
     /// 获取执行结果
@@ -972,5 +1221,47 @@ mod tests {
         let json = chain.to_json().unwrap();
         assert!(json.get("steps").is_some());
         assert!(json.get("metadata").is_some());
+    }
+
+    #[test]
+    fn test_condition_evaluation() {
+        let chain = SkillChain::builder()
+            .with_name("test")
+            .then("skill1")
+            .build(serde_json::json!({
+                "user": "Alice",
+                "age": 30,
+                "active": true,
+                "items": ["a", "b", "c"]
+            }));
+        
+        // Test simple variable check (truthy)
+        assert!(chain.evaluate_condition("input.user"));
+        assert!(chain.evaluate_condition("input.active"));
+        assert!(chain.evaluate_condition("input.items"));
+        assert!(!chain.evaluate_condition("input.nonexistent"));
+        
+        // Test string comparison
+        assert!(chain.evaluate_condition("input.user == \"Alice\""));
+        assert!(chain.evaluate_condition("input.user != \"Bob\""));
+        
+        // Test numeric comparison
+        assert!(chain.evaluate_condition("input.age == 30"));
+        assert!(chain.evaluate_condition("input.age > 25"));
+        assert!(chain.evaluate_condition("input.age < 35"));
+        assert!(chain.evaluate_condition("input.age >= 30"));
+        assert!(chain.evaluate_condition("input.age <= 30"));
+        
+        // Test boolean
+        assert!(chain.evaluate_condition("input.active == true"));
+        assert!(!chain.evaluate_condition("input.active == false"));
+        
+        // Test logical operators
+        assert!(chain.evaluate_condition("input.user == \"Alice\" && input.age > 25"));
+        assert!(chain.evaluate_condition("input.user == \"Bob\" || input.age > 25"));
+        assert!(chain.evaluate_condition("!(input.user == \"Bob\")"));
+        
+        // Test nested access (should return null/false)
+        assert!(!chain.evaluate_condition("input.nested.deep.value"));
     }
 }

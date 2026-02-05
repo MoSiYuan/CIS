@@ -104,7 +104,7 @@ impl QuicTransport {
         let cert_chain = vec![rustls::Certificate(cert_der)];
         let key = rustls::PrivateKey(key_der);
         
-        let mut config = ServerConfig::with_single_cert(cert_chain, key)
+        let config = ServerConfig::with_single_cert(cert_chain, key)
             .map_err(|e| CisError::p2p(format!("Failed to create server config: {}", e)))?;
         
         // 配置 ALPN (注意: quinn 新 API 中 crypto 是 Arc<dyn ServerConfig>)

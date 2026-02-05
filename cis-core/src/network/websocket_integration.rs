@@ -50,12 +50,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
-use tokio::time::timeout;
-use tracing::{debug, error, info, warn};
+
+use tracing::{debug, info};
 
 use crate::identity::did::DIDManager;
 use crate::network::{
-    did_verify::{DidChallenge, DidResponse, DidVerifier, PendingChallenges, VerificationResult},
+    did_verify::{DidChallenge, DidResponse, DidVerifier, PendingChallenges},
     acl::{AclResult, NetworkAcl},
     NetworkError,
 };
@@ -442,7 +442,6 @@ impl AuthIntegration {
                     .await?;
                 Ok(Some(conn))
             }
-            _ => Err(NetworkError::VerificationFailed("Unexpected auth message".into())),
         }
     }
 }

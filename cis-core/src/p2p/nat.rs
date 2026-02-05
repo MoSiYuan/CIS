@@ -3,11 +3,11 @@
 //! 提供 UPnP、STUN 和 UDP Hole Punching 支持，用于公网连接
 
 use crate::error::Result;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// 默认 STUN 服务器列表
 pub const DEFAULT_STUN_SERVERS: &[&str] = &[
@@ -105,7 +105,7 @@ impl NatTraversal {
             tracing::info!("Found UPnP gateway: {}", gateway.addr);
 
             // 获取本地地址
-            let local_addr = match get_local_ip() {
+            let _local_addr = match get_local_ip() {
                 Some(ip) => ip,
                 None => {
                     return Err(crate::error::CisError::p2p("Could not determine local IP"));
@@ -169,7 +169,6 @@ impl NatTraversal {
         stun_server: &str,
     ) -> Result<(NatType, Option<SocketAddr>)> {
         use stun::agent::*;
-        use stun::client::*;
         use stun::message::*;
         use stun::xoraddr::*;
 
