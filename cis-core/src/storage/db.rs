@@ -118,6 +118,59 @@ impl CoreDb {
             [],
         ).map_err(|e| CisError::Storage(format!("Failed to create peers table: {}", e)))?;
 
+        // DAG 表
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS dags (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                version TEXT NOT NULL DEFAULT '1.0.0',
+                status TEXT NOT NULL DEFAULT 'draft',
+                scope TEXT NOT NULL DEFAULT 'user',
+                description TEXT,
+                definition TEXT NOT NULL, -- JSON
+                owner TEXT NOT NULL DEFAULT '',
+                permissions TEXT, -- JSON array
+                config TEXT, -- JSON object
+                tasks_count INTEGER DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_run_at INTEGER
+            )",
+            [],
+        ).map_err(|e| CisError::Storage(format!("Failed to create dags table: {}", e)))?;
+
+        // DAG 运行记录表
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS dag_runs (
+                run_id TEXT PRIMARY KEY,
+                dag_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                params TEXT, -- JSON object
+                started_at INTEGER NOT NULL,
+                finished_at INTEGER,
+                tasks_completed INTEGER DEFAULT 0,
+                tasks_failed INTEGER DEFAULT 0,
+                tasks_total INTEGER DEFAULT 0,
+                FOREIGN KEY (dag_id) REFERENCES dags(id) ON DELETE CASCADE
+            )",
+            [],
+        ).map_err(|e| CisError::Storage(format!("Failed to create dag_runs table: {}", e)))?;
+
+        // DAG 日志表
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS dag_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dag_id TEXT NOT NULL,
+                run_id TEXT,
+                level TEXT NOT NULL DEFAULT 'info',
+                message TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                FOREIGN KEY (dag_id) REFERENCES dags(id) ON DELETE CASCADE,
+                FOREIGN KEY (run_id) REFERENCES dag_runs(run_id) ON DELETE CASCADE
+            )",
+            [],
+        ).map_err(|e| CisError::Storage(format!("Failed to create dag_logs table: {}", e)))?;
+
         // 创建索引
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)",
@@ -128,6 +181,31 @@ impl CoreDb {
             "CREATE INDEX IF NOT EXISTS idx_memory_skill ON memory_index(skill_name)",
             [],
         ).map_err(|e| CisError::Storage(format!("Failed to create index: {}", e)))?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dags_status ON dags(status)",
+            [],
+        ).map_err(|e| CisError::Storage(format!("Failed to create dags status index: {}", e)))?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dag_runs_dag_id ON dag_runs(dag_id)",
+            [],
+        ).map_err(|e| CisError::Storage(format!("Failed to create dag_runs dag_id index: {}", e)))?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dag_runs_status ON dag_runs(status)",
+            [],
+        ).map_err(|e| CisError::Storage(format!("Failed to create dag_runs status index: {}", e)))?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dag_logs_dag_id ON dag_logs(dag_id)",
+            [],
+        ).map_err(|e| CisError::Storage(format!("Failed to create dag_logs dag_id index: {}", e)))?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dag_logs_run_id ON dag_logs(run_id)",
+            [],
+        ).map_err(|e| CisError::Storage(format!("Failed to create dag_logs run_id index: {}", e)))?;
 
         Ok(())
     }
@@ -228,6 +306,330 @@ impl CoreDb {
         }
     }
 
+    // ==================== DAG Operations ====================
+
+    /// 列出所有 DAG
+    pub fn list_dags(&self, all: bool, limit: Option<usize>) -> Result<Vec<DagRecord>> {
+        let sql = if all {
+            "SELECT id, name, version, status, scope, tasks_count, created_at, last_run_at 
+             FROM dags ORDER BY created_at DESC LIMIT ?1"
+        } else {
+            "SELECT id, name, version, status, scope, tasks_count, created_at, last_run_at 
+             FROM dags WHERE status != 'deprecated' ORDER BY created_at DESC LIMIT ?1"
+        };
+
+        let mut stmt = self.conn.prepare(sql)
+            .map_err(|e| CisError::Storage(format!("Failed to prepare list dags query: {}", e)))?;
+
+        let limit_val = limit.unwrap_or(1000) as i64;
+        let rows = stmt.query_map([limit_val], |row| {
+            Ok(DagRecord {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                version: row.get(2)?,
+                status: row.get(3)?,
+                scope: row.get(4)?,
+                tasks_count: row.get::<_, i64>(5)? as usize,
+                created_at: row.get(6)?,
+                last_run_at: row.get(7)?,
+            })
+        }).map_err(|e| CisError::Storage(format!("Failed to query dags: {}", e)))?;
+
+        let mut dags = Vec::new();
+        for row in rows {
+            dags.push(row.map_err(|e| CisError::Storage(format!("Failed to read dag row: {}", e)))?);
+        }
+        Ok(dags)
+    }
+
+    /// 获取 DAG 详情
+    pub fn get_dag(&self, id: &str) -> Result<Option<DagDetail>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, version, status, scope, description, definition, owner, permissions, config, 
+                    tasks_count, created_at, updated_at, last_run_at 
+             FROM dags WHERE id = ?1"
+        ).map_err(|e| CisError::Storage(format!("Failed to prepare get dag query: {}", e)))?;
+
+        let result = stmt.query_row([id], |row| {
+            Ok(DagDetail {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                version: row.get(2)?,
+                status: row.get(3)?,
+                scope: row.get(4)?,
+                description: row.get(5)?,
+                definition: row.get(6)?,
+                owner: row.get(7)?,
+                permissions: row.get(8)?,
+                config: row.get(9)?,
+                tasks_count: row.get::<_, i64>(10)? as usize,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                last_run_at: row.get(13)?,
+            })
+        });
+
+        match result {
+            Ok(dag) => Ok(Some(dag)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(CisError::Storage(format!("Failed to get dag: {}", e))),
+        }
+    }
+
+    /// 根据名称获取 DAG
+    pub fn get_dag_by_name(&self, name: &str) -> Result<Option<DagDetail>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, version, status, scope, description, definition, owner, permissions, config, 
+                    tasks_count, created_at, updated_at, last_run_at 
+             FROM dags WHERE name = ?1"
+        ).map_err(|e| CisError::Storage(format!("Failed to prepare get dag by name query: {}", e)))?;
+
+        let result = stmt.query_row([name], |row| {
+            Ok(DagDetail {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                version: row.get(2)?,
+                status: row.get(3)?,
+                scope: row.get(4)?,
+                description: row.get(5)?,
+                definition: row.get(6)?,
+                owner: row.get(7)?,
+                permissions: row.get(8)?,
+                config: row.get(9)?,
+                tasks_count: row.get::<_, i64>(10)? as usize,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                last_run_at: row.get(13)?,
+            })
+        });
+
+        match result {
+            Ok(dag) => Ok(Some(dag)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(CisError::Storage(format!("Failed to get dag by name: {}", e))),
+        }
+    }
+
+    /// 创建 DAG
+    pub fn create_dag(&self, id: &str, name: &str, definition: &str, description: Option<&str>) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        
+        // 从 definition 中解析 tasks_count
+        let parsed: Option<serde_json::Value> = serde_json::from_str(definition).ok();
+        let tasks_count: usize = parsed
+            .as_ref()
+            .and_then(|v| v.get("tasks"))
+            .and_then(|t| t.as_array())
+            .map(|t| t.len())
+            .unwrap_or(0);
+
+        self.conn.execute(
+            "INSERT INTO dags (id, name, version, status, scope, description, definition, owner, 
+                              permissions, config, tasks_count, created_at, updated_at)
+             VALUES (?1, ?2, '1.0.0', 'draft', 'user', ?3, ?4, '', '[]', '{}', ?5, ?6, ?6)",
+            rusqlite::params![id, name, description.unwrap_or(""), definition, tasks_count as i64, now],
+        ).map_err(|e| {
+            if e.to_string().contains("UNIQUE constraint failed") {
+                CisError::AlreadyExists(format!("DAG with name '{}' already exists", name))
+            } else {
+                CisError::Storage(format!("Failed to create dag: {}", e))
+            }
+        })?;
+        Ok(())
+    }
+
+    /// 更新 DAG 状态
+    pub fn update_dag_status(&self, id: &str, status: &str) -> Result<bool> {
+        let now = chrono::Utc::now().timestamp();
+        let rows = self.conn.execute(
+            "UPDATE dags SET status = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![status, now, id],
+        ).map_err(|e| CisError::Storage(format!("Failed to update dag status: {}", e)))?;
+        Ok(rows > 0)
+    }
+
+    /// 删除 DAG
+    pub fn delete_dag(&self, id: &str) -> Result<bool> {
+        let rows = self.conn.execute(
+            "DELETE FROM dags WHERE id = ?1",
+            [id],
+        ).map_err(|e| CisError::Storage(format!("Failed to delete dag: {}", e)))?;
+        Ok(rows > 0)
+    }
+
+    /// 更新 DAG 最后运行时间
+    pub fn update_dag_last_run(&self, id: &str) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.conn.execute(
+            "UPDATE dags SET last_run_at = ?1, updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, id],
+        ).map_err(|e| CisError::Storage(format!("Failed to update dag last run: {}", e)))?;
+        Ok(())
+    }
+
+    /// 创建 DAG 运行记录
+    pub fn create_dag_run(&self, run_id: &str, dag_id: &str, params: Option<&str>) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.conn.execute(
+            "INSERT INTO dag_runs (run_id, dag_id, status, params, started_at) 
+             VALUES (?1, ?2, 'pending', ?3, ?4)",
+            rusqlite::params![run_id, dag_id, params.unwrap_or("{}"), now],
+        ).map_err(|e| CisError::Storage(format!("Failed to create dag run: {}", e)))?;
+        Ok(())
+    }
+
+    /// 获取 DAG 运行记录
+    pub fn get_dag_run(&self, run_id: &str) -> Result<Option<DagRunRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT run_id, dag_id, status, started_at, finished_at, 
+                    tasks_completed, tasks_failed, tasks_total 
+             FROM dag_runs WHERE run_id = ?1"
+        ).map_err(|e| CisError::Storage(format!("Failed to prepare get dag run query: {}", e)))?;
+
+        let result = stmt.query_row([run_id], |row| {
+            Ok(DagRunRecord {
+                run_id: row.get(0)?,
+                dag_id: row.get(1)?,
+                status: row.get(2)?,
+                started_at: row.get(3)?,
+                finished_at: row.get(4)?,
+                tasks_completed: row.get::<_, i64>(5)? as usize,
+                tasks_failed: row.get::<_, i64>(6)? as usize,
+                tasks_total: row.get::<_, i64>(7)? as usize,
+            })
+        });
+
+        match result {
+            Ok(run) => Ok(Some(run)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(CisError::Storage(format!("Failed to get dag run: {}", e))),
+        }
+    }
+
+    /// 列出 DAG 运行记录
+    pub fn list_dag_runs(&self, dag_id: &str, limit: usize) -> Result<Vec<DagRunRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT run_id, dag_id, status, started_at, finished_at, 
+                    tasks_completed, tasks_failed, tasks_total 
+             FROM dag_runs WHERE dag_id = ?1 ORDER BY started_at DESC LIMIT ?2"
+        ).map_err(|e| CisError::Storage(format!("Failed to prepare list dag runs query: {}", e)))?;
+
+        let rows = stmt.query_map(rusqlite::params![dag_id, limit as i64], |row| {
+            Ok(DagRunRecord {
+                run_id: row.get(0)?,
+                dag_id: row.get(1)?,
+                status: row.get(2)?,
+                started_at: row.get(3)?,
+                finished_at: row.get(4)?,
+                tasks_completed: row.get::<_, i64>(5)? as usize,
+                tasks_failed: row.get::<_, i64>(6)? as usize,
+                tasks_total: row.get::<_, i64>(7)? as usize,
+            })
+        }).map_err(|e| CisError::Storage(format!("Failed to query dag runs: {}", e)))?;
+
+        let mut runs = Vec::new();
+        for row in rows {
+            runs.push(row.map_err(|e| CisError::Storage(format!("Failed to read dag run row: {}", e)))?);
+        }
+        Ok(runs)
+    }
+
+    /// 更新 DAG 运行状态
+    pub fn update_dag_run_status(&self, run_id: &str, status: &str) -> Result<bool> {
+        let now = chrono::Utc::now().timestamp();
+        let sql = if status == "success" || status == "failed" || status == "cancelled" {
+            "UPDATE dag_runs SET status = ?1, finished_at = ?2 WHERE run_id = ?3"
+        } else {
+            "UPDATE dag_runs SET status = ?1 WHERE run_id = ?2"
+        };
+
+        let rows = if status == "success" || status == "failed" || status == "cancelled" {
+            self.conn.execute(sql, rusqlite::params![status, now, run_id])
+        } else {
+            self.conn.execute(sql, rusqlite::params![status, run_id])
+        }.map_err(|e| CisError::Storage(format!("Failed to update dag run status: {}", e)))?;
+
+        Ok(rows > 0)
+    }
+
+    /// 更新 DAG 运行任务统计
+    pub fn update_dag_run_stats(&self, run_id: &str, completed: usize, failed: usize, total: usize) -> Result<()> {
+        self.conn.execute(
+            "UPDATE dag_runs SET tasks_completed = ?1, tasks_failed = ?2, tasks_total = ?3 WHERE run_id = ?4",
+            rusqlite::params![completed as i64, failed as i64, total as i64, run_id],
+        ).map_err(|e| CisError::Storage(format!("Failed to update dag run stats: {}", e)))?;
+        Ok(())
+    }
+
+    /// 添加 DAG 日志
+    pub fn add_dag_log(&self, dag_id: &str, run_id: Option<&str>, level: &str, message: &str) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.conn.execute(
+            "INSERT INTO dag_logs (dag_id, run_id, level, message, timestamp) 
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![dag_id, run_id, level, message, now],
+        ).map_err(|e| CisError::Storage(format!("Failed to add dag log: {}", e)))?;
+        Ok(())
+    }
+
+    /// 获取 DAG 日志
+    pub fn get_dag_logs(&self, dag_id: &str, run_id: Option<&str>, limit: usize) -> Result<Vec<DagLogRecord>> {
+        let mut stmt = if run_id.is_some() {
+            self.conn.prepare(
+                "SELECT dag_id, run_id, level, message, timestamp 
+                 FROM dag_logs WHERE dag_id = ?1 AND run_id = ?2 
+                 ORDER BY timestamp DESC LIMIT ?3"
+            )
+        } else {
+            self.conn.prepare(
+                "SELECT dag_id, run_id, level, message, timestamp 
+                 FROM dag_logs WHERE dag_id = ?1 
+                 ORDER BY timestamp DESC LIMIT ?2"
+            )
+        }.map_err(|e| CisError::Storage(format!("Failed to prepare get dag logs query: {}", e)))?;
+
+        let rows: Vec<DagLogRecord> = if let Some(rid) = run_id {
+            stmt.query_map(rusqlite::params![dag_id, rid, limit as i64], |row| {
+                Ok(DagLogRecord {
+                    dag_id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    level: row.get(2)?,
+                    message: row.get(3)?,
+                    timestamp: row.get(4)?,
+                })
+            }).map_err(|e| CisError::Storage(format!("Failed to query dag logs: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CisError::Storage(format!("Failed to read dag log row: {}", e)))?
+        } else {
+            stmt.query_map(rusqlite::params![dag_id, limit as i64], |row| {
+                Ok(DagLogRecord {
+                    dag_id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    level: row.get(2)?,
+                    message: row.get(3)?,
+                    timestamp: row.get(4)?,
+                })
+            }).map_err(|e| CisError::Storage(format!("Failed to query dag logs: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CisError::Storage(format!("Failed to read dag log row: {}", e)))?
+        };
+
+        // 反转顺序使最新的在最前面
+        let mut logs = rows;
+        logs.reverse();
+        Ok(logs)
+    }
+
+    /// 清理旧的 DAG 运行记录
+    pub fn prune_dag_runs(&self, max_age_days: u32) -> Result<usize> {
+        let cutoff = chrono::Utc::now().timestamp() - (max_age_days as i64 * 24 * 60 * 60);
+        let rows = self.conn.execute(
+            "DELETE FROM dag_runs WHERE started_at < ?1 AND status IN ('success', 'failed', 'cancelled')",
+            [cutoff],
+        ).map_err(|e| CisError::Storage(format!("Failed to prune dag runs: {}", e)))?;
+        Ok(rows)
+    }
+
     /// 执行备份
     pub fn backup(&self, path: &Path) -> Result<()> {
         use rusqlite::backup::Backup;
@@ -288,6 +690,61 @@ pub struct MemoryIndex {
     pub updated_at: i64,
     pub accessed_at: Option<i64>,
     pub version: i32,
+}
+
+/// DAG 记录（列表视图）
+#[derive(Debug, Clone)]
+pub struct DagRecord {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub status: String,
+    pub scope: String,
+    pub tasks_count: usize,
+    pub created_at: i64,
+    pub last_run_at: Option<i64>,
+}
+
+/// DAG 详情记录
+#[derive(Debug, Clone)]
+pub struct DagDetail {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub status: String,
+    pub scope: String,
+    pub description: Option<String>,
+    pub definition: String,
+    pub owner: String,
+    pub permissions: String,
+    pub config: String,
+    pub tasks_count: usize,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub last_run_at: Option<i64>,
+}
+
+/// DAG 运行记录
+#[derive(Debug, Clone)]
+pub struct DagRunRecord {
+    pub run_id: String,
+    pub dag_id: String,
+    pub status: String,
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
+    pub tasks_completed: usize,
+    pub tasks_failed: usize,
+    pub tasks_total: usize,
+}
+
+/// DAG 日志记录
+#[derive(Debug, Clone)]
+pub struct DagLogRecord {
+    pub dag_id: String,
+    pub run_id: Option<String>,
+    pub level: String,
+    pub message: String,
+    pub timestamp: i64,
 }
 
 /// Skill 数据库
@@ -402,6 +859,13 @@ pub struct DbManager {
     multi_conn: Arc<Mutex<Option<MultiDbConnection>>>,
     /// 已挂载的 Skill 别名映射: skill_name -> alias
     attached_aliases: Arc<Mutex<HashMap<String, String>>>,
+}
+
+impl std::fmt::Debug for DbManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DbManager")
+            .finish_non_exhaustive()
+    }
 }
 
 impl DbManager {

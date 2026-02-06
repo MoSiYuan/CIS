@@ -7,7 +7,7 @@ use eframe::egui::{self, Color32, Frame, ScrollArea, Window};
 use crate::theme::*;
 
 /// Filter for node list
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NodeFilter {
     All,
     Connected,
@@ -112,7 +112,10 @@ impl NodeManager {
             .show(ctx, |ui| {
                 // Filter tabs
                 ui.horizontal(|ui| {
-                    for filter in [
+                    // Calculate counts for each filter
+                let counts = self.calculate_filter_counts(nodes);
+                
+                for filter in [
                         NodeFilter::All,
                         NodeFilter::Connected,
                         NodeFilter::Verified,
@@ -121,7 +124,8 @@ impl NodeManager {
                         NodeFilter::Blocked,
                     ] {
                         let selected = self.filter == filter;
-                        let text = format!("{} (0)", filter.as_str()); // TODO: Count
+                        let count = counts.get(&filter).copied().unwrap_or(0);
+                        let text = format!("{} ({})", filter.as_str(), count);
                         
                         let btn = egui::Button::new(text)
                             .fill(if selected { VERIFIED_LOCAL_BG } else { PANEL_BG })
@@ -182,6 +186,35 @@ impl NodeManager {
             NodeFilter::Disconnected => matches!(node.status, NodeStatus::Offline),
             NodeFilter::Blocked => matches!(node.trust_state, TrustState::Blocked),
         }
+    }
+    
+    /// Calculate node counts for each filter
+    fn calculate_filter_counts(&self, nodes: &[ManagedNode]) -> std::collections::HashMap<NodeFilter, usize> {
+        let mut counts = std::collections::HashMap::new();
+        
+        counts.insert(NodeFilter::All, nodes.len());
+        counts.insert(
+            NodeFilter::Connected,
+            nodes.iter().filter(|n| matches!(n.status, NodeStatus::Online)).count(),
+        );
+        counts.insert(
+            NodeFilter::Verified,
+            nodes.iter().filter(|n| matches!(n.trust_state, TrustState::Verified)).count(),
+        );
+        counts.insert(
+            NodeFilter::Pending,
+            nodes.iter().filter(|n| matches!(n.trust_state, TrustState::Pending)).count(),
+        );
+        counts.insert(
+            NodeFilter::Disconnected,
+            nodes.iter().filter(|n| matches!(n.status, NodeStatus::Offline)).count(),
+        );
+        counts.insert(
+            NodeFilter::Blocked,
+            nodes.iter().filter(|n| matches!(n.trust_state, TrustState::Blocked)).count(),
+        );
+        
+        counts
     }
     
     fn render_node_row(&mut self, ui: &mut egui::Ui, node: &ManagedNode, response: &mut NodeManagerResponse) {

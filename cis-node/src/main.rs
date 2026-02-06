@@ -785,7 +785,7 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
             SkillAction::Deactivate { name } => commands::skill::deactivate_skill(&name).await,
             SkillAction::Info { name } => commands::skill::skill_info(&name),
             SkillAction::Call { name, method, args } => {
-                commands::skill::call_skill(&name, &method, args.as_deref())
+                commands::skill::call_skill(&name, &method, args.as_deref()).await
             }
             SkillAction::Install { path } => commands::skill::install_skill(&path),
             SkillAction::Remove { name } => commands::skill::remove_skill(&name).await,
@@ -861,7 +861,7 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
                 commands::task::update_task_status(&id, status.into())
             }
             TaskAction::Delete { id } => commands::task::delete_task(&id),
-            TaskAction::Execute => commands::task::execute_tasks(),
+            TaskAction::Execute => commands::task::execute_tasks().await,
         }
         
         Commands::Agent { action, prompt, chat, list, session, project } => {

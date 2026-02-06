@@ -3,10 +3,11 @@
 //! Task management - list, create, update, etc.
 
 use anyhow::Result;
-use cis_core::scheduler::TaskDag;
+use cis_core::scheduler::{TaskDag, LocalExecutor};
 use cis_core::scheduler::persistence::DagPersistence;
 use cis_core::types::{Task, TaskId, TaskPriority, TaskStatus};
 use std::path::PathBuf;
+use std::collections::HashMap;
 
 /// Task store for managing tasks - 使用 DAG SQLite 数据库
 pub struct TaskStore {
@@ -228,9 +229,14 @@ pub fn delete_task(id: &str) -> Result<()> {
 }
 
 /// Execute tasks using DAG scheduler
-pub fn execute_tasks() -> Result<()> {
+pub async fn execute_tasks() -> Result<()> {
     let store = TaskStore::load()?;
     let tasks = store.list_all();
+    
+    if tasks.is_empty() {
+        println!("No tasks to execute.");
+        return Ok(());
+    }
     
     // Build DAG from tasks
     let mut dag = TaskDag::new();
@@ -252,8 +258,50 @@ pub fn execute_tasks() -> Result<()> {
         println!("  Level {}: {}", i + 1, level.join(", "));
     }
     
-    // TODO: Actually execute tasks
-    println!("\n⚠️  Task execution is not yet fully implemented.");
+    // Execute tasks using LocalExecutor
+    println!("\n🚀 Starting task execution...");
+    
+    let node_id = format!("cis-node-{}", std::process::id());
+    let worker_binary = std::env::current_exe()
+        .unwrap_or_else(|_| std::path::PathBuf::from("cis-node"));
+    let default_room = format!("!worker-default:{}", node_id);
+    
+    let executor = LocalExecutor::new(
+        node_id,
+        worker_binary.to_string_lossy().to_string(),
+        default_room,
+    );
+    
+    // Convert tasks to DagTaskSpec
+    let task_specs: Vec<cis_core::scheduler::DagTaskSpec> = tasks.iter().map(|task| {
+        cis_core::scheduler::DagTaskSpec {
+            id: task.id.clone(),
+            task_type: "command".to_string(),
+            command: task.title.clone(),
+            depends_on: task.dependencies.clone(),
+            env: std::collections::HashMap::new(),
+        }
+    }).collect();
+    
+    // Create DAG specification
+    let dag_spec = cis_core::scheduler::DagSpec::new(
+        format!("task-dag-{}", uuid::Uuid::new_v4()),
+        task_specs,
+    );
+    
+    // Execute the DAG
+    match executor.execute(&dag_spec).await {
+        Ok(run_id) => {
+            println!("✅ Tasks dispatched successfully");
+            println!("   Run ID: {}", run_id);
+            println!("   Total tasks: {}", tasks.len());
+            println!("\n📊 Execution started. Use 'cis task list' to check status.");
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to execute tasks: {}", e);
+            return Err(e.into());
+        }
+    }
     
     Ok(())
 }

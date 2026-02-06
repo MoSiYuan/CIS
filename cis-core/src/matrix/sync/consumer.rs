@@ -2,11 +2,12 @@
 //!
 //! 定期消费 pending_sync 表中的任务，从远端节点获取缺失事件
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::Mutex;
-use tokio::time::interval;
+use tokio::sync::{Mutex, RwLock};
+use tokio::time::{interval, timeout};
 use tracing::{debug, error, info, warn};
 
 use crate::error::Result;
@@ -58,6 +59,17 @@ pub enum SyncResult {
     AlreadyUpToDate,
 }
 
+/// 等待中的同步请求
+#[derive(Debug, Clone)]
+struct PendingRequest {
+    /// 请求 ID
+    request_id: String,
+    /// 目标节点
+    target_node: String,
+    /// 创建时间
+    created_at: tokio::time::Instant,
+}
+
 /// 断线同步消费者
 ///
 /// 后台任务，定期从 pending_sync 表中读取任务，
@@ -73,6 +85,8 @@ pub struct SyncConsumer {
     config: SyncConfig,
     /// 运行状态
     running: Arc<std::sync::atomic::AtomicBool>,
+    /// 等待中的请求 (request_id -> PendingRequest)
+    pending_requests: Arc<RwLock<HashMap<String, tokio::sync::oneshot::Sender<SyncResponse>>>>,
 }
 
 impl SyncConsumer {
@@ -87,6 +101,7 @@ impl SyncConsumer {
             store,
             config: SyncConfig::default(),
             running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pending_requests: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -212,6 +227,18 @@ impl SyncConsumer {
             100, // 每次最多 100 个事件
         );
 
+        // 生成请求 ID
+        let request_id = uuid::Uuid::new_v4().to_string();
+        
+        // 创建 oneshot channel 等待响应
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        
+        // 注册等待中的请求
+        {
+            let mut pending = self.pending_requests.write().await;
+            pending.insert(request_id.clone(), tx);
+        }
+        
         // 发送同步请求
         let request_msg = WsMessage::SyncRequest(request);
 
@@ -220,21 +247,59 @@ impl SyncConsumer {
             .await
         {
             Ok(_) => {
-                // 等待响应（这里简化处理，实际应该使用 request-response 模式）
-                // 在真实实现中，应该注册一个回调等待响应
-                info!("Sent sync request to {}", task.target_node);
-
-                // TODO: 实现 request-response 模式等待 SyncResponse
-                // 暂时返回成功，等待后续实现
-                Ok(SyncResult::Success { events_count: 0 })
+                info!("Sent sync request {} to {}", request_id, task.target_node);
+                
+                // 等待响应（带超时）
+                match timeout(Duration::from_secs(30), rx).await {
+                    Ok(Ok(response)) => {
+                        // 收到响应，处理事件
+                        let events_count = response.events.len();
+                        info!("Received sync response for {}: {} events", request_id, events_count);
+                        
+                        // 保存同步的事件
+                        let mut inserted = 0;
+                        for event in response.events {
+                            match self.save_synced_event(&event).await {
+                                Ok(_) => inserted += 1,
+                                Err(e) => {
+                                    error!("Failed to save synced event {}: {}", event.message_id, e);
+                                }
+                            }
+                        }
+                        
+                        Ok(SyncResult::Success { events_count: inserted })
+                    }
+                    Ok(Err(_)) => {
+                        warn!("Sync response channel closed for {}", request_id);
+                        Ok(SyncResult::Failed {
+                            error: "Response channel closed".to_string(),
+                        })
+                    }
+                    Err(_) => {
+                        warn!("Sync request {} timed out", request_id);
+                        // 超时后清理请求
+                        let mut pending = self.pending_requests.write().await;
+                        pending.remove(&request_id);
+                        Ok(SyncResult::Failed {
+                            error: "Request timeout".to_string(),
+                        })
+                    }
+                }
             }
-            Err(e) => Ok(SyncResult::Failed {
-                error: format!("Failed to send sync request: {}", e),
-            }),
+            Err(e) => {
+                // 发送失败，清理请求
+                let mut pending = self.pending_requests.write().await;
+                pending.remove(&request_id);
+                Ok(SyncResult::Failed {
+                    error: format!("Failed to send sync request: {}", e),
+                })
+            }
         }
     }
 
     /// 处理同步响应
+    /// 
+    /// 将响应发送给等待中的请求
     pub async fn handle_sync_response(
         &self,
         from_node: &str,
@@ -246,6 +311,28 @@ impl SyncConsumer {
             from_node,
             events_count
         );
+        
+        // 检查是否有等待中的请求 (使用 response 中的 request_id 如果存在)
+        // 注意：目前 SyncResponse 没有 request_id 字段，我们假设是最近的请求
+        // 在实际实现中，SyncResponse 应该包含对应的 request_id
+        let request_id = {
+            let pending = self.pending_requests.read().await;
+            // 找到第一个匹配的请求（简化处理）
+            pending.keys().next().cloned()
+        };
+        
+        if let Some(request_id) = request_id {
+            let sender = {
+                let mut pending = self.pending_requests.write().await;
+                pending.remove(&request_id)
+            };
+            
+            if let Some(sender) = sender {
+                // 发送响应给等待的 task
+                let _ = sender.send(response.clone());
+                info!("Delivered sync response to request {}", request_id);
+            }
+        }
 
         let mut inserted = 0;
 

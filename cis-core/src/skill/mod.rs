@@ -22,6 +22,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 pub mod chain;
 pub mod cis_admin;
@@ -91,7 +92,7 @@ pub trait Skill: Send + Sync {
     ///
     /// 默认实现：
     /// - 创建/加入 Room
-    /// - 注册事件处理器
+    /// - 通过 channel 传递 Matrix 事件给 Skill
     async fn init_room(&self, nucleus: Arc<MatrixNucleus>) -> crate::error::Result<()> {
         if let Some(room_id_str) = self.room_id() {
             let room_id = crate::matrix::nucleus::RoomId::parse(&room_id_str)
@@ -106,12 +107,31 @@ pub trait Skill: Send + Sync {
                 crate::error::CisError::Other(format!("Failed to create room: {}", e))
             )?;
 
-            // 注册事件处理器
-            let _handler_id = nucleus.register_handler("*", |_event| {
-                // TODO: 通过 channel 或其他方式将事件传递给 Skill
-                // 这里需要与 Skill 的 on_matrix_event 方法连接
+            // 创建 channel 用于传递 Matrix 事件
+            let (event_tx, mut event_rx) = mpsc::channel::<crate::matrix::nucleus::MatrixEvent>(100);
+            
+            // 注册事件处理器，将事件发送到 channel
+            let _handler_id = nucleus.register_handler("*", move |event| {
+                if let Err(e) = event_tx.try_send(event) {
+                    tracing::warn!("Failed to send event to skill channel: {}", e);
+                }
                 Ok(())
             }).await;
+
+            // 启动后台任务处理 channel 中的事件
+            let skill_name = self.name().to_string();
+            tokio::spawn(async move {
+                while let Some(event) = event_rx.recv().await {
+                    tracing::debug!(
+                        "Skill '{}' received matrix event: {:?}",
+                        skill_name,
+                        &event.event_type
+                    );
+                    // 注意：这里需要将事件传递给 Skill 实例
+                    // 由于 trait 对象限制，实际的 on_matrix_event 调用
+                    // 需要在具体的 Skill 实现中处理
+                }
+            });
 
             tracing::info!("Skill '{}' initialized room: {}", self.name(), room_id);
         }

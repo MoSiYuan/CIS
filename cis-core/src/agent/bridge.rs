@@ -11,6 +11,9 @@ use tokio::sync::{mpsc, Mutex};
 use crate::agent::{AgentProvider, AgentRequest, AgentResponse, AgentContext};
 use crate::error::{CisError, Result};
 use crate::skill::{Skill, SkillContext, Event};
+use crate::memory::MemoryService;
+use crate::types::{MemoryDomain, MemoryCategory};
+use crate::service::TaskService;
 
 /// Agent Bridge Skill
 ///
@@ -153,35 +156,137 @@ impl Skill for AgentBridgeSkill {
 /// Agent 调用 CIS 的接口
 ///
 /// 供外部 Agent（如 Claude）调用 CIS 功能
-pub struct AgentCisClient;
+pub struct AgentCisClient {
+    memory_service: Option<Arc<Mutex<MemoryService>>>,
+}
 
 impl AgentCisClient {
+    /// 创建新的客户端实例
+    pub fn new() -> Self {
+        // 尝试初始化 MemoryService
+        let memory_service = match MemoryService::open_default("agent") {
+            Ok(service) => {
+                tracing::info!("AgentCisClient: MemoryService initialized");
+                Some(Arc::new(Mutex::new(service)))
+            }
+            Err(e) => {
+                tracing::warn!("AgentCisClient: Failed to initialize MemoryService: {}", e);
+                None
+            }
+        };
+        
+        Self { memory_service }
+    }
+
     /// 获取记忆
-    pub fn memory_get(_key: &str) -> Option<Vec<u8>> {
-        // 通过环境变量或命名管道与 CIS 通信
-        // 简化实现：直接读取数据库
-        // 实际应该通过 CIS 服务进程
-        None
+    pub async fn memory_get(&self, key: &str) -> Option<Vec<u8>> {
+        match &self.memory_service {
+            Some(service) => {
+                let service = service.lock().await;
+                match service.get(key).await {
+                    Ok(Some(item)) => Some(item.value),
+                    Ok(None) => {
+                        tracing::debug!("AgentCisClient: Key '{}' not found", key);
+                        None
+                    }
+                    Err(e) => {
+                        tracing::warn!("AgentCisClient: Failed to get key '{}': {}", key, e);
+                        None
+                    }
+                }
+            }
+            None => {
+                tracing::warn!("AgentCisClient: MemoryService not available");
+                None
+            }
+        }
     }
 
     /// 设置记忆
-    pub fn memory_set(_key: &str, _value: &[u8]) -> Result<()> {
-        Ok(())
+    pub async fn memory_set(&self, key: &str, value: &[u8]) -> Result<()> {
+        match &self.memory_service {
+            Some(service) => {
+                let service = service.lock().await;
+                service.set(key, value, MemoryDomain::Public, MemoryCategory::Context).await
+            }
+            None => {
+                Err(CisError::Memory("MemoryService not available".to_string()))
+            }
+        }
     }
 
     /// 调用 Skill
-    pub fn skill_call(_skill: &str, _method: &str, _params: &[u8]) -> Result<Vec<u8>> {
-        Ok(vec![])
+    pub async fn skill_call(&self, skill: &str, method: &str, params: &[u8]) -> Result<Vec<u8>> {
+        // 尝试通过本地 socket 或 HTTP 调用本地 CIS 服务
+        tracing::info!("AgentCisClient: Calling skill {}::{} ({} bytes params)", 
+            skill, method, params.len());
+        
+        // 当前实现：直接返回错误，提示使用 HTTP API
+        Err(CisError::skill(format!(
+            "Direct skill call not implemented. Use CIS HTTP API: POST /api/v1/skills/{}/{}",
+            skill, method
+        )))
     }
 
     /// 获取任务列表
-    pub fn task_list() -> Vec<TaskInfo> {
-        vec![]
+    pub async fn task_list(&self) -> Result<Vec<TaskInfo>> {
+        // 从 CoreDb 读取任务列表
+        match TaskService::new() {
+            Ok(task_service) => {
+                match task_service.list(crate::service::ListOptions::default()).await {
+                    Ok(result) => {
+                        let tasks: Vec<TaskInfo> = result.items.into_iter()
+                            .map(|t| TaskInfo {
+                                id: t.id,
+                                title: t.name,
+                                status: format!("{:?}", t.status),
+                            })
+                            .collect();
+                        Ok(tasks)
+                    }
+                    Err(e) => Err(e)
+                }
+            }
+            Err(e) => Err(e)
+        }
     }
 
     /// 创建任务
-    pub fn task_create(_title: &str, _description: Option<&str>) -> Result<String> {
-        Ok(String::new())
+    pub async fn task_create(&self, title: &str, description: Option<&str>) -> Result<String> {
+        match TaskService::new() {
+            Ok(task_service) => {
+                use crate::service::task_service::{CreateTaskOptions, TaskPriority};
+                
+                let input = if let Some(desc) = description {
+                    serde_json::json!({ "description": desc })
+                } else {
+                    serde_json::json!({})
+                };
+                
+                let options = CreateTaskOptions {
+                    name: title.to_string(),
+                    task_type: "agent".to_string(),
+                    input,
+                    priority: TaskPriority::Normal,
+                    dag_id: None,
+                    worker_id: None,
+                    timeout: 300,
+                    max_retries: 1,
+                };
+                
+                match task_service.create(options).await {
+                    Ok(info) => Ok(info.summary.id),
+                    Err(e) => Err(e)
+                }
+            }
+            Err(e) => Err(e)
+        }
+    }
+}
+
+impl Default for AgentCisClient {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

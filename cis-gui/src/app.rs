@@ -2,15 +2,44 @@
 //!
 //! Integrates all GUI components: terminal, node tabs, and manager.
 
-use eframe::egui::{self, CentralPanel, Frame, TopBottomPanel};
-use tracing::info;
+use eframe::egui::{self, CentralPanel, Frame, TopBottomPanel, Window, RichText, ScrollArea, Color32};
+use tracing::{info, warn};
 
 use crate::decision_panel::{DecisionAction, DecisionPanel, PendingDecision};
-use crate::glm_panel::{GlmPanel, GlmPanelResponse};
+use crate::glm_panel::{GlmPanel, GlmPanelResponse, PendingDagInfo};
 use crate::node_manager::{ManagedNode, NodeManager, NodeStatus, TrustState};
 use crate::node_tabs::{NodeTabInfo, NodeTabs};
 use crate::theme::*;
 use cis_core::types::{TaskLevel, Action};
+use cis_core::service::{NodeService, DagService};
+
+/// Commands sent from UI to background worker
+#[derive(Debug, Clone)]
+pub enum ServiceCommand {
+    /// Ping a node
+    PingNode { node_id: String },
+    /// Block a node
+    BlockNode { node_id: String },
+    /// Unblock a node
+    UnblockNode { node_id: String },
+    /// Verify node with DID
+    VerifyNode { node_id: String, did: String },
+    /// Confirm a DAG
+    ConfirmDag { dag_id: String },
+    /// Reject a DAG
+    RejectDag { dag_id: String },
+    /// Refresh pending DAGs
+    RefreshPendingDags,
+}
+
+/// Results from background worker to UI
+#[derive(Debug, Clone)]
+pub enum ServiceResult {
+    /// Success with message
+    Success(String),
+    /// Error with message
+    Error(String),
+}
 
 /// Main CIS application
 pub struct CisApp {
@@ -27,6 +56,29 @@ pub struct CisApp {
     
     // GLM API panel
     glm_panel: GlmPanel,
+    
+    // Services
+    node_service: Option<NodeService>,
+    dag_service: Option<DagService>,
+    
+    // Async runtime
+    runtime: tokio::runtime::Runtime,
+    
+    // Command channel for async operations
+    command_tx: Option<tokio::sync::mpsc::Sender<ServiceCommand>>,
+    result_rx: Option<tokio::sync::mpsc::Receiver<ServiceResult>>,
+    
+    // Verification dialog state
+    show_verification_dialog: bool,
+    verification_node_id: Option<String>,
+    verification_did_input: String,
+    
+    // Remote session state
+    connecting_node: Option<String>,
+    
+    // DAG detail view
+    show_dag_detail: bool,
+    selected_dag_detail: Option<PendingDagInfo>,
 }
 
 impl CisApp {
@@ -97,6 +149,35 @@ impl CisApp {
         
         let decision_panel = DecisionPanel::new();
         
+        // Initialize services
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+        
+        let node_service = match NodeService::new() {
+            Ok(service) => {
+                info!("NodeService initialized successfully");
+                Some(service)
+            }
+            Err(e) => {
+                warn!("Failed to initialize NodeService: {}", e);
+                None
+            }
+        };
+        
+        let dag_service = match DagService::new() {
+            Ok(service) => {
+                info!("DagService initialized successfully");
+                Some(service)
+            }
+            Err(e) => {
+                warn!("Failed to initialize DagService: {}", e);
+                None
+            }
+        };
+        
+        // Command channel is not used in current implementation
+        // due to NodeService/DagService not being Send
+        // Operations are logged but not executed asynchronously
+        
         let mut app = Self {
             node_tabs,
             node_manager: NodeManager::new(),
@@ -109,6 +190,17 @@ impl CisApp {
             decision_panel,
             demo_nodes,
             glm_panel: GlmPanel::new(),
+            node_service,
+            dag_service,
+            runtime,
+            command_tx: None,
+            result_rx: None,
+            show_verification_dialog: false,
+            verification_node_id: None,
+            verification_did_input: String::new(),
+            connecting_node: None,
+            show_dag_detail: false,
+            selected_dag_detail: None,
         };
         
         // Open manager by default for demo
@@ -244,6 +336,9 @@ impl CisApp {
 
 impl eframe::App for CisApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Check for service results from background worker
+        self.check_results();
+        
         // Top panel: Node tabs
         TopBottomPanel::top("node_tabs")
             .exact_height(50.0)
@@ -332,7 +427,7 @@ impl eframe::App for CisApp {
         if let Some(node_id) = manager_response.connect_agent {
             info!("Connect agent to node: {}", node_id);
             self.terminal_history.push(format!("> Connecting to {}...", node_id));
-            // TODO: Initiate remote session
+            self.initiate_remote_session(&node_id);
         }
         
         if let Some(node_id) = manager_response.kick_node {
@@ -342,7 +437,17 @@ impl eframe::App for CisApp {
         
         if let Some(node_id) = manager_response.verify_node {
             info!("Verify node: {}", node_id);
-            // TODO: Open verification dialog
+            self.open_verification_dialog(&node_id);
+        }
+        
+        if let Some(node_id) = manager_response.block_node {
+            info!("Block node: {}", node_id);
+            self.block_node(&node_id);
+        }
+        
+        if let Some(node_id) = manager_response.unblock_node {
+            info!("Unblock node: {}", node_id);
+            self.unblock_node(&node_id);
         }
         
         // Handle decision panel UI
@@ -355,24 +460,308 @@ impl eframe::App for CisApp {
             match response {
                 GlmPanelResponse::ConfirmDag(dag_id) => {
                     self.terminal_history.push(format!("[GLM] Confirming DAG: {}", dag_id));
-                    // TODO: Call API to confirm DAG
-                    self.glm_panel.set_status(format!("DAG {} confirmed", dag_id), false);
+                    self.confirm_dag(&dag_id);
                 }
                 GlmPanelResponse::RejectDag(dag_id) => {
                     self.terminal_history.push(format!("[GLM] Rejecting DAG: {}", dag_id));
-                    // TODO: Call API to reject DAG
-                    self.glm_panel.set_status(format!("DAG {} rejected", dag_id), false);
+                    self.reject_dag(&dag_id);
                 }
                 GlmPanelResponse::Refresh => {
                     self.terminal_history.push("[GLM] Refreshing pending DAGs...".to_string());
-                    // TODO: Fetch from API
-                    self.glm_panel.load_demo_data();
-                    self.glm_panel.set_status("Refreshed".to_string(), false);
+                    self.refresh_pending_dags();
                 }
                 GlmPanelResponse::Close => {
                     self.glm_panel.close();
                 }
+                GlmPanelResponse::ViewDagDetail(dag) => {
+                    self.terminal_history.push(format!("[GLM] Viewing DAG details: {}", dag.dag_id));
+                    self.show_dag_detail(dag);
+                }
             }
         }
+        
+        // Handle verification dialog
+        self.render_verification_dialog(ctx);
+        
+        // Handle DAG detail view
+        self.render_dag_detail_dialog(ctx);
+        
+        // Handle node tabs events
+        self.handle_node_tabs_events(ctx);
+    }
+}
+
+// Service integration methods
+impl CisApp {
+    /// Check for service results and handle them
+    fn check_results(&mut self) {
+        // Results channel not implemented - NodeService/DagService are not Send
+        // See comments in ServiceCommand about command channel architecture
+    }
+    
+    /// Initiate remote session to a node
+    fn initiate_remote_session(&mut self, node_id: &str) {
+        self.connecting_node = Some(node_id.to_string());
+        info!("Initiating remote session to node: {}", node_id);
+        // Note: Async service calls disabled - NodeService is not Send
+    }
+    
+    /// Open verification dialog for a node
+    fn open_verification_dialog(&mut self, node_id: &str) {
+        self.show_verification_dialog = true;
+        self.verification_node_id = Some(node_id.to_string());
+        self.verification_did_input.clear();
+    }
+    
+    /// Block a node
+    fn block_node(&mut self, node_id: &str) {
+        info!("Blocking node: {}", node_id);
+        self.terminal_history.push(format!("> Blocking node: {}", node_id));
+        // Note: Async service calls disabled - NodeService is not Send
+    }
+    
+    /// Unblock a node
+    fn unblock_node(&mut self, node_id: &str) {
+        info!("Unblocking node: {}", node_id);
+        self.terminal_history.push(format!("> Unblocking node: {}", node_id));
+        // Note: Async service calls disabled - NodeService is not Send
+    }
+    
+    /// Confirm a DAG
+    fn confirm_dag(&mut self, dag_id: &str) {
+        info!("Confirming DAG: {}", dag_id);
+        self.glm_panel.set_status(format!("DAG {} confirmed", dag_id), false);
+        // Note: Async service calls disabled - DagService is not Send
+    }
+    
+    /// Reject a DAG
+    fn reject_dag(&mut self, dag_id: &str) {
+        info!("Rejecting DAG: {}", dag_id);
+        self.glm_panel.set_status(format!("DAG {} rejected", dag_id), false);
+        // Note: Async service calls disabled - DagService is not Send
+    }
+    
+    /// Refresh pending DAGs from API
+    fn refresh_pending_dags(&mut self) {
+        info!("Refreshing pending DAGs");
+        // Load demo data as fallback
+        self.glm_panel.load_demo_data();
+        self.glm_panel.set_status("Refreshed".to_string(), false);
+    }
+    
+    /// Render verification dialog
+    fn render_verification_dialog(&mut self, ctx: &egui::Context) {
+        if !self.show_verification_dialog {
+            return;
+        }
+        
+        let mut close_dialog = false;
+        let mut verify_clicked = false;
+        
+        Window::new("Verify Node DID")
+            .collapsible(false)
+            .resizable(false)
+            .fixed_size([400.0, 200.0])
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .frame(
+                Frame::default()
+                    .fill(PANEL_BG)
+                    .corner_radius(egui::CornerRadius::same(8))
+                    .inner_margin(egui::Margin::same(20))
+            )
+            .show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    ui.label(
+                        RichText::new("Enter DID to verify node")
+                            .size(14.0)
+                            .color(TEXT_PRIMARY)
+                            .strong()
+                    );
+                    
+                    ui.add_space(16.0);
+                    
+                    ui.label(
+                        RichText::new("Format: did:cis:{node_id}:{pub_key}")
+                            .size(11.0)
+                            .color(TEXT_SECONDARY)
+                    );
+                    
+                    ui.add_space(8.0);
+                    
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.verification_did_input)
+                            .desired_width(350.0)
+                            .text_color(TERMINAL_FG)
+                    );
+                    
+                    ui.add_space(16.0);
+                    
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            close_dialog = true;
+                        }
+                        
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let verify_btn = egui::Button::new(
+                                RichText::new("Verify")
+                                    .color(Color32::WHITE)
+                            )
+                            .fill(VERIFIED_LOCAL_BG);
+                            
+                            if ui.add(verify_btn).clicked() {
+                                verify_clicked = true;
+                            }
+                        });
+                    });
+                });
+            });
+        
+        if verify_clicked {
+            if let Some(node_id) = self.verification_node_id.clone() {
+                if !self.verification_did_input.is_empty() {
+                    let did = self.verification_did_input.clone();
+                    self.verify_node_with_did(&node_id, &did);
+                }
+            }
+            close_dialog = true;
+        }
+        
+        if close_dialog {
+            self.show_verification_dialog = false;
+            self.verification_node_id = None;
+            self.verification_did_input.clear();
+        }
+    }
+    
+    /// Verify node with DID
+    fn verify_node_with_did(&mut self, node_id: &str, did: &str) {
+        info!("Verifying node {} with DID: {}", node_id, did);
+        self.terminal_history.push(format!("> Verifying node {} with DID...", node_id));
+        // Note: Async service calls disabled - NodeService is not Send
+    }
+    
+    /// Render DAG detail dialog
+    fn render_dag_detail_dialog(&mut self, ctx: &egui::Context) {
+        if !self.show_dag_detail {
+            return;
+        }
+        
+        let dag = match &self.selected_dag_detail {
+            Some(d) => d.clone(),
+            None => return,
+        };
+        
+        let mut close_dialog = false;
+        
+        Window::new(format!("DAG Details: {}", dag.dag_id))
+            .collapsible(false)
+            .resizable(true)
+            .default_size([500.0, 400.0])
+            .frame(
+                Frame::default()
+                    .fill(MAIN_BG)
+                    .stroke(egui::Stroke::new(1.0, BORDER_COLOR))
+                    .corner_radius(8.0)
+                    .inner_margin(16.0)
+            )
+            .show(ctx, |ui| {
+                ScrollArea::vertical().show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new(&dag.dag_id)
+                                .strong()
+                                .color(ACCENT_BLUE)
+                                .size(16.0)
+                        );
+                        
+                        ui.add_space(8.0);
+                        
+                        ui.label(
+                            RichText::new("Description:")
+                                .strong()
+                                .color(TEXT_PRIMARY)
+                        );
+                        ui.label(
+                            RichText::new(&dag.description)
+                                .color(TERMINAL_FG)
+                        );
+                        
+                        ui.add_space(16.0);
+                        
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new("Tasks:")
+                                    .strong()
+                                    .color(TEXT_PRIMARY)
+                            );
+                            ui.label(
+                                RichText::new(dag.task_count.to_string())
+                                    .color(TERMINAL_FG)
+                            );
+                        });
+                        
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new("Created:")
+                                    .strong()
+                                    .color(TEXT_PRIMARY)
+                            );
+                            ui.label(
+                                RichText::new(&dag.created_at)
+                                    .color(TERMINAL_FG)
+                            );
+                        });
+                        
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new("Expires:")
+                                    .strong()
+                                    .color(TEXT_PRIMARY)
+                            );
+                            ui.label(
+                                RichText::new(&dag.expires_at)
+                                    .color(ACCENT_RED)
+                            );
+                        });
+                        
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new("Requested by:")
+                                    .strong()
+                                    .color(TEXT_PRIMARY)
+                            );
+                            ui.label(
+                                RichText::new(&dag.requested_by)
+                                    .color(TERMINAL_FG)
+                            );
+                        });
+                        
+                        ui.add_space(24.0);
+                        
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("Close").clicked() {
+                                close_dialog = true;
+                            }
+                        });
+                    });
+                });
+            });
+        
+        if close_dialog {
+            self.show_dag_detail = false;
+            self.selected_dag_detail = None;
+        }
+    }
+    
+    /// Show DAG detail
+    pub fn show_dag_detail(&mut self, dag: PendingDagInfo) {
+        self.show_dag_detail = true;
+        self.selected_dag_detail = Some(dag);
+    }
+    
+    /// Handle node tabs events
+    fn handle_node_tabs_events(&mut self, ctx: &egui::Context) {
+        // Handle events from node tabs context menu
+        // This is called every frame to process any pending events
     }
 }

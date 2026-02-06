@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
 use crate::error::{CisError, Result};
+use crate::matrix::store::MatrixStore;
 use crate::scheduler::{DagScope, DagSpec, DagTaskSpec};
 
 /// Worker 进程信息
@@ -70,6 +71,8 @@ pub struct LocalExecutor {
     worker_binary: String,
     /// 默认 Matrix Room (用于 Worker 通信)
     default_room: String,
+    /// Matrix Store (用于事件持久化)
+    matrix_store: Option<Arc<MatrixStore>>,
 }
 
 impl LocalExecutor {
@@ -80,6 +83,23 @@ impl LocalExecutor {
             node_id,
             worker_binary,
             default_room,
+            matrix_store: None,
+        }
+    }
+    
+    /// 创建带 Matrix Store 的执行器
+    pub fn with_matrix_store(
+        node_id: String,
+        worker_binary: String,
+        default_room: String,
+        matrix_store: Arc<MatrixStore>,
+    ) -> Self {
+        Self {
+            workers: Arc::new(Mutex::new(HashMap::new())),
+            node_id,
+            worker_binary,
+            default_room,
+            matrix_store: Some(matrix_store),
         }
     }
     
@@ -225,16 +245,40 @@ impl LocalExecutor {
             task.id, worker_id, room_id
         );
         
-        // TODO: 通过 Matrix Room 发送事件
-        // 这里需要集成 Matrix 客户端来发送事件
-        // 暂时记录日志，实际实现需要：
-        // 1. 获取 MatrixClient 实例
-        // 2. 调用 client.send_room_event(room_id, event_content).await
-        
-        info!(
-            "Task {} dispatched to room {} (content: {})",
-            task.id, room_id, event_content
-        );
+        // 通过 Matrix Store 保存事件，Worker 会通过同步接口获取
+        if let Some(ref store) = self.matrix_store {
+            let event_id = format!("dag-task-{}-{}", task.id, uuid::Uuid::new_v4());
+            let sender = format!("@scheduler:{}", self.node_id);
+            let timestamp = chrono::Utc::now().timestamp_millis();
+            
+            match store.save_event(
+                room_id,
+                &event_id,
+                &sender,
+                "cis.dag.task",
+                &event_content.to_string(),
+                timestamp,
+                None,
+                None,
+            ) {
+                Ok(_) => {
+                    info!(
+                        "Task {} dispatched to room {} (event_id: {})",
+                        task.id, room_id, event_id
+                    );
+                }
+                Err(e) => {
+                    warn!("Failed to save task event to Matrix store: {}", e);
+                    // 继续执行，记录日志即可
+                }
+            }
+        } else {
+            // Matrix Store 未配置，仅记录日志
+            info!(
+                "Task {} dispatched to room {} (content: {})",
+                task.id, room_id, event_content
+            );
+        }
         
         // 更新 Worker 活跃任务计数
         let mut workers = self.workers.lock().await;

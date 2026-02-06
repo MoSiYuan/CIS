@@ -15,6 +15,14 @@ pub struct FederationDb {
     path: PathBuf,
 }
 
+impl std::fmt::Debug for FederationDb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FederationDb")
+            .field("path", &self.path)
+            .finish_non_exhaustive()
+    }
+}
+
 impl FederationDb {
     /// 打开邦联数据库
     pub fn open(path: &Path) -> Result<Self> {

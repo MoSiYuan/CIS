@@ -226,10 +226,44 @@ async fn add_to_whitelist(
     
     // 广播 ACL 更新到 P2P 网络
     println!("  Broadcasting ACL update to peers...");
-    // TODO: 通过系统 P2P 实例广播 ACL 变更
-    // let p2p = system.get_p2p().await?;
-    // let acl_data = serde_json::to_vec(&acl)?;
-    // p2p.broadcast("acl/update", acl_data).await?;
+    
+    // 创建 P2P 配置并尝试广播
+    let p2p_config = cis_core::p2p::P2PConfig {
+        enable_dht: true,
+        bootstrap_nodes: vec![],
+        enable_nat_traversal: false,
+        external_address: None,
+    };
+    
+    // 尝试创建 P2P 网络并广播 ACL 变更
+    match cis_core::p2p::P2PNetwork::new(
+        acl.local_did.clone(),
+        acl.local_did.clone(),
+        "0.0.0.0:7677",
+        p2p_config,
+    ).await {
+        Ok(p2p) => {
+            match serde_json::to_vec(&acl) {
+                Ok(acl_data) => {
+                    match p2p.broadcast("acl/update", acl_data).await {
+                        Ok(()) => {
+                            println!("  ✓ ACL update broadcasted to peers");
+                        }
+                        Err(e) => {
+                            println!("  ⚠️  Failed to broadcast ACL update: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("  ⚠️  Failed to serialize ACL: {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            println!("  ⚠️  P2P network not available: {}", e);
+            println!("     ACL update will be synced on next network startup");
+        }
+    }
     
     Ok(())
 }
@@ -432,25 +466,74 @@ async fn sync_acl(from: Option<String>, broadcast: bool) -> anyhow::Result<()> {
         let acl_data = serde_json::to_vec(&acl)?;
         
         // 通过 P2P 广播
-        // 注意：需要访问 P2P 实例。实际实现需要从系统获取 P2P 实例
         println!("  Broadcasting {} bytes to topic 'acl/update'", acl_data.len());
         
-        // TODO: 通过系统 P2P 实例广播
-        // let p2p = system.get_p2p().await?;
-        // p2p.broadcast("acl/update", acl_data).await?;
+        // 创建 P2P 网络并广播 ACL 变更
+        let p2p_config = cis_core::p2p::P2PConfig {
+            enable_dht: true,
+            bootstrap_nodes: vec![],
+            enable_nat_traversal: false,
+            external_address: None,
+        };
         
-        println!("{} ACL broadcast complete (simulated)", "✓");
+        match cis_core::p2p::P2PNetwork::new(
+            acl.local_did.clone(),
+            acl.local_did.clone(),
+            "0.0.0.0:7677",
+            p2p_config,
+        ).await {
+            Ok(p2p) => {
+                match p2p.broadcast("acl/update", acl_data).await {
+                    Ok(()) => {
+                        println!("{} ACL broadcast complete", "✓");
+                    }
+                    Err(e) => {
+                        println!("{} Failed to broadcast ACL: {}", "✗", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("{} P2P network not available: {}", "⚠️", e);
+                println!("  ACL will be synced when P2P is available");
+            }
+        }
     } else if let Some(peer) = from {
         println!("{} Syncing ACL from {}...", "→", peer);
         
         // 通过 P2P 同步特定节点的公域记忆
         println!("  Requesting ACL sync from peer: {}", peer);
         
-        // TODO: 通过系统 P2P 实例同步
-        // let p2p = system.get_p2p().await?;
-        // p2p.sync_public_memory(&peer).await?;
+        // 创建 P2P 网络并同步 ACL
+        let acl_path = get_acl_path().await?;
+        let acl = load_or_create_acl(&acl_path).await?;
         
-        println!("{} ACL sync from {} complete (simulated)", "✓", peer);
+        let p2p_config = cis_core::p2p::P2PConfig {
+            enable_dht: true,
+            bootstrap_nodes: vec![peer.clone()],
+            enable_nat_traversal: false,
+            external_address: None,
+        };
+        
+        match cis_core::p2p::P2PNetwork::new(
+            acl.local_did.clone(),
+            acl.local_did.clone(),
+            "0.0.0.0:7677",
+            p2p_config,
+        ).await {
+            Ok(p2p) => {
+                match p2p.sync_public_memory(&peer).await {
+                    Ok(()) => {
+                        println!("{} ACL sync from {} complete", "✓", peer);
+                    }
+                    Err(e) => {
+                        println!("{} Failed to sync ACL from {}: {}", "✗", peer, e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("{} P2P network not available: {}", "⚠️", e);
+            }
+        }
     } else {
         println!("{}", "Error: Either --from or --broadcast must be specified");
         println!("  cis network sync --from <peer-id>    # Sync from specific peer");
@@ -469,11 +552,52 @@ async fn get_acl_path() -> anyhow::Result<std::path::PathBuf> {
 }
 
 /// Show audit log
-async fn show_audit(limit: usize, _event_type: Option<String>) -> anyhow::Result<()> {
+async fn show_audit(limit: usize, event_type: Option<String>) -> anyhow::Result<()> {
     println!("{}", format!(" Recent Audit Events (last {}) ", limit));
     
-    // TODO: Load from audit logger
-    println!("{}", "Audit log not yet implemented in CLI");
+    // 加载并显示审计日志
+    let audit_logger = cis_core::network::AuditLogger::default();
+    
+    let entries = if let Some(ref evt_type) = event_type {
+        // 根据事件类型过滤
+        let evt_type_parsed = match evt_type.as_str() {
+            "did_verification_success" => cis_core::network::AuditEventType::DidVerificationSuccess,
+            "did_verification_failure" => cis_core::network::AuditEventType::DidVerificationFailure,
+            "connection_blocked" => cis_core::network::AuditEventType::ConnectionBlocked,
+            "communication_blocked" => cis_core::network::AuditEventType::CommunicationBlocked,
+            "whitelist_add" => cis_core::network::AuditEventType::WhitelistAdd,
+            "whitelist_remove" => cis_core::network::AuditEventType::WhitelistRemove,
+            "blacklist_add" => cis_core::network::AuditEventType::BlacklistAdd,
+            "blacklist_remove" => cis_core::network::AuditEventType::BlacklistRemove,
+            "mode_change" => cis_core::network::AuditEventType::ModeChange,
+            "auth_attempt" => cis_core::network::AuditEventType::AuthAttempt,
+            "auth_success" => cis_core::network::AuditEventType::AuthSuccess,
+            "auth_failure" => cis_core::network::AuditEventType::AuthFailure,
+            "acl_sync" => cis_core::network::AuditEventType::AclSync,
+            "solitary_triggered" => cis_core::network::AuditEventType::SolitaryTriggered,
+            _ => {
+                println!("Unknown event type: {}", evt_type);
+                return Ok(());
+            }
+        };
+        audit_logger.get_by_type(evt_type_parsed, limit).await
+    } else {
+        // 获取最近的日志
+        audit_logger.get_recent(limit).await
+    };
+    
+    if entries.is_empty() {
+        println!("No audit events found.");
+    } else {
+        println!("Found {} events:\n", entries.len());
+        for (i, entry) in entries.iter().enumerate() {
+            println!("{}. {}", i + 1, entry.format());
+            if let Some(ref details) = entry.details {
+                println!("   Details: {}", serde_json::to_string_pretty(details)?);
+            }
+            println!();
+        }
+    }
     
     Ok(())
 }
@@ -558,15 +682,4 @@ fn exp_desc(entry: &cis_core::network::AclEntry) -> String {
         .unwrap_or_else(|| "never".to_string())
 }
 
-// TODO: Remove this when acl.bump_version() is public
-// For now we need to add it to the ACL impl
-trait AclExt {
-    fn bump_version(&mut self);
-}
-
-impl AclExt for NetworkAcl {
-    fn bump_version(&mut self) {
-        self.version += 1;
-        self.updated_at = chrono::Utc::now().timestamp();
-    }
-}
+// Note: NetworkAcl::bump_version() is now public in cis-core, no extension trait needed

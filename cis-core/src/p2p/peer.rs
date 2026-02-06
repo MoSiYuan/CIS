@@ -26,6 +26,7 @@ impl PeerInfo {
 }
 
 /// 对等节点管理器
+#[derive(Debug, Clone)]
 pub struct PeerManager {
     peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
 }

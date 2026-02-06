@@ -134,10 +134,12 @@ pub async fn handle_skill_do(args: SkillDoArgs) -> Result<()> {
         .or_else(|_| Ok::<_, anyhow::Error>(ProjectSkillRegistry::new(&project_path)))?;
     
     // Create router with SkillManager for execution
+    let db_manager = Arc::new(DbManager::new()?);
     let router = SkillVectorRouter::new(
         vector_storage,
         embedding_service,
         skill_manager.clone(),
+        db_manager,
     );
     
     let project_id = project_registry.project_path().to_str();
@@ -485,16 +487,57 @@ pub fn skill_info(name: &str) -> Result<()> {
 }
 
 /// Call a skill method
-pub fn call_skill(name: &str, method: &str, args: Option<&str>) -> Result<()> {
+pub async fn call_skill(name: &str, method: &str, args: Option<&str>) -> Result<()> {
     println!("Calling skill '{}' method '{}'...", name, method);
     
-    if let Some(args) = args {
-        println!("Arguments: {}", args);
-    }
+    // Parse arguments
+    let args_json: serde_json::Value = if let Some(args_str) = args {
+        println!("Arguments: {}", args_str);
+        serde_json::from_str(args_str).unwrap_or_else(|_| {
+            serde_json::json!({ "input": args_str })
+        })
+    } else {
+        serde_json::json!({})
+    };
     
-    // TODO: Implement actual skill method invocation
-    // This would require the skill to expose callable methods via a defined interface
-    println!("⚠️  Skill method calling is not yet fully implemented.");
+    // 通过 SkillManager 调用 Skill 方法
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = SkillManager::new(db_manager)?;
+    
+    // 检查 skill 是否已加载
+    match skill_manager.is_loaded(name) {
+        Ok(true) => {
+            // 创建调用事件
+            let event = cis_core::skill::Event::Custom {
+                name: format!("skill:call:{}", method),
+                data: serde_json::json!({
+                    "skill": name,
+                    "method": method,
+                    "args": args_json,
+                }),
+            };
+            
+            // 发送事件到 skill
+            match skill_manager.send_event(name, event).await {
+                Ok(()) => {
+                    println!("✅ Skill method '{}' called successfully", method);
+                }
+                Err(e) => {
+                    eprintln!("❌ Failed to call skill method: {}", e);
+                    return Err(anyhow::anyhow!("Failed to call skill method: {}", e));
+                }
+            }
+        }
+        Ok(false) => {
+            println!("⚠️  Skill '{}' is not loaded. Please load it first with:", name);
+            println!("   cis skill load {}", name);
+            return Err(anyhow::anyhow!("Skill '{}' is not loaded", name));
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to check skill status: {}", e);
+            return Err(e.into());
+        }
+    }
     
     Ok(())
 }
@@ -617,10 +660,12 @@ pub async fn handle_skill_chain(args: SkillChainArgs) -> Result<()> {
     let project_registry = ProjectSkillRegistry::load(&project_path)
         .or_else(|_| Ok::<_, anyhow::Error>(ProjectSkillRegistry::new(&project_path)))?;
     
+    let db_manager = Arc::new(DbManager::new()?);
     let router = SkillVectorRouter::new(
         vector_storage.clone(),
         embedding_service.clone(),
         skill_manager.clone(),
+        db_manager,
     );
     
     let project_id = project_registry.project_path().to_str();

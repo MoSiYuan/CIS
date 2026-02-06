@@ -48,6 +48,8 @@ pub enum GlmPanelResponse {
     Refresh,
     /// 关闭面板
     Close,
+    /// 查看 DAG 详情
+    ViewDagDetail(PendingDagInfo),
 }
 
 impl GlmPanel {
@@ -275,7 +277,10 @@ impl GlmPanel {
                 ui.horizontal(|ui| {
                     if ui.button("📋 查看详细").clicked() {
                         if let Some(dag_id) = &self.selected_dag {
-                            // TODO: 打开详细视图
+                            // Find the selected DAG and emit detail view event
+                            if let Some(dag) = self.pending_dags.iter().find(|d| &d.dag_id == dag_id) {
+                                response = Some(GlmPanelResponse::ViewDagDetail(dag.clone()));
+                            }
                         }
                     }
 

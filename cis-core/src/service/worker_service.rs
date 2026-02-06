@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use sysinfo::System;
 
@@ -607,6 +608,15 @@ impl WorkerService {
     }
 
     /// 获取 Worker 日志
+    ///
+    /// # 参数
+    /// - `id`: Worker ID
+    /// - `tail`: 返回最后多少行
+    /// - `follow`: 是否持续跟踪新日志（会阻塞直到超时或进程结束）
+    ///
+    /// # 说明
+    /// 当 `follow` 为 true 时，函数会持续读取新追加的日志行，
+    /// 直到 Worker 进程结束或达到 30 秒超时。
     pub async fn logs(&self, id: &str, tail: usize, follow: bool) -> Result<Vec<String>> {
         let info = self.find_worker(id)?
             .ok_or_else(|| CisError::not_found(format!("Worker '{}' not found", id)))?;
@@ -617,18 +627,77 @@ impl WorkerService {
             return Ok(Vec::new());
         }
         
-        let contents = tokio::fs::read_to_string(log_file).await?;
-        let lines: Vec<String> = contents.lines().map(String::from).collect();
+        let mut lines: Vec<String> = Vec::new();
         
-        let start = if lines.len() > tail { lines.len() - tail } else { 0 };
-        
-        // TODO: 实现 follow 模式（需要异步读取文件）
         if follow {
-            // 目前只返回尾部日志，follow 模式需要额外实现
-            tracing::warn!("Log follow mode not yet fully implemented");
+            // Follow 模式：持续读取新日志
+            let file = tokio::fs::File::open(&log_file).await
+                .map_err(|e| CisError::io(format!("Failed to open log file: {}", e)))?;
+            
+            let reader = BufReader::new(file);
+            let mut lines_iter = reader.lines();
+            
+            // 跳过已存在的行，只保留最后 `tail` 行
+            let mut all_lines: Vec<String> = Vec::new();
+            while let Ok(Some(line)) = lines_iter.next_line().await {
+                all_lines.push(line);
+            }
+            
+            let start = if all_lines.len() > tail { all_lines.len() - tail } else { 0 };
+            lines = all_lines[start..].to_vec();
+            
+            // 检查 Worker 进程是否仍在运行
+            let pid = info.summary.pid;
+            let mut last_size = lines.len();
+            let timeout = tokio::time::Duration::from_secs(30);
+            let start_time = tokio::time::Instant::now();
+            
+            // 持续监控文件变化，直到进程结束或超时
+            loop {
+                // 检查是否超时
+                if start_time.elapsed() > timeout {
+                    tracing::debug!("Log follow timeout reached for worker {}", id);
+                    break;
+                }
+                
+                // 检查进程是否仍在运行
+                if let Some(p) = pid {
+                    if !Self::is_process_running(p) {
+                        tracing::debug!("Worker {} process ended, stopping log follow", id);
+                        break;
+                    }
+                }
+                
+                // 等待一小段时间
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                
+                // 重新读取文件
+                match tokio::fs::read_to_string(&log_file).await {
+                    Ok(contents) => {
+                        let new_lines: Vec<String> = contents.lines().map(String::from).collect();
+                        if new_lines.len() > last_size {
+                            // 添加新行
+                            let new_entries = &new_lines[last_size..];
+                            lines.extend(new_entries.iter().cloned());
+                            last_size = new_lines.len();
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to read log file: {}", e);
+                        break;
+                    }
+                }
+            }
+        } else {
+            // 非 follow 模式：直接读取文件
+            let contents = tokio::fs::read_to_string(log_file).await?;
+            let all_lines: Vec<String> = contents.lines().map(String::from).collect();
+            
+            let start = if all_lines.len() > tail { all_lines.len() - tail } else { 0 };
+            lines = all_lines[start..].to_vec();
         }
         
-        Ok(lines[start..].to_vec())
+        Ok(lines)
     }
 
     /// 通过 ID 或前缀查找 Worker

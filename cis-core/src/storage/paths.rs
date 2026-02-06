@@ -183,6 +183,11 @@ impl Paths {
         Self::data_dir().join("vector.db")
     }
 
+    /// 模型目录路径
+    pub fn models_dir() -> PathBuf {
+        Self::data_dir().join("models")
+    }
+
     /// WAL 文件目录
     pub fn wal_dir() -> PathBuf {
         Self::data_dir().join("wal")

@@ -25,7 +25,9 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # HTTP client (for Federation)
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "blocking"] }
+# Password input (for interactive config)
+rpassword = "7.3"
 # Database (with encryption support planned)
 rusqlite = { version = "0.30", features = ["bundled", "backup", "hooks"] }
 sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio"], optional = true }

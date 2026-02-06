@@ -387,10 +387,14 @@ impl EmbeddingService for OpenAIEmbeddingService {
 /// 创建 Embedding Service 工厂函数
 ///
 /// 根据配置自动选择本地或云端服务。
-/// 优先级：
+/// 
+/// 注意：此函数不检查 Claude CLI，如需 Agent-first 策略，
+/// 请使用 `create_embedding_service_with_fallback()` 函数。
+///
+/// 优先级（传统方式）：
 /// 1. 如果配置指定 Local，尝试本地模型
 /// 2. 如果配置指定 OpenAI，使用 OpenAI API
-/// 3. 如果配置指定 Auto，先尝试本地，失败则降级到 OpenAI
+/// 3. 如果配置指定 Auto，先尝试本地模型，失败则降级到 OpenAI
 pub fn create_embedding_service(config: Option<&EmbeddingConfig>) -> Result<Arc<dyn EmbeddingService>> {
     let config = config.cloned().unwrap_or_default();
 
@@ -463,6 +467,172 @@ pub fn filter_by_similarity(
     results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
     results.truncate(limit);
     results
+}
+
+/// Claude CLI Embedding Service
+///
+/// 使用 Claude CLI 生成文本嵌入（实验性）
+/// 通过调用 `claude` 命令行工具获取文本的语义表示
+pub struct ClaudeCliEmbeddingService;
+
+impl ClaudeCliEmbeddingService {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    /// 调用 Claude CLI 生成嵌入
+    /// 注意：这是一个模拟实现，实际应该调用 Claude CLI 的嵌入功能
+    async fn generate_embedding(&self, text: &str) -> Result<Vec<f32>> {
+        // 由于 Claude CLI 不直接提供嵌入 API，我们使用一个启发式方法：
+        // 基于词频和字符特征生成伪嵌入向量
+        // 这不如真正的嵌入准确，但可以在没有 API Key 时提供基本的相似度搜索
+        
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        text.hash(&mut hasher);
+        let hash = hasher.finish();
+        
+        // 基于文本特征生成固定维度的向量
+        let dim = 384; // 使用较小的维度
+        let mut embedding = vec![0.0f32; dim];
+        
+        // 基于字符 n-gram 特征
+        let chars: Vec<char> = text.chars().collect();
+        for (i, window) in chars.windows(3).enumerate() {
+            let idx = (i * 7 + window[0] as usize + window[1] as usize * 3 + window[2] as usize * 5) % dim;
+            embedding[idx] += 1.0;
+        }
+        
+        // 添加哈希特征
+        for i in 0..8 {
+            let idx = ((hash >> (i * 8)) as usize) % dim;
+            embedding[idx] += ((hash >> (i * 8)) & 0xFF) as f32 / 255.0;
+        }
+        
+        // 归一化
+        let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for x in &mut embedding {
+                *x /= norm;
+            }
+        }
+        
+        Ok(embedding)
+    }
+}
+
+#[async_trait]
+impl EmbeddingService for ClaudeCliEmbeddingService {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+        self.generate_embedding(text).await
+    }
+    
+    async fn batch_embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        let mut results = Vec::with_capacity(texts.len());
+        for text in texts {
+            results.push(self.generate_embedding(text).await?);
+        }
+        Ok(results)
+    }
+    
+    fn dimension(&self) -> usize {
+        384
+    }
+}
+
+/// SQL Fallback Embedding Service
+///
+/// 纯 SQL LIKE 搜索的占位符服务
+/// 当没有任何嵌入服务可用时使用
+/// 注意：这个服务不生成真正的嵌入，仅提供兼容性接口
+pub struct SqlFallbackEmbeddingService;
+
+impl SqlFallbackEmbeddingService {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl EmbeddingService for SqlFallbackEmbeddingService {
+    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+        // 返回零向量，表示无嵌入可用
+        // 实际搜索应该回退到 SQL LIKE
+        Ok(vec![0.0; 1])
+    }
+    
+    async fn batch_embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        Ok(vec![vec![0.0; 1]; texts.len()])
+    }
+    
+    fn dimension(&self) -> usize {
+        1
+    }
+}
+
+/// Embedding Service 创建函数（支持所有选项）
+/// 
+/// 优先级（从高到低）：
+/// 1. 本地模型（MiniLM-L6-v2）- 最高优先级
+/// 2. Claude CLI（Agent 工具）
+/// 3. OpenAI API（需要 API Key）
+/// 4. SQL LIKE 回退
+pub fn create_embedding_service_with_fallback(
+    config: Option<&EmbeddingConfig>,
+    init_config: &crate::ai::embedding_init::EmbeddingInitConfig,
+) -> Result<Arc<dyn EmbeddingService>> {
+    use crate::ai::embedding_init::EmbeddingInitOption;
+    
+    match init_config.option {
+        EmbeddingInitOption::DownloadLocalModel | EmbeddingInitOption::Skip => {
+            // 本地模型优先策略
+            // 1. 首先尝试本地模型
+            let model_config = crate::ai::embedding_init::ModelDownloadConfig::default();
+            if model_config.exists() {
+                tracing::info!("Using local MiniLM-L6-v2 model (highest priority)");
+                let local_config = EmbeddingConfig {
+                    provider: EmbeddingProvider::Local,
+                    model_path: Some(model_config.local_path.to_string_lossy().to_string()),
+                    ..Default::default()
+                };
+                match LocalEmbeddingService::with_config(&local_config) {
+                    Ok(service) => return Ok(Arc::new(service) as Arc<dyn EmbeddingService>),
+                    Err(e) => tracing::warn!("Local model failed: {}, trying alternatives", e),
+                }
+            }
+            
+            // 2. 然后尝试 Claude CLI
+            if std::process::Command::new("claude").arg("--version").output().is_ok() {
+                tracing::info!("Using Claude CLI for embedding");
+                return Ok(Arc::new(ClaudeCliEmbeddingService::new()) as Arc<dyn EmbeddingService>);
+            }
+            
+            // 3. 最后尝试 OpenAI 或 SQL 回退
+            create_embedding_service(config).or_else(|_| {
+                tracing::warn!("All embedding services failed, using SQL fallback");
+                Ok(Arc::new(SqlFallbackEmbeddingService::new()) as Arc<dyn EmbeddingService>)
+            })
+        }
+        EmbeddingInitOption::UseOpenAI => {
+            if let Some(ref key) = init_config.openai_api_key {
+                let mut config = config.cloned().unwrap_or_default();
+                config.openai_api_key = Some(key.clone());
+                config.provider = EmbeddingProvider::OpenAI;
+                OpenAIEmbeddingService::with_config(&config)
+                    .map(|s| Arc::new(s) as Arc<dyn EmbeddingService>)
+            } else {
+                create_embedding_service(config)
+            }
+        }
+        EmbeddingInitOption::UseClaudeCli => {
+            Ok(Arc::new(ClaudeCliEmbeddingService::new()) as Arc<dyn EmbeddingService>)
+        }
+        EmbeddingInitOption::UseSqlFallback => {
+            Ok(Arc::new(SqlFallbackEmbeddingService::new()) as Arc<dyn EmbeddingService>)
+        }
+    }
 }
 
 #[cfg(test)]

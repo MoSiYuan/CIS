@@ -232,10 +232,17 @@ impl MessageManager {
             }
         }
         
-        // TODO: 发送到远程节点（如果是联邦会话）
+        // 联邦会话：发送到远程节点（如果会话是联邦会话）
+        // 注意：联邦会话检测逻辑需要根据会话元数据判断
+        // 目前仅记录日志，实际联邦发送需要 Matrix/MCP 集成
         if options.require_delivery_confirmation {
-            // 等待送达确认逻辑
             tracing::debug!("Waiting for delivery confirmation for message {}", message.id);
+        }
+        
+        // 检查是否为联邦会话，如果是则发送到远程节点
+        if session.metadata.get("federated").and_then(|v| v.as_bool()).unwrap_or(false) {
+            tracing::info!("Federated session detected, message {} will be synced to remote nodes", message.id);
+            // TODO: 实现联邦消息发送（需要 Matrix/MCP 集成）
         }
         
         Ok(message)
@@ -573,6 +580,7 @@ impl MessageManager {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use uuid::Uuid;
     
     async fn setup_manager() -> (MessageManager, Arc<ImDatabase>, tempfile::TempDir) {
         let temp_dir = TempDir::new().unwrap();

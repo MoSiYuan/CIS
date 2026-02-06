@@ -278,10 +278,10 @@ pub async fn handle_mark_read(
             "success": true,
             "marked_count": 1,
         })
-    } else if let Some(_before) = req.mark_all_before {
+    } else if let Some(before) = req.mark_all_before {
         // 批量标记已读
-        // 这里需要通过 MessageManager 来批量处理
-        let count = 0; // TODO: 实现批量标记
+        let message_manager = crate::message::MessageManager::new(skill.db().clone());
+        let count = message_manager.mark_all_as_read(&req.session_id, "current_user", before).await?;
         serde_json::json!({
             "success": true,
             "marked_count": count,
@@ -331,25 +331,57 @@ pub async fn handle_get_session(
 
 /// 处理加入会话事件
 pub async fn handle_join_session(
-    _skill: &ImSkill,
-    _data: Value,
+    skill: &ImSkill,
+    data: Value,
 ) -> Result<Value, crate::error::ImError> {
-    // TODO: 实现加入会话逻辑
+    let session_id = data.get("session_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| crate::error::ImError::InvalidMessage(
+            "session_id is required".to_string()
+        ))?;
+    
+    let user_id = data.get("user_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| crate::error::ImError::InvalidMessage(
+            "user_id is required".to_string()
+        ))?;
+    
+    let session_manager = crate::session::SessionManager::new(skill.db().clone());
+    session_manager.add_participant(session_id, user_id.to_string()).await?;
+    
     Ok(serde_json::json!({
         "success": true,
         "message": "Joined session",
+        "session_id": session_id,
+        "user_id": user_id,
     }))
 }
 
 /// 处理离开会话事件
 pub async fn handle_leave_session(
-    _skill: &ImSkill,
-    _data: Value,
+    skill: &ImSkill,
+    data: Value,
 ) -> Result<Value, crate::error::ImError> {
-    // TODO: 实现离开会话逻辑
+    let session_id = data.get("session_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| crate::error::ImError::InvalidMessage(
+            "session_id is required".to_string()
+        ))?;
+    
+    let user_id = data.get("user_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| crate::error::ImError::InvalidMessage(
+            "user_id is required".to_string()
+        ))?;
+    
+    let session_manager = crate::session::SessionManager::new(skill.db().clone());
+    session_manager.remove_participant(session_id, user_id).await?;
+    
     Ok(serde_json::json!({
         "success": true,
         "message": "Left session",
+        "session_id": session_id,
+        "user_id": user_id,
     }))
 }
 

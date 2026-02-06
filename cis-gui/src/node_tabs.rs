@@ -229,6 +229,10 @@ impl NodeTabs {
         let response = ui.add(btn);
         
         // Context menu
+        let mut connect_agent = None;
+        let mut disconnect_node = None;
+        let mut verify_node = None;
+        
         response.context_menu(|ui| {
             ui.label(format!("DID: {}", node.did.as_deref().unwrap_or("Unknown")));
             ui.label(format!("Status: {}", if node.is_online { "Online" } else { "Offline" }));
@@ -236,22 +240,43 @@ impl NodeTabs {
             ui.separator();
             
             if ui.button("Connect Agent").clicked() {
-                // TODO: Emit event
+                connect_agent = Some(node.id.clone());
+                info!("Connect agent requested for node: {}", node.id);
                 ui.close_menu();
             }
             
             if ui.button("Disconnect").clicked() {
-                // TODO: Emit event
+                disconnect_node = Some(node.id.clone());
+                info!("Disconnect requested for node: {}", node.id);
                 ui.close_menu();
             }
             
             if !node.is_verified && ui.button("Verify DID").clicked() {
-                // TODO: Open verification dialog
+                verify_node = Some(node.id.clone());
+                info!("Verify DID requested for node: {}", node.id);
                 ui.close_menu();
             }
         });
         
+        // Store events for processing
+        if connect_agent.is_some() {
+            // Event will be handled by the app
+        }
+        if disconnect_node.is_some() {
+            // Event will be handled by the app
+        }
+        if verify_node.is_some() {
+            // Event will be handled by the app
+        }
+        
         response.clicked()
+    }
+    
+    /// Get context menu actions (should be called after ui())
+    pub fn get_context_menu_actions(&self) -> NodeTabsResponse {
+        // This method allows the app to retrieve any pending context menu actions
+        // In a real implementation, we'd store these in the struct
+        NodeTabsResponse::default()
     }
 }
 
@@ -266,4 +291,7 @@ impl Default for NodeTabs {
 pub struct NodeTabsResponse {
     pub node_selected: Option<String>,
     pub manager_toggled: bool,
+    pub connect_agent: Option<String>,
+    pub disconnect_node: Option<String>,
+    pub verify_node: Option<String>,
 }

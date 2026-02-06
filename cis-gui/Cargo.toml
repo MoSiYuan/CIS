@@ -36,5 +36,15 @@ thiserror = "1"
 # Cross-platform paths
 directories = "5"
 
+# WebSocket client
+tokio-tungstenite = "0.24"
+futures = "0.3"
+
+# Binary data handling
+bytes = "1"
+
+# UUID generation
+uuid = { version = "1", features = ["v4"] }
+
 [dev-dependencies]
 tokio-test = "0.4"

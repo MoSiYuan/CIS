@@ -265,22 +265,38 @@ async fn handle_history(args: HistoryArgs) -> Result<()> {
         println!();
     }
 
-    // TODO: 调用 IM Skill 获取消息历史
-    // 示例：
-    // let skill = ImSkill::new(data_dir)?;
-    // let messages = skill.get_history(&args.session_id, before, args.limit).await?;
-
-    // 模拟输出
-    println!("  ┌──────────────────────────────────────────────────┐");
-    println!("  │ 2024-01-15 10:30  张三                          │");
-    println!("  │ 大家好，今天有个重要通知...                      │");
-    println!("  ├──────────────────────────────────────────────────┤");
-    println!("  │ 2024-01-15 10:32  李四                          │");
-    println!("  │ 收到，请说。                                     │");
-    println!("  ├──────────────────────────────────────────────────┤");
-    println!("  │ 2024-01-15 10:35  张三                          │");
-    println!("  │ 关于下周的项目安排...                            │");
-    println!("  └──────────────────────────────────────────────────┘");
+    // 通过 SkillManager 调用 IM Skill
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = SkillManager::new(db_manager)?;
+    
+    match skill_manager.is_loaded("im") {
+        Ok(true) => {
+            // 发送事件获取消息历史
+            let event = cis_core::skill::Event::Custom {
+                name: "im:get_history".to_string(),
+                data: serde_json::json!({
+                    "conversation_id": args.session_id,
+                    "limit": args.limit,
+                    "before": args.before,
+                }),
+            };
+            
+            match skill_manager.send_event("im", event).await {
+                Ok(()) => {
+                    println!("✅ 已请求消息历史（异步处理）");
+                }
+                Err(e) => {
+                    eprintln!("❌ 获取消息历史失败: {}", e);
+                }
+            }
+        }
+        Ok(false) => {
+            println!("⚠️  IM Skill 未加载，请先加载: cis skill load im");
+        }
+        Err(e) => {
+            eprintln!("❌ 检查 IM Skill 状态失败: {}", e);
+        }
+    }
 
     Ok(())
 }
@@ -300,26 +316,39 @@ async fn handle_search(args: SearchArgs) -> Result<()> {
     }
     println!();
 
-    // TODO: 调用 IM Skill 搜索消息
-    // 示例：
-    // let skill = ImSkill::new(data_dir)?;
-    // let results = if args.semantic {
-    //     skill.semantic_search(&args.query, args.session_id.as_deref(), args.limit).await?
-    // } else {
-    //     skill.search_messages(&args.query, args.session_id.as_deref(), args.limit).await?
-    // };
-
-    // 模拟输出
-    println!("  找到 3 条结果:");
-    println!();
-    println!("  1. [相似度: 0.95] 会话: 开发团队");
-    println!("     我们需要讨论一下搜索功能的实现...");
-    println!();
-    println!("  2. [相似度: 0.87] 会话: 产品设计");
-    println!("     用户搜索体验需要优化...");
-    println!();
-    println!("  3. [相似度: 0.82] 会话: 开发团队");
-    println!("     搜索接口已经部署到测试环境...");
+    // 通过 SkillManager 调用 IM Skill
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = SkillManager::new(db_manager)?;
+    
+    match skill_manager.is_loaded("im") {
+        Ok(true) => {
+            // 发送事件搜索消息
+            let event = cis_core::skill::Event::Custom {
+                name: "im:search_messages".to_string(),
+                data: serde_json::json!({
+                    "query": args.query,
+                    "session_id": args.session,
+                    "limit": args.limit,
+                    "semantic": args.semantic,
+                }),
+            };
+            
+            match skill_manager.send_event("im", event).await {
+                Ok(()) => {
+                    println!("✅ 已请求搜索消息（异步处理）");
+                }
+                Err(e) => {
+                    eprintln!("❌ 搜索消息失败: {}", e);
+                }
+            }
+        }
+        Ok(false) => {
+            println!("⚠️  IM Skill 未加载，请先加载: cis skill load im");
+        }
+        Err(e) => {
+            eprintln!("❌ 检查 IM Skill 状态失败: {}", e);
+        }
+    }
 
     Ok(())
 }
@@ -337,33 +366,98 @@ async fn handle_create(args: CreateArgs) -> Result<()> {
     println!("   标题: {}", args.title);
     println!("   参与者: {}", args.participants.join(", "));
 
-    // TODO: 调用 IM Skill 创建会话
-    // 示例：
-    // let skill = ImSkill::new(data_dir)?;
-    // let conversation = match args.r#type {
-    //     SessionType::Direct => skill.create_direct_session(participants[0].clone(), participants[1].clone()).await?,
-    //     SessionType::Group => skill.create_group_session(args.title, args.participants).await?,
-    //     SessionType::Channel => skill.create_channel_session(args.title, owner).await?,
-    // };
-    // println!("✅ 会话已创建: {}", conversation.id);
-
-    println!("✅ 会话已创建");
+    // 通过 SkillManager 调用 IM Skill
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = SkillManager::new(db_manager)?;
+    
+    match skill_manager.is_loaded("im") {
+        Ok(true) => {
+            // 发送事件创建会话
+            let event = cis_core::skill::Event::Custom {
+                name: "im:create_conversation".to_string(),
+                data: serde_json::json!({
+                    "session_type": session_type,
+                    "title": args.title,
+                    "participants": args.participants,
+                }),
+            };
+            
+            match skill_manager.send_event("im", event).await {
+                Ok(()) => {
+                    println!("✅ 会话创建请求已发送");
+                }
+                Err(e) => {
+                    eprintln!("❌ 创建会话失败: {}", e);
+                }
+            }
+        }
+        Ok(false) => {
+            println!("⚠️  IM Skill 未加载，请先加载: cis skill load im");
+        }
+        Err(e) => {
+            eprintln!("❌ 检查 IM Skill 状态失败: {}", e);
+        }
+    }
+    
     Ok(())
 }
 
 /// 处理标记已读
 async fn handle_read(args: ReadArgs) -> Result<()> {
-    if args.all {
-        println!("📖 标记会话 {} 的所有消息已读", args.session_id);
-        // TODO: 调用 IM Skill 批量标记已读
-    } else if let Some(message_id) = &args.message {
-        println!("📖 标记消息 {} 已读", message_id);
-        // TODO: 调用 IM Skill 标记单条消息已读
-    } else {
-        println!("⚠️ 请指定 --message 或 --all");
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = SkillManager::new(db_manager)?;
+    
+    match skill_manager.is_loaded("im") {
+        Ok(true) => {
+            if args.all {
+                println!("📖 标记会话 {} 的所有消息已读", args.session_id);
+                // 发送事件批量标记已读
+                let event = cis_core::skill::Event::Custom {
+                    name: "im:mark_all_read".to_string(),
+                    data: serde_json::json!({
+                        "conversation_id": args.session_id,
+                    }),
+                };
+                
+                match skill_manager.send_event("im", event).await {
+                    Ok(()) => {
+                        println!("✅ 批量标记已读请求已发送");
+                    }
+                    Err(e) => {
+                        eprintln!("❌ 标记已读失败: {}", e);
+                    }
+                }
+            } else if let Some(message_id) = &args.message {
+                println!("📖 标记消息 {} 已读", message_id);
+                // 发送事件标记单条消息已读
+                let event = cis_core::skill::Event::Custom {
+                    name: "im:mark_read".to_string(),
+                    data: serde_json::json!({
+                        "conversation_id": args.session_id,
+                        "message_id": message_id,
+                    }),
+                };
+                
+                match skill_manager.send_event("im", event).await {
+                    Ok(()) => {
+                        println!("✅ 标记消息已读请求已发送");
+                    }
+                    Err(e) => {
+                        eprintln!("❌ 标记已读失败: {}", e);
+                    }
+                }
+            } else {
+                println!("⚠️ 请指定 --message 或 --all");
+            }
+        }
+        Ok(false) => {
+            println!("⚠️  IM Skill 未加载，请先加载: cis skill load im");
+        }
+        Err(e) => {
+            eprintln!("❌ 检查 IM Skill 状态失败: {}", e);
+        }
     }
 
-    println!("✅ 操作完成");
     Ok(())
 }
 
@@ -372,19 +466,46 @@ async fn handle_info(args: InfoArgs) -> Result<()> {
     println!("ℹ️  会话 {} 信息:", args.session_id);
     println!();
 
-    // TODO: 调用 IM Skill 获取会话信息
-    // 示例：
-    // let skill = ImSkill::new(data_dir)?;
-    // let session = skill.get_conversation(&args.session_id).await?;
-
-    // 模拟输出
-    println!("  ID:          {}", args.session_id);
-    println!("  类型:        group");
-    println!("  名称:        开发团队");
-    println!("  参与者:      5 人");
-    println!("  创建时间:    2024-01-01 10:00:00");
-    println!("  最后消息:    2024-01-15 16:30:00");
-    println!("  未读消息:    3 条");
+    // 通过 SkillManager 调用 IM Skill
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = SkillManager::new(db_manager)?;
+    
+    match skill_manager.is_loaded("im") {
+        Ok(true) => {
+            // 发送事件获取会话信息
+            let event = cis_core::skill::Event::Custom {
+                name: "im:get_conversation_info".to_string(),
+                data: serde_json::json!({
+                    "conversation_id": args.session_id,
+                }),
+            };
+            
+            match skill_manager.send_event("im", event).await {
+                Ok(()) => {
+                    println!("✅ 已请求会话信息（异步处理）");
+                }
+                Err(e) => {
+                    eprintln!("❌ 获取会话信息失败: {}", e);
+                }
+            }
+        }
+        Ok(false) => {
+            // 显示基本占位信息
+            println!("  ID:          {}", args.session_id);
+            println!("  类型:        group");
+            println!("  名称:        开发团队");
+            println!("  参与者:      5 人");
+            println!("  创建时间:    2024-01-01 10:00:00");
+            println!("  最后消息:    2024-01-15 16:30:00");
+            println!("  未读消息:    3 条");
+            println!();
+            println!("⚠️  IM Skill 未加载，以上为模拟数据");
+            println!("   请先加载: cis skill load im");
+        }
+        Err(e) => {
+            eprintln!("❌ 检查 IM Skill 状态失败: {}", e);
+        }
+    }
 
     Ok(())
 }

@@ -784,6 +784,8 @@ pub struct ChainOrchestrator {
     templates: HashMap<String, ChainTemplate>,
     /// 兼容性缓存
     compatibility_cache: HashMap<(String, String), f32>,
+    /// 模板向量缓存: 模板名称 -> 嵌入向量
+    template_embeddings: HashMap<String, Vec<f32>>,
 }
 
 /// 链模板
@@ -805,6 +807,19 @@ impl ChainOrchestrator {
         Self {
             templates: HashMap::new(),
             compatibility_cache: HashMap::new(),
+            template_embeddings: HashMap::new(),
+        }
+    }
+
+    /// 计算余弦相似度
+    fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+        let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+        let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm_a > 0.0 && norm_b > 0.0 {
+            dot / (norm_a * norm_b)
+        } else {
+            0.0
         }
     }
 
@@ -821,13 +836,122 @@ impl ChainOrchestrator {
             .collect()
     }
 
-    /// 基于意图匹配最佳模板
+    /// 基于意图匹配最佳模板（使用向量相似度）
+    ///
+    /// # 参数
+    /// - `intent`: 用户意图文本
+    /// - `intent_embedding`: 意图的嵌入向量
+    ///
+    /// # 返回
+    /// 最佳匹配的模板，如果没有找到合适的匹配则返回 None
+    pub fn match_template_with_embedding(
+        &self,
+        intent: &str,
+        intent_embedding: &[f32],
+    ) -> Option<&ChainTemplate> {
+        let mut best_match: Option<&ChainTemplate> = None;
+        let mut best_score: f32 = 0.6; // 最小相似度阈值
+
+        for (name, template) in &self.templates {
+            // 1. 首先检查是否有预计算的模板嵌入向量
+            if let Some(template_emb) = self.template_embeddings.get(name) {
+                let similarity = Self::cosine_similarity(intent_embedding, template_emb);
+                if similarity > best_score {
+                    best_score = similarity;
+                    best_match = Some(template);
+                }
+                continue;
+            }
+
+            // 2. 如果没有预计算向量，使用关键词匹配作为回退
+            let keyword_score = Self::keyword_match_score(intent, template);
+            if keyword_score > best_score {
+                best_score = keyword_score;
+                best_match = Some(template);
+            }
+        }
+
+        if let Some(template) = &best_match {
+            tracing::debug!(
+                "Matched template '{}' to intent '{}' with score {:.2}",
+                template.name,
+                intent,
+                best_score
+            );
+        }
+
+        best_match
+    }
+
+    /// 关键词匹配评分（0.0 - 1.0）
+    fn keyword_match_score(intent: &str, template: &ChainTemplate) -> f32 {
+        let intent_lower = intent.to_lowercase();
+        let mut score = 0.0f32;
+
+        // 描述匹配
+        if template.description.to_lowercase().contains(&intent_lower) {
+            score += 0.5;
+        } else if intent_lower.contains(&template.description.to_lowercase()) {
+            score += 0.3;
+        }
+
+        // 标签匹配
+        let tag_matches = template
+            .tags
+            .iter()
+            .filter(|tag| intent_lower.contains(&tag.to_lowercase()))
+            .count();
+        score += (tag_matches as f32 / template.tags.len().max(1) as f32) * 0.5;
+
+        score.min(1.0)
+    }
+
+    /// 注册模板并预计算其嵌入向量
+    ///
+    /// # 参数
+    /// - `template`: 链模板
+    /// - `embedding_service`: 嵌入服务，用于计算模板描述向量
+    pub async fn register_template_with_embedding<E>(
+        &mut self,
+        template: ChainTemplate,
+        embedding_service: &E,
+    ) -> crate::error::Result<()>
+    where
+        E: crate::ai::embedding::EmbeddingService,
+    {
+        // 计算模板描述的嵌入向量
+        let text_to_embed = format!("{} {} {}",
+            template.name,
+            template.description,
+            template.tags.join(" ")
+        );
+
+        match embedding_service.embed(&text_to_embed).await {
+            Ok(embedding) => {
+                self.template_embeddings
+                    .insert(template.name.clone(), embedding);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to compute embedding for template '{}': {}",
+                    template.name,
+                    e
+                );
+            }
+        }
+
+        self.templates.insert(template.name.clone(), template);
+        Ok(())
+    }
+
+    /// 基于意图匹配最佳模板（仅关键词匹配，向后兼容）
+    #[deprecated(since = "0.2.0", note = "请使用 match_template_with_embedding")]
     pub fn match_template(&self, intent: &str) -> Option<&ChainTemplate> {
-        // 简单的关键词匹配
-        // TODO: 使用向量相似度匹配
         self.templates.values().find(|t| {
-            t.description.to_lowercase().contains(&intent.to_lowercase()) ||
-            t.tags.iter().any(|tag| intent.to_lowercase().contains(&tag.to_lowercase()))
+            t.description.to_lowercase().contains(&intent.to_lowercase())
+                || t.tags
+                    .iter()
+                    .any(|tag| intent.to_lowercase().contains(&tag.to_lowercase()))
         })
     }
 

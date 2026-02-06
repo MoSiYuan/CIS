@@ -27,7 +27,7 @@ pub mod wal;
 pub use backup::BackupManager;
 pub use connection::{CrossDbRow, FromSqlValue, MultiDbConnection, SharedMultiDbConnection, SqlValue};
 pub use conversation_db::{Conversation, ConversationDb, ConversationMessage};
-pub use db::{CoreDb, DbManager, MemoryIndex, SkillDb};
+pub use db::{CoreDb, DbManager, DagDetail, DagLogRecord, DagRecord, DagRunRecord, MemoryIndex, SkillDb};
 pub use federation_db::{FederationDb, FederationLog, PeerInfo, PeerStatus, TrustLevel};
 pub use memory_db::{MemoryDb, MemoryEntry};
 pub use paths::Paths;

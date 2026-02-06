@@ -42,8 +42,10 @@ use crate::ai::embedding::EmbeddingService;
 use crate::error::{CisError, Result};
 use crate::intent::{ActionType, EntityValue, ParsedIntent};
 use crate::scheduler::{DagScheduler, SkillDagExecutor};
-use crate::skill::chain::SkillChain;
+use crate::skill::chain::{SkillChain, SkillCompatibilityRecord};
+use crate::skill::compatibility_db::SkillCompatibilityDb;
 use crate::skill::SkillManager;
+use crate::storage::db::DbManager;
 use crate::vector::storage::{SkillMatch, VectorStorage};
 
 use super::semantics::SkillSemanticsExt;
@@ -191,6 +193,8 @@ pub struct SkillVectorRouter {
     compatibility_cache: HashMap<(String, String), SkillCompatibility>,
     /// Skill 管理器（用于执行）
     skill_manager: Arc<SkillManager>,
+    /// 数据库管理器
+    db_manager: Arc<DbManager>,
 }
 
 impl SkillVectorRouter {
@@ -200,6 +204,7 @@ impl SkillVectorRouter {
     /// - `storage`: 向量存储实例
     /// - `embedding`: 嵌入服务
     /// - `skill_manager`: Skill 管理器
+    /// - `db_manager`: 数据库管理器
     ///
     /// # 示例
     ///
@@ -211,8 +216,9 @@ impl SkillVectorRouter {
     /// # fn example() -> anyhow::Result<()> {
     /// let storage = Arc::new(VectorStorage::open_default()?);
     /// let embedding = storage.embedding_service().clone();
-    /// let skill_manager = Arc::new(SkillManager::new()?);
-    /// let router = SkillVectorRouter::new(storage, embedding, skill_manager);
+    /// let db_manager = Arc::new(cis_core::storage::db::DbManager::new()?);
+    /// let skill_manager = Arc::new(SkillManager::new(db_manager.clone())?);
+    /// let router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
     /// # Ok(())
     /// # }
     /// ```
@@ -220,6 +226,7 @@ impl SkillVectorRouter {
         storage: Arc<VectorStorage>,
         embedding: Arc<dyn EmbeddingService>,
         skill_manager: Arc<SkillManager>,
+        db_manager: Arc<DbManager>,
     ) -> Self {
         Self {
             storage,
@@ -227,6 +234,7 @@ impl SkillVectorRouter {
             global_skills: Vec::new(),
             compatibility_cache: HashMap::new(),
             skill_manager,
+            db_manager,
         }
     }
 
@@ -947,16 +955,45 @@ impl SkillVectorRouter {
         score: f32,
         flow_types: Vec<String>,
     ) -> Result<()> {
-        let _compatibility = SkillCompatibility {
+        let compatibility = SkillCompatibility {
             source_skill_id: source_id.to_string(),
             target_skill_id: target_id.to_string(),
             compatibility_score: score,
-            data_flow_types: flow_types,
+            data_flow_types: flow_types.clone(),
             discovered_at: chrono::Utc::now().timestamp(),
         };
         
-        // 这里可以保存到数据库，现在先保存到内存缓存
-        // TODO: 保存到 skill_compatibility 表
+        // 保存到内存缓存
+        let cache_key = (source_id.to_string(), target_id.to_string());
+        let mut cache = self.compatibility_cache.clone();
+        cache.insert(cache_key, compatibility.clone());
+        
+        // 保存到数据库 skill_compatibility 表
+        let record = SkillCompatibilityRecord {
+            source_skill_id: source_id.to_string(),
+            target_skill_id: target_id.to_string(),
+            compatibility_score: score as f64,
+            data_flow_types: serde_json::to_string(&flow_types)
+                .unwrap_or_else(|_| "[]".to_string()),
+            discovered_at: chrono::Utc::now().timestamp(),
+        };
+        
+        // 使用 DbManager 获取核心数据库连接
+        let core_db = self.db_manager.core();
+        if let Ok(guard) = core_db.lock() {
+            let compat_db = SkillCompatibilityDb::new(guard.conn());
+            if let Err(e) = compat_db.init_table() {
+                tracing::warn!("Failed to init skill_compatibility table: {}", e);
+            }
+            if let Err(e) = compat_db.upsert(&record) {
+                tracing::warn!("Failed to save compatibility to database: {}", e);
+            } else {
+                tracing::debug!(
+                    "Saved compatibility to database: {} -> {} (score: {:.2})",
+                    source_id, target_id, score
+                );
+            }
+        }
         
         tracing::debug!(
             "Saved compatibility: {} -> {} (score: {:.2})",

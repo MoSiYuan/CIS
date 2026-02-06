@@ -41,12 +41,20 @@ mod claude;
 mod kimi;
 
 pub mod embedding;
+pub mod embedding_init;
 
 pub use claude::{ClaudeCliProvider, ClaudeConfig};
 pub use embedding::{
-    create_embedding_service, cosine_similarity, filter_by_similarity,
-    EmbeddingConfig, EmbeddingProvider, EmbeddingService as EmbeddingServiceTrait, LocalEmbeddingService,
-    OpenAIEmbeddingService, DEFAULT_EMBEDDING_DIM, MIN_SIMILARITY_THRESHOLD,
+    create_embedding_service, create_embedding_service_with_fallback,
+    cosine_similarity, filter_by_similarity,
+    EmbeddingConfig, EmbeddingProvider, EmbeddingService as EmbeddingServiceTrait, 
+    LocalEmbeddingService, OpenAIEmbeddingService,
+    ClaudeCliEmbeddingService, SqlFallbackEmbeddingService,
+    DEFAULT_EMBEDDING_DIM, MIN_SIMILARITY_THRESHOLD,
+};
+pub use embedding_init::{
+    interactive_init, auto_init, needs_init,
+    EmbeddingInitConfig, EmbeddingInitOption, ModelDownloadConfig,
 };
 pub use kimi::{KimiCodeProvider, KimiConfig};
 

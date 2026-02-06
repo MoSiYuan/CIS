@@ -147,6 +147,11 @@ impl CisError {
         Self::AlreadyExists(msg.into())
     }
 
+    /// Create a new IO error
+    pub fn io(msg: impl Into<String>) -> Self {
+        Self::Other(format!("IO error: {}", msg.into()))
+    }
+
     /// Create a new invalid input error
     pub fn invalid_input(msg: impl Into<String>) -> Self {
         Self::InvalidInput(msg.into())
