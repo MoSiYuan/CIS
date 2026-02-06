@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::Value;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::error::{CisError, Result};
 use crate::scheduler::{DagScheduler, PermissionResult};

@@ -1,0 +1,6 @@
+mcp_servers:
+  cis:
+    command: cis-mcp
+    args: []
+    env:
+      RUST_LOG: info

@@ -122,6 +122,121 @@ impl MatrixHttpClient {
     }
 }
 
+/// 目标节点 HTTP Client（Task 4.1）
+#[derive(Debug, Clone)]
+pub struct TargetNodeClient {
+    /// 节点地址列表（用于负载均衡/故障转移）
+    node_endpoints: HashMap<String, String>, // node_id -> base_url
+    /// 默认超时
+    timeout_secs: u64,
+}
+
+impl TargetNodeClient {
+    /// 创建新的目标节点客户端
+    pub fn new() -> Self {
+        Self {
+            node_endpoints: HashMap::new(),
+            timeout_secs: 30,
+        }
+    }
+    
+    /// 注册节点地址
+    pub fn register_node(&mut self, node_id: String, base_url: String) {
+        self.node_endpoints.insert(node_id, base_url);
+    }
+    
+    /// 直接推送 DAG 到目标节点（Task 4.1）
+    pub async fn push_dag(
+        &self,
+        target_node: &str,
+        dag: &crate::scheduler::DagSpec,
+    ) -> anyhow::Result<DagPushResponse> {
+        let base_url = self.node_endpoints.get(target_node)
+            .ok_or_else(|| anyhow::anyhow!("Unknown target node: {}", target_node))?;
+        
+        let url = format!("{}/api/v1/dag/execute", base_url);
+        
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(self.timeout_secs))
+            .build()?;
+        
+        let response = client
+            .post(&url)
+            .json(dag)
+            .send()
+            .await?;
+        
+        if response.status().is_success() {
+            let result: DagPushResponse = response.json().await?;
+            info!("DAG pushed to node {}: run_id={}", target_node, result.run_id);
+            Ok(result)
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(anyhow::anyhow!("Failed to push DAG: {} - {}", status, body))
+        }
+    }
+}
+
+/// DAG 推送响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DagPushResponse {
+    pub run_id: String,
+    pub status: String,
+    pub message: String,
+}
+
+/// Room 广播客户端（Task 4.2）
+#[derive(Debug, Clone)]
+pub struct RoomBroadcastClient {
+    matrix_client: Option<MatrixHttpClient>,
+    default_room_id: String,
+}
+
+impl RoomBroadcastClient {
+    pub fn new(matrix_client: Option<MatrixHttpClient>, default_room_id: String) -> Self {
+        Self {
+            matrix_client,
+            default_room_id,
+        }
+    }
+    
+    /// 广播 DAG 到 Room
+    pub async fn broadcast_dag(
+        &self,
+        dag: &crate::scheduler::DagSpec,
+        target_room: Option<String>,
+    ) -> anyhow::Result<String> {
+        let room_id = target_room.unwrap_or_else(|| self.default_room_id.clone());
+        
+        let event_content = serde_json::json!({
+            "type": "io.cis.dag.execute",
+            "content": {
+                "dag_id": dag.dag_id,
+                "tasks": dag.tasks,
+                "scope": dag.scope,
+                "target_node": dag.target_node,
+                "priority": dag.priority,
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            }
+        });
+        
+        if let Some(ref matrix) = self.matrix_client {
+            let event_id = matrix.send_message(
+                &room_id,
+                "m.text",
+                &event_content.to_string(),
+            ).await?;
+            
+            info!("DAG {} broadcast to room {}, event_id: {}", dag.dag_id, room_id, event_id);
+            Ok(event_id)
+        } else {
+            warn!("Matrix client not available, DAG not broadcasted");
+            Ok("mock_event_id".to_string())
+        }
+    }
+}
+
 /// GLM 任务
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlmTask {
@@ -390,6 +505,56 @@ impl GlmApiServer {
 }
 
 impl GlmApiState {
+    /// 执行 DAG 转发逻辑（Task 4.1 & 4.2）
+    /// 
+    /// 逻辑：
+    /// 1. 如果指定了 target_node，直接 HTTP POST 到目标节点
+    /// 2. 如果没有指定，通过 Room 广播
+    pub async fn execute_dag_forwarding(
+        &self,
+        dag: &crate::scheduler::DagSpec,
+    ) -> anyhow::Result<DagPushResponse> {
+        // 检查是否有指定的 target_node
+        if let Some(ref target_node) = dag.target_node {
+            // Task 4.1: HTTP 直接推送
+            info!("Target node specified ({}), pushing DAG directly", target_node);
+            
+            // 构建目标节点客户端
+            let mut client = TargetNodeClient::new();
+            
+            // 从配置或发现服务获取节点地址
+            let node_url = format!("http://{}:6767", target_node); // 简化处理
+            client.register_node(target_node.clone(), node_url);
+            
+            match client.push_dag(target_node, dag).await {
+                Ok(resp) => {
+                    info!("DAG {} pushed to {} successfully", dag.dag_id, target_node);
+                    return Ok(resp);
+                }
+                Err(e) => {
+                    warn!("Failed to push to {}, falling back to broadcast: {}", target_node, e);
+                    // 失败时回退到广播
+                }
+            }
+        }
+        
+        // Task 4.2: Room 广播
+        info!("No target node specified or push failed, broadcasting to room");
+        
+        let broadcast_client = RoomBroadcastClient::new(
+            self.matrix_client.clone(),
+            self.default_room_id.clone(),
+        );
+        
+        let event_id = broadcast_client.broadcast_dag(dag, None).await?;
+        
+        Ok(DagPushResponse {
+            run_id: format!("broadcast-{}", event_id),
+            status: "broadcasted".to_string(),
+            message: "DAG broadcasted to room for node claiming".to_string(),
+        })
+    }
+
     /// 创建新任务
     pub async fn create_task(
         &self,

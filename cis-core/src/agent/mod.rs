@@ -13,9 +13,11 @@ use tokio::sync::mpsc;
 use crate::error::Result;
 
 pub mod bridge;
+pub mod cluster;
 pub mod providers;
 
 pub use bridge::AgentBridgeSkill;
+pub use cluster::{SessionManager, SessionId, SessionEvent, SessionState};
 
 /// Agent 请求
 #[derive(Debug, Clone, Serialize, Deserialize)]

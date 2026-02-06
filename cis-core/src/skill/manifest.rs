@@ -242,8 +242,12 @@ pub struct DagTaskDefinition {
     pub id: String,
     /// 任务名称
     pub name: String,
-    /// 要调用的 Skill ID
+    /// 要调用的 Skill ID（与 command 二选一）
+    #[serde(default)]
     pub skill: String,
+    /// 直接执行的 shell 命令（与 skill 二选一）
+    #[serde(default)]
+    pub command: String,
     /// 依赖的任务 ID 列表
     #[serde(default)]
     pub deps: Vec<String>,
@@ -283,6 +287,13 @@ pub enum DagPolicy {
     FirstSuccess,
     /// 允许失败（债务模式）
     AllowDebt,
+}
+
+/// DAG 文件定义（包装结构，用于解析 [dag] 表头）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DagFileDefinition {
+    #[serde(rename = "dag")]
+    pub dag: DagDefinition,
 }
 
 /// DAG 定义（复合 Skill）
@@ -528,6 +539,7 @@ impl DagTaskDefinition {
             id: id.into(),
             name: String::new(),
             skill: skill.into(),
+            command: String::new(),
             deps: Vec::new(),
             level: default_task_level(),
             retry: default_retry(),

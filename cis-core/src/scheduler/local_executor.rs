@@ -382,7 +382,7 @@ mod tests {
     fn test_worker_id_generation() {
         let scope = DagScope::Project { 
             project_id: "test-proj".to_string(),
-            reuse_worker: true,
+            force_new: false,
         };
         assert_eq!(scope.worker_id(), "worker-project-test-proj");
         
@@ -391,6 +391,7 @@ mod tests {
         
         let scope = DagScope::User { 
             user_id: "alice".to_string(),
+            force_new: false,
         };
         assert_eq!(scope.worker_id(), "worker-user-alice");
     }

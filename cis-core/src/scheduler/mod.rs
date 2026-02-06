@@ -57,10 +57,12 @@ impl std::error::Error for DagError {}
 pub mod local_executor;
 pub mod persistence;
 pub mod skill_executor;
+pub mod todo_monitor;
 
 pub use local_executor::{LocalExecutor, WorkerInfo, WorkerSummary, ExecutorStats};
-pub use persistence::DagPersistence;
+pub use persistence::{DagPersistence, TaskExecution, TaskExecutionStatus};
 pub use skill_executor::SkillDagExecutor;
+pub use todo_monitor::{TodoListMonitor, TodoChangeEvent, TodoListLoader, FileSystemLoader};
 
 /// Permission check result for four-tier decision
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -681,6 +683,32 @@ impl TaskDag {
         self.nodes.get(task_id)
     }
 
+    /// Get mutable node
+    pub fn get_node_mut(&mut self, task_id: &str) -> Option<&mut DagNode> {
+        self.nodes.get_mut(task_id)
+    }
+
+    /// Get mutable nodes map
+    pub fn nodes_mut(&mut self) -> &mut HashMap<String, DagNode> {
+        &mut self.nodes
+    }
+
+    /// Reset a specific node to Pending status
+    pub fn reset_node(&mut self, task_id: &str) -> Result<(), DagError> {
+        let node = self.nodes.get_mut(task_id)
+            .ok_or_else(|| DagError::NodeNotFound(task_id.to_string()))?;
+        
+        node.status = DagNodeStatus::Pending;
+        Ok(())
+    }
+
+    /// Get task dependencies
+    pub fn get_task_dependencies(&self, task_id: &str) -> Vec<String> {
+        self.nodes.get(task_id)
+            .map(|node| node.dependencies.clone())
+            .unwrap_or_default()
+    }
+
     /// Get accumulated debts
     pub fn get_debts(&self, dag_run_id: &str) -> Vec<DebtEntry> {
         let mut debts = Vec::new();
@@ -730,39 +758,66 @@ impl Default for TaskDag {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DagScope {
     /// Global scope - shared worker for all DAGs
+    /// Default: reuse existing worker unless force_new is set
     Global,
     
     /// Project scope - isolated worker per project
+    /// Default: reuse existing worker unless force_new is set
     Project { 
         project_id: String,
-        /// Whether to reuse existing worker
-        #[serde(default = "default_reuse")]
-        reuse_worker: bool,
+        /// Whether to force creating a new worker (for cross-validation scenarios)
+        #[serde(default)]
+        force_new: bool,
     },
     
     /// User scope - isolated worker per user
+    /// Default: reuse existing worker unless force_new is set
     User { 
         user_id: String,
+        /// Whether to force creating a new worker
+        #[serde(default)]
+        force_new: bool,
     },
     
     /// Type scope - isolated worker per DAG type (backup/deploy/test)
+    /// Default: reuse existing worker unless force_new is set
     Type { 
         dag_type: String,
+        /// Whether to force creating a new worker
+        #[serde(default)]
+        force_new: bool,
     },
 }
 
-fn default_reuse() -> bool {
-    true
-}
-
 impl DagScope {
+    /// Check if this scope requires a new worker (not reusing existing)
+    pub fn force_new_worker(&self) -> bool {
+        match self {
+            Self::Global => false, // Global always reuses
+            Self::Project { force_new, .. } => *force_new,
+            Self::User { force_new, .. } => *force_new,
+            Self::Type { force_new, .. } => *force_new,
+        }
+    }
+    
+    /// Get a unique worker key for this scope
+    /// If force_new is true, includes a unique suffix
+    pub fn worker_key(&self) -> String {
+        let base = self.worker_id();
+        if self.force_new_worker() {
+            format!("{}-new-{}", base, uuid::Uuid::new_v4().to_string().split('-').next().unwrap())
+        } else {
+            base
+        }
+    }
+    
     /// Generate worker identifier from scope
     pub fn worker_id(&self) -> String {
         match self {
             DagScope::Global => "worker-global".to_string(),
             DagScope::Project { project_id, .. } => format!("worker-project-{}", project_id),
-            DagScope::User { user_id } => format!("worker-user-{}", user_id),
-            DagScope::Type { dag_type } => format!("worker-type-{}", dag_type),
+            DagScope::User { user_id, .. } => format!("worker-user-{}", user_id),
+            DagScope::Type { dag_type, .. } => format!("worker-type-{}", dag_type),
         }
     }
     
@@ -775,12 +830,13 @@ impl DagScope {
             if parts[0] == "proj" || parts[0] == "project" {
                 return DagScope::Project { 
                     project_id: parts[1].to_string(),
-                    reuse_worker: true,
+                    force_new: false,
                 };
             }
             if parts[0] == "user" {
                 return DagScope::User { 
                     user_id: parts[1].to_string(),
+                    force_new: false,
                 };
             }
             // Common DAG types
@@ -788,6 +844,7 @@ impl DagScope {
             if dag_types.contains(&parts[0]) {
                 return DagScope::Type { 
                     dag_type: parts[0].to_string(),
+                    force_new: false,
                 };
             }
         }
@@ -797,12 +854,13 @@ impl DagScope {
             if let Some(project_id) = task.env.get("PROJECT_ID") {
                 return DagScope::Project { 
                     project_id: project_id.clone(),
-                    reuse_worker: true,
+                    force_new: false,
                 };
             }
             if let Some(user_id) = task.env.get("USER_ID") {
                 return DagScope::User { 
                     user_id: user_id.clone(),
+                    force_new: false,
                 };
             }
         }
@@ -820,17 +878,19 @@ impl DagScope {
                 "proj" | "project" => {
                     return Some(DagScope::Project { 
                         project_id: parts[1].to_string(),
-                        reuse_worker: true,
+                        force_new: false,
                     });
                 }
                 "user" => {
                     return Some(DagScope::User { 
                         user_id: parts[1].to_string(),
+                        force_new: false,
                     });
                 }
                 "backup" | "deploy" | "test" | "build" | "sync" => {
                     return Some(DagScope::Type { 
                         dag_type: parts[0].to_string(),
+                        force_new: false,
                     });
                 }
                 _ => {}
@@ -845,8 +905,8 @@ impl DagScope {
         match self {
             DagScope::Global => ("Global".to_string(), None),
             DagScope::Project { project_id, .. } => ("Project".to_string(), Some(project_id.clone())),
-            DagScope::User { user_id } => ("User".to_string(), Some(user_id.clone())),
-            DagScope::Type { dag_type } => ("Type".to_string(), Some(dag_type.clone())),
+            DagScope::User { user_id, .. } => ("User".to_string(), Some(user_id.clone())),
+            DagScope::Type { dag_type, .. } => ("Type".to_string(), Some(dag_type.clone())),
         }
     }
     
@@ -855,13 +915,15 @@ impl DagScope {
         match scope_type {
             "Project" => DagScope::Project { 
                 project_id: scope_id.unwrap_or("default").to_string(),
-                reuse_worker: true,
+                force_new: false,
             },
             "User" => DagScope::User { 
                 user_id: scope_id.unwrap_or("unknown").to_string(),
+                force_new: false,
             },
             "Type" => DagScope::Type { 
                 dag_type: scope_id.unwrap_or("default").to_string(),
+                force_new: false,
             },
             _ => DagScope::Global,
         }
@@ -885,6 +947,777 @@ pub struct DagTaskSpec {
     pub depends_on: Vec<String>,
     #[serde(default)]
     pub env: HashMap<String, String>,
+}
+
+/// TODO item status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TodoItemStatus {
+    #[default]
+    Pending,
+    InProgress,
+    Completed,
+    Blocked,
+    Skipped,
+}
+
+/// TODO item for DAG checkpoint and dynamic adjustment
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DagTodoItem {
+    /// Unique item ID
+    pub id: String,
+    /// Human readable description
+    pub description: String,
+    /// Current status
+    #[serde(default)]
+    pub status: TodoItemStatus,
+    /// Related task ID (optional, for linking to DAG tasks)
+    #[serde(default)]
+    pub task_id: Option<String>,
+    /// Priority (higher = more important)
+    #[serde(default)]
+    pub priority: i32,
+    /// Created timestamp
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Updated timestamp
+    #[serde(default)]
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Completed timestamp
+    #[serde(default)]
+    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Notes from agent
+    #[serde(default)]
+    pub notes: String,
+    /// Tags for categorization
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+impl DagTodoItem {
+    /// Create a new TODO item
+    pub fn new(id: String, description: String) -> Self {
+        let now = chrono::Utc::now();
+        Self {
+            id,
+            description,
+            status: TodoItemStatus::Pending,
+            task_id: None,
+            priority: 0,
+            created_at: now,
+            updated_at: None,
+            completed_at: None,
+            notes: String::new(),
+            tags: Vec::new(),
+        }
+    }
+
+    /// Link to a task
+    pub fn with_task(mut self, task_id: impl Into<String>) -> Self {
+        self.task_id = Some(task_id.into());
+        self
+    }
+
+    /// Set priority
+    pub fn with_priority(mut self, priority: i32) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    /// Add tags
+    pub fn with_tags(mut self, tags: Vec<String>) -> Self {
+        self.tags = tags;
+        self
+    }
+
+    /// Mark as in progress
+    pub fn mark_in_progress(&mut self) {
+        self.status = TodoItemStatus::InProgress;
+        self.updated_at = Some(chrono::Utc::now());
+    }
+
+    /// Mark as completed
+    pub fn mark_completed(&mut self) {
+        self.status = TodoItemStatus::Completed;
+        self.updated_at = Some(chrono::Utc::now());
+        self.completed_at = Some(chrono::Utc::now());
+    }
+
+    /// Mark as blocked
+    pub fn mark_blocked(&mut self, reason: impl Into<String>) {
+        self.status = TodoItemStatus::Blocked;
+        self.updated_at = Some(chrono::Utc::now());
+        self.notes = reason.into();
+    }
+
+    /// Mark as skipped
+    pub fn mark_skipped(&mut self, reason: impl Into<String>) {
+        self.status = TodoItemStatus::Skipped;
+        self.updated_at = Some(chrono::Utc::now());
+        self.notes = reason.into();
+    }
+
+    /// Check if item is completed
+    pub fn is_completed(&self) -> bool {
+        self.status == TodoItemStatus::Completed
+    }
+
+    /// Check if item is pending
+    pub fn is_pending(&self) -> bool {
+        self.status == TodoItemStatus::Pending
+    }
+}
+
+/// TODO list for DAG execution checkpoint and dynamic adjustment
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DagTodoList {
+    /// TODO items
+    #[serde(default)]
+    pub items: Vec<DagTodoItem>,
+    /// Last checkpoint timestamp
+    #[serde(default)]
+    pub last_checkpoint: Option<chrono::DateTime<chrono::Utc>>,
+    /// Agent notes
+    #[serde(default)]
+    pub agent_notes: String,
+    /// Pending proposals (awaiting Worker review)
+    #[serde(default)]
+    pub pending_proposals: Vec<TodoListProposal>,
+    /// Proposal history (accepted/rejected)
+    #[serde(default)]
+    pub proposal_history: Vec<ProposalResult>,
+}
+
+impl DagTodoList {
+    /// Create a new empty TODO list
+    pub fn new() -> Self {
+        Self {
+            items: Vec::new(),
+            last_checkpoint: None,
+            agent_notes: String::new(),
+            pending_proposals: Vec::new(),
+            proposal_history: Vec::new(),
+        }
+    }
+
+    /// Submit a proposal (external agents call this)
+    /// 
+    /// Returns the proposal ID. If source is WorkerAgent, auto-merges.
+    pub fn submit_proposal(&mut self, proposal: TodoListProposal) -> String {
+        let id = proposal.id.clone();
+        
+        // 检查是否过期
+        if proposal.is_expired() {
+            self.proposal_history.push(ProposalResult::Expired { 
+                proposal_id: id.clone() 
+            });
+            return id;
+        }
+        
+        // WorkerAgent 的提案直接合并
+        if !proposal.requires_review() {
+            let result = self.merge_proposal(&proposal);
+            self.proposal_history.push(result);
+            return id;
+        }
+        
+        // 外部提案需要审核
+        self.pending_proposals.push(proposal);
+        id
+    }
+
+    /// Worker 审核并合并提案
+    /// 
+    /// Worker 根据策略自主决定是否接受提案
+    pub fn review_and_merge<F>(
+        &mut self, 
+        proposal_id: &str,
+        should_accept: F
+    ) -> ProposalResult
+    where
+        F: FnOnce(&TodoListProposal, &DagTodoList) -> bool,
+    {
+        let pos = self.pending_proposals.iter().position(|p| p.id == proposal_id);
+        
+        if let Some(pos) = pos {
+            let proposal = self.pending_proposals.remove(pos);
+            
+            // 再次检查是否过期
+            if proposal.is_expired() {
+                let result = ProposalResult::Expired { 
+                    proposal_id: proposal_id.to_string() 
+                };
+                self.proposal_history.push(result.clone());
+                return result;
+            }
+            
+            // Worker 自主决策
+            if should_accept(&proposal, self) {
+                let result = self.merge_proposal(&proposal);
+                self.proposal_history.push(result.clone());
+                result
+            } else {
+                let result = ProposalResult::Rejected {
+                    proposal_id: proposal_id.to_string(),
+                    reason: "Worker rejected the proposal".to_string(),
+                };
+                self.proposal_history.push(result.clone());
+                result
+            }
+        } else {
+            ProposalResult::Rejected {
+                proposal_id: proposal_id.to_string(),
+                reason: "Proposal not found".to_string(),
+            }
+        }
+    }
+
+    /// 自动合并所有安全的外部提案
+    /// 
+    /// 只合并低风险的变更（如优先级调整）
+    pub fn auto_merge_safe_proposals(&mut self) -> Vec<ProposalResult> {
+        // 分离安全和待审核的提案
+        let mut safe = Vec::new();
+        let mut pending = Vec::new();
+        
+        for proposal in std::mem::take(&mut self.pending_proposals) {
+            if self.is_safe_proposal(&proposal) {
+                safe.push(proposal);
+            } else {
+                pending.push(proposal);
+            }
+        }
+        self.pending_proposals = pending;
+        
+        // 合并安全提案
+        let mut results = Vec::new();
+        for proposal in safe {
+            let result = self.merge_proposal(&proposal);
+            self.proposal_history.push(result.clone());
+            results.push(result);
+        }
+        
+        results
+    }
+
+    /// 判断提案是否安全（低风险）
+    fn is_safe_proposal(&self, proposal: &TodoListProposal) -> bool {
+        // 只添加新任务（不删除、不修改状态）是安全的
+        let only_adds = proposal.changes.removed.is_empty() 
+            && proposal.changes.modified.is_empty()
+            && !proposal.changes.added.is_empty();
+        
+        // 只调整优先级是安全的
+        let only_priority_changes = proposal.changes.added.is_empty()
+            && proposal.changes.removed.is_empty()
+            && proposal.changes.modified.iter().all(|m| {
+                m.old_status == m.new_status && m.old_description == m.new_description
+            });
+        
+        only_adds || only_priority_changes
+    }
+
+    /// 执行提案合并
+    fn merge_proposal(&mut self, proposal: &TodoListProposal) -> ProposalResult {
+        // 应用新增
+        for item in &proposal.changes.added {
+            if self.get(&item.id).is_none() {
+                self.items.push(item.clone());
+            }
+        }
+        
+        // 应用删除
+        for item in &proposal.changes.removed {
+            self.remove(&item.id);
+        }
+        
+        // 应用修改
+        for change in &proposal.changes.modified {
+            if let Some(item) = self.get_mut(&change.id) {
+                item.status = change.new_status;
+                item.priority = change.new_priority;
+                item.description = change.new_description.clone();
+                item.updated_at = Some(chrono::Utc::now());
+            }
+        }
+        
+        // 更新 checkpoint
+        self.checkpoint(format!(
+            "Merged proposal {} from {}: {}",
+            proposal.id, proposal.proposer, proposal.reason
+        ));
+        
+        ProposalResult::Accepted {
+            proposal_id: proposal.id.clone(),
+            merged_at: chrono::Utc::now(),
+        }
+    }
+
+    /// 获取待审核的提案
+    pub fn pending_review(&self) -> &[TodoListProposal] {
+        &self.pending_proposals
+    }
+
+    /// 清理过期提案
+    pub fn cleanup_expired_proposals(&mut self) -> usize {
+        // 分离过期和待审核的提案
+        let mut expired = Vec::new();
+        let mut pending = Vec::new();
+        
+        for proposal in std::mem::take(&mut self.pending_proposals) {
+            if proposal.is_expired() {
+                expired.push(proposal);
+            } else {
+                pending.push(proposal);
+            }
+        }
+        self.pending_proposals = pending;
+        
+        // 记录过期
+        let count = expired.len();
+        for proposal in expired {
+            self.proposal_history.push(ProposalResult::Expired {
+                proposal_id: proposal.id,
+            });
+        }
+        
+        count
+    }
+
+    /// Add a new item
+    pub fn add_item(&mut self, item: DagTodoItem) {
+        self.items.push(item);
+    }
+
+    /// Add a simple item
+    pub fn add(&mut self, id: impl Into<String>, description: impl Into<String>) {
+        self.add_item(DagTodoItem::new(id.into(), description.into()));
+    }
+
+    /// Get item by ID
+    pub fn get(&self, id: &str) -> Option<&DagTodoItem> {
+        self.items.iter().find(|i| i.id == id)
+    }
+
+    /// Get mutable item by ID
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut DagTodoItem> {
+        self.items.iter_mut().find(|i| i.id == id)
+    }
+
+    /// Remove item by ID
+    pub fn remove(&mut self, id: &str) -> Option<DagTodoItem> {
+        if let Some(pos) = self.items.iter().position(|i| i.id == id) {
+            Some(self.items.remove(pos))
+        } else {
+            None
+        }
+    }
+
+    /// Get all pending items sorted by priority (desc)
+    pub fn pending(&self) -> Vec<&DagTodoItem> {
+        let mut items: Vec<_> = self.items.iter()
+            .filter(|i| i.status == TodoItemStatus::Pending)
+            .collect();
+        items.sort_by_key(|i| -i.priority);
+        items
+    }
+
+    /// Get all in-progress items
+    pub fn in_progress(&self) -> Vec<&DagTodoItem> {
+        self.items.iter()
+            .filter(|i| i.status == TodoItemStatus::InProgress)
+            .collect()
+    }
+
+    /// Get completion percentage
+    pub fn completion_rate(&self) -> f64 {
+        if self.items.is_empty() {
+            return 1.0;
+        }
+        let completed = self.items.iter().filter(|i| i.is_completed()).count();
+        completed as f64 / self.items.len() as f64
+    }
+
+    /// Save checkpoint
+    pub fn checkpoint(&mut self, agent_notes: impl Into<String>) {
+        self.last_checkpoint = Some(chrono::Utc::now());
+        self.agent_notes = agent_notes.into();
+    }
+
+    /// Update item priority
+    pub fn update_priority(&mut self, id: &str, priority: i32) -> bool {
+        if let Some(item) = self.get_mut(id) {
+            item.priority = priority;
+            item.updated_at = Some(chrono::Utc::now());
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Reorder items by priority (higher first)
+    pub fn sort_by_priority(&mut self) {
+        self.items.sort_by_key(|i| -i.priority);
+    }
+
+    /// Compare with another TODO list and return differences
+    pub fn diff(&self, other: &DagTodoList) -> TodoListDiff {
+        let mut added = Vec::new();
+        let mut removed = Vec::new();
+        let mut modified = Vec::new();
+
+        // Find added and modified items
+        for item in &other.items {
+            match self.get(&item.id) {
+                None => added.push(item.clone()),
+                Some(existing) if existing != item => {
+                    modified.push(TodoItemChange {
+                        id: item.id.clone(),
+                        old_status: existing.status,
+                        new_status: item.status,
+                        old_priority: existing.priority,
+                        new_priority: item.priority,
+                        old_description: existing.description.clone(),
+                        new_description: item.description.clone(),
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        // Find removed items
+        for item in &self.items {
+            if other.get(&item.id).is_none() {
+                removed.push(item.clone());
+            }
+        }
+
+        TodoListDiff {
+            added,
+            removed,
+            modified,
+        }
+    }
+
+    /// Create a snapshot for comparison
+    pub fn snapshot(&self) -> DagTodoList {
+        self.clone()
+    }
+}
+
+/// Change details for a TODO item
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TodoItemChange {
+    pub id: String,
+    pub old_status: TodoItemStatus,
+    pub new_status: TodoItemStatus,
+    pub old_priority: i32,
+    pub new_priority: i32,
+    pub old_description: String,
+    pub new_description: String,
+}
+
+/// DAG 变更提案来源
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalSource {
+    /// 来自 Room Agent（外部，需审核）
+    RoomAgent,
+    /// 来自 Worker Agent（本地，可信）
+    WorkerAgent,
+    /// 来自用户 CLI（外部，需审核）
+    UserCLI,
+    /// 来自自动系统（外部，需审核）
+    AutoSystem,
+}
+
+impl ProposalSource {
+    /// 是否需要 Worker 审核
+    pub fn requires_review(&self) -> bool {
+        match self {
+            Self::WorkerAgent => false,  // 本地变更直接应用
+            _ => true,  // 外部变更需要审核
+        }
+    }
+}
+
+/// TODO List 变更提案（安全模式）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodoListProposal {
+    /// 提案 ID
+    pub id: String,
+    /// 提案来源
+    pub source: ProposalSource,
+    /// 提案者身份（DID 或 node_id）
+    pub proposer: String,
+    /// 变更内容
+    pub changes: TodoListDiff,
+    /// 提案理由
+    pub reason: String,
+    /// 提案时间
+    pub proposed_at: chrono::DateTime<chrono::Utc>,
+    /// 过期时间（可选）
+    #[serde(default)]
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl TodoListProposal {
+    /// 创建新的提案
+    pub fn new(
+        source: ProposalSource,
+        proposer: impl Into<String>,
+        changes: TodoListDiff,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: format!("proposal-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap()),
+            source,
+            proposer: proposer.into(),
+            changes,
+            reason: reason.into(),
+            proposed_at: chrono::Utc::now(),
+            expires_at: None,
+        }
+    }
+
+    /// 设置过期时间
+    pub fn with_expiry(mut self, seconds: i64) -> Self {
+        self.expires_at = Some(chrono::Utc::now() + chrono::Duration::seconds(seconds));
+        self
+    }
+
+    /// 检查是否过期
+    pub fn is_expired(&self) -> bool {
+        self.expires_at.map_or(false, |exp| chrono::Utc::now() > exp)
+    }
+
+    /// 是否需要 Worker 审核
+    pub fn requires_review(&self) -> bool {
+        self.source.requires_review()
+    }
+}
+
+/// 提案处理结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ProposalResult {
+    /// 已接受并合并
+    Accepted { proposal_id: String, merged_at: chrono::DateTime<chrono::Utc> },
+    /// 已拒绝
+    Rejected { proposal_id: String, reason: String },
+    /// 已过期
+    Expired { proposal_id: String },
+    /// 待审核（需要 Worker 确认）
+    PendingReview { proposal_id: String },
+}
+
+impl ProposalResult {
+    /// 获取提案 ID
+    pub fn proposal_id(&self) -> &str {
+        match self {
+            ProposalResult::Accepted { proposal_id, .. } => proposal_id,
+            ProposalResult::Rejected { proposal_id, .. } => proposal_id,
+            ProposalResult::Expired { proposal_id } => proposal_id,
+            ProposalResult::PendingReview { proposal_id } => proposal_id,
+        }
+    }
+    
+    /// 检查是否被接受
+    pub fn is_accepted(&self) -> bool {
+        matches!(self, ProposalResult::Accepted { .. })
+    }
+}
+
+/// Difference between two TODO lists
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TodoListDiff {
+    pub added: Vec<DagTodoItem>,
+    pub removed: Vec<DagTodoItem>,
+    pub modified: Vec<TodoItemChange>,
+}
+
+impl TodoListDiff {
+    /// Check if there are any differences
+    pub fn has_changes(&self) -> bool {
+        !self.added.is_empty() || !self.removed.is_empty() || !self.modified.is_empty()
+    }
+
+    /// Get count of all changes
+    pub fn change_count(&self) -> usize {
+        self.added.len() + self.removed.len() + self.modified.len()
+    }
+
+    /// Check if any high priority changes exist
+    pub fn has_priority_changes(&self) -> bool {
+        self.modified.iter().any(|m| m.old_priority != m.new_priority)
+    }
+
+    /// Check if any status changes exist
+    pub fn has_status_changes(&self) -> bool {
+        self.modified.iter().any(|m| m.old_status != m.new_status)
+    }
+}
+
+/// Observer for TODO list changes
+pub struct TodoListObserver {
+    /// Last known state
+    last_snapshot: DagTodoList,
+    /// Callback for changes
+    change_handler: Option<Box<dyn Fn(&TodoListDiff) + Send + Sync>>,
+}
+
+impl TodoListObserver {
+    /// Create new observer with initial state
+    pub fn new(initial: DagTodoList) -> Self {
+        Self {
+            last_snapshot: initial,
+            change_handler: None,
+        }
+    }
+
+    /// Set change handler callback
+    pub fn on_change<F>(&mut self, handler: F)
+    where
+        F: Fn(&TodoListDiff) + Send + Sync + 'static,
+    {
+        self.change_handler = Some(Box::new(handler));
+    }
+
+    /// Check for changes and trigger callback if needed
+    pub fn check(&mut self, current: &DagTodoList) -> TodoListDiff {
+        let diff = self.last_snapshot.diff(current);
+        
+        if diff.has_changes() {
+            // Update snapshot
+            self.last_snapshot = current.clone();
+            
+            // Trigger callback
+            if let Some(handler) = &self.change_handler {
+                handler(&diff);
+            }
+        }
+        
+        diff
+    }
+
+    /// Force update snapshot without triggering callback
+    pub fn update_snapshot(&mut self, current: &DagTodoList) {
+        self.last_snapshot = current.clone();
+    }
+
+    /// Get last snapshot
+    pub fn snapshot(&self) -> &DagTodoList {
+        &self.last_snapshot
+    }
+}
+
+/// Dynamic task scheduler that responds to TODO list changes
+pub struct DynamicTaskScheduler {
+    /// Current execution plan
+    current_plan: Vec<String>, // task IDs in execution order
+    /// Whether to allow dynamic reordering
+    allow_reorder: bool,
+}
+
+impl DynamicTaskScheduler {
+    pub fn new(allow_reorder: bool) -> Self {
+        Self {
+            current_plan: Vec::new(),
+            allow_reorder,
+        }
+    }
+
+    /// Apply TODO list diff and return tasks that need re-scheduling
+    pub fn apply_diff(&mut self, diff: &TodoListDiff) -> ScheduleChanges {
+        let mut to_start = Vec::new();
+        let mut to_cancel = Vec::new();
+        let mut to_reorder = Vec::new();
+
+        // Handle added items
+        for item in &diff.added {
+            if item.status == TodoItemStatus::Pending {
+                to_start.push(item.id.clone());
+                self.current_plan.push(item.id.clone());
+            }
+        }
+
+        // Handle removed items
+        for item in &diff.removed {
+            to_cancel.push(item.id.clone());
+            self.current_plan.retain(|id| id != &item.id);
+        }
+
+        // Handle modifications
+        for change in &diff.modified {
+            if change.old_status != change.new_status {
+                match change.new_status {
+                    TodoItemStatus::Pending => {
+                        // Task reset to pending, need to re-execute
+                        to_start.push(change.id.clone());
+                    }
+                    TodoItemStatus::Skipped => {
+                        // Task skipped, cancel if running
+                        to_cancel.push(change.id.clone());
+                    }
+                    _ => {}
+                }
+            }
+
+            // Check priority changes for reordering
+            if self.allow_reorder && change.old_priority != change.new_priority {
+                to_reorder.push((change.id.clone(), change.new_priority));
+            }
+        }
+
+        // Reorder by priority if needed
+        if self.allow_reorder && !to_reorder.is_empty() {
+            self.reorder_by_priority(&to_reorder);
+        }
+
+        ScheduleChanges {
+            to_start,
+            to_cancel,
+            reordered: !to_reorder.is_empty(),
+        }
+    }
+
+    /// Reorder current plan by priority
+    fn reorder_by_priority(&mut self, priority_updates: &[(String, i32)]) {
+        // Create a map for quick lookup
+        let priority_map: std::collections::HashMap<_, _> = 
+            priority_updates.iter().cloned().collect();
+
+        // Sort current plan by priority (higher first)
+        self.current_plan.sort_by_key(|id| {
+            -priority_map.get(id).copied().unwrap_or(0)
+        });
+    }
+
+    /// Get current execution plan
+    pub fn current_plan(&self) -> &[String] {
+        &self.current_plan
+    }
+
+    /// Initialize plan from TODO list
+    pub fn init_from_todo(&mut self, todo_list: &DagTodoList) {
+        self.current_plan = todo_list.pending()
+            .into_iter()
+            .map(|item| item.id.clone())
+            .collect();
+    }
+}
+
+/// Changes to apply to the schedule
+#[derive(Debug, Clone, Default)]
+pub struct ScheduleChanges {
+    pub to_start: Vec<String>,
+    pub to_cancel: Vec<String>,
+    pub reordered: bool,
+}
+
+impl ScheduleChanges {
+    pub fn has_changes(&self) -> bool {
+        !self.to_start.is_empty() || !self.to_cancel.is_empty() || self.reordered
+    }
 }
 
 /// DAG specification for external API (from GLM/CLI)
@@ -919,6 +1752,10 @@ pub struct DagSpec {
     /// Version for optimistic locking
     #[serde(default = "default_version")]
     pub version: i64,
+    
+    /// TODO list for checkpoint and dynamic adjustment
+    #[serde(default)]
+    pub todo_list: DagTodoList,
 }
 
 fn default_version() -> i64 {
@@ -930,6 +1767,15 @@ impl DagSpec {
     pub fn new(dag_id: String, tasks: Vec<DagTaskSpec>) -> Self {
         let scope = DagScope::infer_from_dag(&dag_id, &tasks);
         
+        // Initialize todo_list from tasks
+        let mut todo_list = DagTodoList::new();
+        for task in &tasks {
+            todo_list.add_item(
+                DagTodoItem::new(task.id.clone(), format!("Execute task: {}", task.id))
+                    .with_task(&task.id)
+            );
+        }
+        
         Self {
             dag_id,
             description: String::new(),
@@ -939,6 +1785,7 @@ impl DagSpec {
             priority: crate::types::TaskPriority::Medium,
             schedule: None,
             version: 1,
+            todo_list,
         }
     }
     
@@ -968,8 +1815,186 @@ impl DagSpec {
     }
 }
 
+/// Scope inference and conflict detection
+pub struct ScopeInferrer;
+
+impl ScopeInferrer {
+    /// Infer scope with full logic (Task 2.1)
+    /// 
+    /// Priority:
+    /// 1. Explicit scope in spec
+    /// 2. Environment variable inference (PROJECT_ID, USER_ID, SCOPE_TYPE)
+    /// 3. dag_id pattern matching (proj-{id}-*, user-{id}-*, etc.)
+    /// 4. Default to Global
+    pub fn infer(
+        explicit: Option<DagScope>,
+        dag_id: &str,
+        tasks: &[DagTaskSpec],
+    ) -> DagScope {
+        // 1. Explicit scope takes highest priority
+        if let Some(scope) = explicit {
+            tracing::debug!("Using explicit scope: {:?}", scope);
+            return scope;
+        }
+
+        // 2. Try environment variable inference
+        if let Some(scope) = Self::infer_from_env(tasks) {
+            tracing::debug!("Inferred scope from env: {:?}", scope);
+            return scope;
+        }
+
+        // 3. Try dag_id pattern matching
+        if let Some(scope) = DagScope::parse_from_id(dag_id) {
+            tracing::debug!("Inferred scope from dag_id: {:?}", scope);
+            return scope;
+        }
+
+        // 4. Default to Global
+        tracing::debug!("Using default Global scope");
+        DagScope::Global
+    }
+
+    /// Infer scope from environment variables in tasks
+    fn infer_from_env(tasks: &[DagTaskSpec]) -> Option<DagScope> {
+        for task in tasks {
+            let env = &task.env;
+            // Check PROJECT_ID first
+            if let Some(project_id) = env.get("PROJECT_ID") {
+                return Some(DagScope::Project {
+                    project_id: project_id.clone(),
+                    force_new: false,
+                });
+            }
+            // Then USER_ID
+            if let Some(user_id) = env.get("USER_ID") {
+                return Some(DagScope::User {
+                    user_id: user_id.clone(),
+                    force_new: false,
+                });
+            }
+            // Then SCOPE_TYPE
+            if let Some(scope_type) = env.get("SCOPE_TYPE") {
+                return Some(DagScope::Type {
+                    dag_type: scope_type.clone(),
+                    force_new: false,
+                });
+            }
+        }
+        None
+    }
+
+    /// Detect scope conflicts (Task 2.2)
+    /// 
+    /// Returns list of conflict descriptions
+    /// 
+    /// Input: Vec<(dag_id, scope, target_node)>
+    /// Conflict: Same worker_id but different target_node
+    pub fn detect_conflicts(
+        entries: &[(String, DagScope, Option<String>)],
+    ) -> Vec<ScopeConflict> {
+        use std::collections::HashMap;
+
+        let mut worker_nodes: HashMap<String, Vec<(String, Option<String>)>> = HashMap::new();
+
+        // Group by worker_id
+        for (dag_id, scope, target_node) in entries {
+            let worker_id = scope.worker_id();
+            worker_nodes
+                .entry(worker_id)
+                .or_default()
+                .push((dag_id.clone(), target_node.clone()));
+        }
+
+        let mut conflicts = Vec::new();
+
+        // Check each worker group for conflicts
+        for (worker_id, entries) in &worker_nodes {
+            if entries.len() < 2 {
+                continue;
+            }
+
+            // Collect unique non-empty target nodes
+            let nodes: std::collections::HashSet<_> = entries
+                .iter()
+                .filter_map(|(_, node)| node.clone().filter(|n| !n.is_empty()))
+                .collect();
+
+            if nodes.len() > 1 {
+                // Found conflict: same worker, different target nodes
+                let dag_ids: Vec<_> = entries.iter().map(|(id, _)| id.clone()).collect();
+                conflicts.push(ScopeConflict {
+                    worker_id: worker_id.clone(),
+                    dag_ids,
+                    conflicting_nodes: nodes.into_iter().collect(),
+                });
+            }
+        }
+
+        conflicts
+    }
+
+    /// Validate entries and return Result
+    pub fn validate(entries: &[(String, DagScope, Option<String>)]) -> Result<(), Vec<ScopeConflict>> {
+        let conflicts = Self::detect_conflicts(entries);
+        if conflicts.is_empty() {
+            Ok(())
+        } else {
+            Err(conflicts)
+        }
+    }
+}
+
+/// Scope conflict information
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopeConflict {
+    /// Worker ID with conflict
+    pub worker_id: String,
+    /// DAG IDs involved
+    pub dag_ids: Vec<String>,
+    /// Conflicting target nodes
+    pub conflicting_nodes: Vec<String>,
+}
+
+impl std::fmt::Display for ScopeConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Scope conflict in worker '{}': DAGs {:?} have different target nodes {:?}",
+            self.worker_id, self.dag_ids, self.conflicting_nodes
+        )
+    }
+}
+
+/// DAG execution priority
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DagPriority {
+    /// Low priority
+    Low,
+    /// Normal priority (default)
+    #[default]
+    Normal,
+    /// High priority
+    High,
+    /// Critical priority (skip queue)
+    Critical,
+}
+
+impl DagPriority {
+    /// Get numeric priority value (higher = more important)
+    pub fn value(&self) -> i32 {
+        match self {
+            Self::Low => 0,
+            Self::Normal => 1,
+            Self::High => 2,
+            Self::Critical => 3,
+        }
+    }
+}
+
 /// DAG run status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DagRunStatus {
     Running,
     Paused,
@@ -997,6 +2022,27 @@ pub struct DagRun {
     pub debts: Vec<DebtEntry>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// Source DAG file path (for reloading task definitions)
+    #[serde(default)]
+    pub source_file: Option<String>,
+    /// Task commands/skill mappings for execution (task_id -> command/skill)
+    #[serde(default)]
+    pub task_commands: HashMap<String, String>,
+    /// DAG scope for worker assignment
+    #[serde(default)]
+    pub scope: DagScope,
+    /// Target node for execution (None = any node)
+    #[serde(default)]
+    pub target_node: Option<String>,
+    /// Priority for scheduling
+    #[serde(default)]
+    pub priority: DagPriority,
+    /// TODO list for checkpoint and dynamic task adjustment
+    #[serde(default)]
+    pub todo_list: DagTodoList,
+    /// Optimistic locking version (Task 5.2)
+    #[serde(default = "default_version")]
+    pub version: i64,
 }
 
 impl DagRun {
@@ -1009,6 +2055,13 @@ impl DagRun {
             debts: Vec::new(),
             created_at: now,
             updated_at: now,
+            source_file: None,
+            task_commands: HashMap::new(),
+            scope: DagScope::default(),
+            target_node: None,
+            priority: DagPriority::default(),
+            todo_list: DagTodoList::new(),
+            version: 1,
         }
     }
 
@@ -1021,7 +2074,115 @@ impl DagRun {
             debts: Vec::new(),
             created_at: now,
             updated_at: now,
+            source_file: None,
+            task_commands: HashMap::new(),
+            scope: DagScope::default(),
+            target_node: None,
+            priority: DagPriority::default(),
+            todo_list: DagTodoList::new(),
+            version: 1,
         }
+    }
+
+    /// Set scope for the run
+    pub fn with_scope(mut self, scope: DagScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    /// Set target node for the run
+    pub fn with_target_node(mut self, node: impl Into<String>) -> Self {
+        self.target_node = Some(node.into());
+        self
+    }
+
+    /// Set priority for the run
+    pub fn with_priority(mut self, priority: DagPriority) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    /// Set TODO list for the run
+    pub fn with_todo_list(mut self, todo_list: DagTodoList) -> Self {
+        self.todo_list = todo_list;
+        self
+    }
+
+    /// Initialize TODO list from DAG tasks
+    pub fn init_todo_from_tasks(&mut self) {
+        for node in self.dag.nodes().values() {
+            if self.todo_list.get(&node.task_id).is_none() {
+                self.todo_list.add_item(
+                    DagTodoItem::new(node.task_id.clone(), format!("Execute: {}", node.task_id))
+                        .with_task(&node.task_id)
+                );
+            }
+        }
+    }
+
+    /// Checkpoint the current state
+    pub fn checkpoint(&mut self, agent_notes: impl Into<String>) {
+        self.todo_list.checkpoint(agent_notes);
+        self.updated_at = chrono::Utc::now();
+    }
+
+    /// Sync TODO list with external source and return changes
+    /// 
+    /// This method compares the current TODO list with an external source
+    /// (e.g., from storage or user update) and returns the differences.
+    /// The agent should call this periodically to detect changes.
+    pub fn sync_todo_list(&mut self, external: &DagTodoList) -> TodoListDiff {
+        let diff = self.todo_list.diff(external);
+        
+        if diff.has_changes() {
+            tracing::info!(
+                "TODO list changed for run {}: {} added, {} removed, {} modified",
+                self.run_id,
+                diff.added.len(),
+                diff.removed.len(),
+                diff.modified.len()
+            );
+            
+            // Apply external changes to local
+            self.todo_list = external.clone();
+            self.updated_at = chrono::Utc::now();
+        }
+        
+        diff
+    }
+
+    /// Apply schedule changes based on TODO list diff
+    pub fn apply_schedule_changes(&mut self, changes: &ScheduleChanges) {
+        // Cancel tasks that were removed or skipped
+        for task_id in &changes.to_cancel {
+            if let Some(node) = self.dag.nodes_mut().get_mut(task_id) {
+                if node.status == DagNodeStatus::Running {
+                    tracing::info!("Cancelling task {} due to TODO list change", task_id);
+                    // Note: Actual cancellation needs to be handled by executor
+                }
+            }
+        }
+        
+        // Reset tasks that need re-execution
+        for task_id in &changes.to_start {
+            if let Err(e) = self.dag.reset_node(task_id) {
+                tracing::warn!("Failed to reset task {}: {}", task_id, e);
+            }
+        }
+        
+        if changes.reordered {
+            tracing::info!("Execution plan reordered for run {}", self.run_id);
+        }
+    }
+
+    /// Get worker ID based on scope (respects force_new)
+    pub fn worker_id(&self) -> String {
+        self.scope.worker_id()
+    }
+    
+    /// Get worker key (includes unique suffix if force_new)
+    pub fn worker_key(&self) -> String {
+        self.scope.worker_key()
     }
 
     pub fn to_json(&self) -> std::result::Result<String, serde_json::Error> {
@@ -1067,6 +2228,37 @@ impl DagRun {
         } else {
             DagRunStatus::Running
         };
+    }
+
+    /// Optimistic lock: Update with version check (Task 5.2)
+    /// 
+    /// Returns true if update succeeded, false if version mismatch
+    /// 
+    /// SQL equivalent:
+    /// UPDATE dag_runs SET status=?, version=version+1 WHERE id=? AND version=?
+    pub fn update_with_version(&mut self, expected_version: i64) -> bool {
+        if self.version != expected_version {
+            tracing::warn!(
+                "Version mismatch for run {}: expected {}, got {}",
+                self.run_id, expected_version, self.version
+            );
+            false
+        } else {
+            self.version += 1;
+            self.updated_at = chrono::Utc::now();
+            true
+        }
+    }
+
+    /// Increment version (for local updates)
+    pub fn bump_version(&mut self) {
+        self.version += 1;
+        self.updated_at = chrono::Utc::now();
+    }
+
+    /// Get current version
+    pub fn version(&self) -> i64 {
+        self.version
     }
 }
 
@@ -1125,6 +2317,31 @@ impl DagScheduler {
 
     pub fn create_run_with_id(&mut self, dag: TaskDag, run_id: String) -> String {
         let run = DagRun::with_run_id(dag, run_id.clone());
+        let _ = self.persist_run(&run);
+        self.runs.insert(run_id.clone(), run);
+        if self.active_run.is_none() {
+            self.active_run = Some(run_id.clone());
+        }
+        run_id
+    }
+
+    /// Create a new DAG run with source file and task commands
+    pub fn create_run_with_source(
+        &mut self,
+        dag: TaskDag,
+        run_id: Option<String>,
+        source_file: Option<String>,
+        task_commands: HashMap<String, String>,
+    ) -> String {
+        let mut run = if let Some(id) = run_id {
+            DagRun::with_run_id(dag, id)
+        } else {
+            DagRun::new(dag)
+        };
+        run.source_file = source_file;
+        run.task_commands = task_commands;
+        
+        let run_id = run.run_id.clone();
         let _ = self.persist_run(&run);
         self.runs.insert(run_id.clone(), run);
         if self.active_run.is_none() {
@@ -1539,5 +2756,483 @@ mod tests {
         dag.mark_running("C".to_string()).unwrap();
         let new_ready = dag.mark_completed("C".to_string()).unwrap();
         assert_eq!(new_ready.len(), 1); // E becomes Ready (E depends on B and C, B completed)
+    }
+
+    // ===== Phase 2: Scope Inference Tests =====
+
+    #[test]
+    fn test_scope_infer_explicit() {
+        // Test explicit scope takes priority
+        let explicit = Some(DagScope::Project { 
+            project_id: "test-proj".to_string(), 
+            force_new: false 
+        });
+        let tasks = vec![];
+        
+        let scope = ScopeInferrer::infer(explicit, "any-dag", &tasks);
+        assert_eq!(scope.worker_id(), "worker-project-test-proj");
+    }
+
+    #[test]
+    fn test_scope_infer_from_env_project_id() {
+        // Test PROJECT_ID env inference
+        let tasks = vec![
+            DagTaskSpec {
+                id: "task1".to_string(),
+                task_type: "shell".to_string(),
+                command: "echo test".to_string(),
+                depends_on: vec![],
+                env: [("PROJECT_ID".to_string(), "env-project".to_string())].into_iter().collect(),
+            }
+        ];
+        
+        let scope = ScopeInferrer::infer(None, "any-dag", &tasks);
+        assert_eq!(scope.worker_id(), "worker-project-env-project");
+    }
+
+    #[test]
+    fn test_scope_infer_from_env_user_id() {
+        // Test USER_ID env inference
+        let tasks = vec![
+            DagTaskSpec {
+                id: "task1".to_string(),
+                task_type: "shell".to_string(),
+                command: "echo test".to_string(),
+                depends_on: vec![],
+                env: [("USER_ID".to_string(), "john".to_string())].into_iter().collect(),
+            }
+        ];
+        
+        let scope = ScopeInferrer::infer(None, "any-dag", &tasks);
+        assert_eq!(scope.worker_id(), "worker-user-john");
+    }
+
+    #[test]
+    fn test_scope_infer_from_dag_id_project() {
+        // Test dag_id pattern: proj-{id}-*
+        let tasks = vec![];
+        
+        let scope = ScopeInferrer::infer(None, "proj-alpha-backup-daily", &tasks);
+        assert_eq!(scope.worker_id(), "worker-project-alpha");
+    }
+
+    #[test]
+    fn test_scope_infer_from_dag_id_user() {
+        // Test dag_id pattern: user-{id}-*
+        let tasks = vec![];
+        
+        let scope = ScopeInferrer::infer(None, "user-john-data-sync", &tasks);
+        assert_eq!(scope.worker_id(), "worker-user-john");
+    }
+
+    #[test]
+    fn test_scope_infer_from_dag_id_type() {
+        // Test dag_id pattern: {type}-*
+        let tasks = vec![];
+        
+        let scope = ScopeInferrer::infer(None, "deploy-production", &tasks);
+        assert_eq!(scope.worker_id(), "worker-type-deploy");
+    }
+
+    #[test]
+    fn test_scope_infer_default_global() {
+        // Test default to Global when no pattern matches
+        let tasks = vec![];
+        
+        let scope = ScopeInferrer::infer(None, "my-custom-dag", &tasks);
+        assert_eq!(scope.worker_id(), "worker-global");
+    }
+
+    #[test]
+    fn test_scope_infer_priority_order() {
+        // Test priority: explicit > env > dag_id > default
+        let tasks = vec![
+            DagTaskSpec {
+                id: "task1".to_string(),
+                task_type: "shell".to_string(),
+                command: "echo test".to_string(),
+                depends_on: vec![],
+                env: [("PROJECT_ID".to_string(), "env-proj".to_string())].into_iter().collect(),
+            }
+        ];
+        
+        // dag_id would infer "project-alpha", but env takes priority
+        let scope = ScopeInferrer::infer(None, "proj-alpha-backup", &tasks);
+        assert_eq!(scope.worker_id(), "worker-project-env-proj");
+    }
+
+    #[test]
+    fn test_scope_conflict_detection() {
+        // Test conflict detection: same worker, different target nodes
+        let entries = vec![
+            ("dag1".to_string(), DagScope::Project { 
+                project_id: "shared".to_string(), 
+                force_new: false 
+            }, Some("node1".to_string())),
+            ("dag2".to_string(), DagScope::Project { 
+                project_id: "shared".to_string(), 
+                force_new: false 
+            }, Some("node2".to_string())),
+        ];
+        
+        let conflicts = ScopeInferrer::detect_conflicts(&entries);
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].worker_id, "worker-project-shared");
+        assert!(conflicts[0].conflicting_nodes.contains(&"node1".to_string()));
+        assert!(conflicts[0].conflicting_nodes.contains(&"node2".to_string()));
+    }
+
+    #[test]
+    fn test_scope_no_conflict_same_node() {
+        // Test no conflict when same worker, same target node
+        let entries = vec![
+            ("dag1".to_string(), DagScope::Project { 
+                project_id: "shared".to_string(), 
+                force_new: false 
+            }, Some("node1".to_string())),
+            ("dag2".to_string(), DagScope::Project { 
+                project_id: "shared".to_string(), 
+                force_new: false 
+            }, Some("node1".to_string())),
+        ];
+        
+        let conflicts = ScopeInferrer::detect_conflicts(&entries);
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_scope_no_conflict_no_target() {
+        // Test no conflict when target_node is None (any node)
+        let entries = vec![
+            ("dag1".to_string(), DagScope::Project { 
+                project_id: "shared".to_string(), 
+                force_new: false 
+            }, None),
+            ("dag2".to_string(), DagScope::Project { 
+                project_id: "shared".to_string(), 
+                force_new: false 
+            }, None),
+        ];
+        
+        let conflicts = ScopeInferrer::detect_conflicts(&entries);
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_scope_validate_ok() {
+        let entries = vec![
+            ("dag1".to_string(), DagScope::Global, Some("node1".to_string())),
+            ("dag2".to_string(), DagScope::Global, Some("node1".to_string())),
+        ];
+        
+        assert!(ScopeInferrer::validate(&entries).is_ok());
+    }
+
+    #[test]
+    fn test_scope_validate_error() {
+        let entries = vec![
+            ("dag1".to_string(), DagScope::Global, Some("node1".to_string())),
+            ("dag2".to_string(), DagScope::Global, Some("node2".to_string())),
+        ];
+        
+        let result = ScopeInferrer::validate(&entries);
+        assert!(result.is_err());
+        
+        let conflicts = result.unwrap_err();
+        assert_eq!(conflicts.len(), 1);
+    }
+
+    // ===== TODO List Tests =====
+
+    #[test]
+    fn test_todo_item_lifecycle() {
+        let mut item = DagTodoItem::new("task-1".to_string(), "Execute task 1".to_string());
+        
+        assert!(item.is_pending());
+        assert!(!item.is_completed());
+        
+        item.mark_in_progress();
+        assert_eq!(item.status, TodoItemStatus::InProgress);
+        
+        item.mark_completed();
+        assert!(item.is_completed());
+        assert_eq!(item.status, TodoItemStatus::Completed);
+        assert!(item.completed_at.is_some());
+    }
+
+    #[test]
+    fn test_todo_list_basic() {
+        let mut list = DagTodoList::new();
+        
+        list.add("item-1", "First task");
+        list.add("item-2", "Second task");
+        
+        assert_eq!(list.items.len(), 2);
+        
+        let item = list.get("item-1").unwrap();
+        assert_eq!(item.description, "First task");
+        
+        let pending = list.pending();
+        assert_eq!(pending.len(), 2);
+    }
+
+    #[test]
+    fn test_todo_list_priority() {
+        let mut list = DagTodoList::new();
+        
+        list.add_item(DagTodoItem::new("low".to_string(), "Low priority".to_string()).with_priority(1));
+        list.add_item(DagTodoItem::new("high".to_string(), "High priority".to_string()).with_priority(10));
+        list.add_item(DagTodoItem::new("medium".to_string(), "Medium priority".to_string()).with_priority(5));
+        
+        list.sort_by_priority();
+        
+        assert_eq!(list.items[0].id, "high");
+        assert_eq!(list.items[1].id, "medium");
+        assert_eq!(list.items[2].id, "low");
+    }
+
+    #[test]
+    fn test_todo_list_checkpoint() {
+        let mut list = DagTodoList::new();
+        list.add("task-1", "Task 1");
+        
+        list.checkpoint("Agent progress: 50% complete");
+        
+        assert!(list.last_checkpoint.is_some());
+        assert_eq!(list.agent_notes, "Agent progress: 50% complete");
+    }
+
+    #[test]
+    fn test_todo_list_completion_rate() {
+        let mut list = DagTodoList::new();
+        
+        assert_eq!(list.completion_rate(), 1.0); // Empty = 100%
+        
+        list.add("task-1", "Task 1");
+        list.add("task-2", "Task 2");
+        
+        assert_eq!(list.completion_rate(), 0.0); // None completed
+        
+        if let Some(item) = list.get_mut("task-1") {
+            item.mark_completed();
+        }
+        
+        assert_eq!(list.completion_rate(), 0.5); // 1 of 2 completed
+    }
+
+    #[test]
+    fn test_dag_scope_force_new() {
+        let scope = DagScope::Project {
+            project_id: "test".to_string(),
+            force_new: true,
+        };
+        
+        assert!(scope.force_new_worker());
+        assert!(scope.worker_key().starts_with("worker-project-test-new-"));
+    }
+
+    #[test]
+    fn test_dag_scope_reuse_default() {
+        let scope = DagScope::Project {
+            project_id: "test".to_string(),
+            force_new: false,
+        };
+        
+        assert!(!scope.force_new_worker());
+        assert_eq!(scope.worker_key(), "worker-project-test");
+    }
+
+    #[test]
+    fn test_proposal_source_requires_review() {
+        assert!(ProposalSource::RoomAgent.requires_review());
+        assert!(ProposalSource::UserCLI.requires_review());
+        assert!(ProposalSource::AutoSystem.requires_review());
+        assert!(!ProposalSource::WorkerAgent.requires_review());
+    }
+
+    #[test]
+    fn test_todo_list_proposal_creation() {
+        let diff = TodoListDiff::default();
+        let proposal = TodoListProposal::new(
+            ProposalSource::RoomAgent,
+            "room-agent-1",
+            diff,
+            "Test proposal",
+        );
+        
+        assert!(proposal.requires_review());
+        assert_eq!(proposal.source, ProposalSource::RoomAgent);
+        assert_eq!(proposal.reason, "Test proposal");
+        assert!(!proposal.id.is_empty());
+    }
+
+    #[test]
+    fn test_todo_list_submit_worker_proposal_auto_merge() {
+        let mut list = DagTodoList::new();
+        list.add("task-1", "Task 1");
+        
+        // Create a proposal from Worker Agent (should auto-merge)
+        let mut diff = TodoListDiff::default();
+        diff.added.push(DagTodoItem::new("task-2".to_string(), "Task 2".to_string()));
+        
+        let proposal = TodoListProposal::new(
+            ProposalSource::WorkerAgent,
+            "worker-1",
+            diff,
+            "Adding task 2",
+        );
+        
+        let proposal_id = proposal.id.clone();
+        list.submit_proposal(proposal);
+        
+        // Worker proposal should be auto-merged
+        assert!(list.get("task-2").is_some());
+        assert!(list.proposal_history.iter().any(|r| r.proposal_id() == proposal_id));
+    }
+
+    #[test]
+    fn test_todo_list_submit_external_proposal_needs_review() {
+        let mut list = DagTodoList::new();
+        list.add("task-1", "Task 1");
+        
+        // Create a proposal from Room Agent (needs review)
+        let mut diff = TodoListDiff::default();
+        diff.added.push(DagTodoItem::new("task-2".to_string(), "Task 2".to_string()));
+        
+        let proposal = TodoListProposal::new(
+            ProposalSource::RoomAgent,
+            "room-agent-1",
+            diff,
+            "Adding task 2",
+        );
+        
+        let proposal_id = proposal.id.clone();
+        list.submit_proposal(proposal);
+        
+        // External proposal should not be merged yet
+        assert!(list.get("task-2").is_none());
+        assert!(list.pending_review().iter().any(|p| p.id == proposal_id));
+    }
+
+    #[test]
+    fn test_todo_list_review_and_accept() {
+        let mut list = DagTodoList::new();
+        list.add("task-1", "Task 1");
+        
+        // Submit external proposal
+        let mut diff = TodoListDiff::default();
+        diff.added.push(DagTodoItem::new("task-2".to_string(), "Task 2".to_string()));
+        
+        let proposal = TodoListProposal::new(
+            ProposalSource::RoomAgent,
+            "room-agent-1",
+            diff,
+            "Adding task 2",
+        );
+        
+        let proposal_id = proposal.id.clone();
+        list.submit_proposal(proposal);
+        
+        // Review and accept
+        let result = list.review_and_merge(&proposal_id, |_, _| true);
+        
+        assert!(result.is_accepted());
+        assert!(list.get("task-2").is_some());
+        assert!(list.pending_review().is_empty());
+    }
+
+    #[test]
+    fn test_todo_list_review_and_reject() {
+        let mut list = DagTodoList::new();
+        list.add("task-1", "Task 1");
+        
+        // Submit external proposal
+        let mut diff = TodoListDiff::default();
+        diff.added.push(DagTodoItem::new("task-2".to_string(), "Task 2".to_string()));
+        
+        let proposal = TodoListProposal::new(
+            ProposalSource::RoomAgent,
+            "room-agent-1",
+            diff,
+            "Adding task 2",
+        );
+        
+        let proposal_id = proposal.id.clone();
+        list.submit_proposal(proposal);
+        
+        // Review and reject
+        let result = list.review_and_merge(&proposal_id, |_, _| false);
+        
+        assert!(!result.is_accepted());
+        assert!(list.get("task-2").is_none());
+        assert!(list.pending_review().is_empty());
+    }
+
+    #[test]
+    fn test_todo_list_auto_merge_safe_priority_change() {
+        let mut list = DagTodoList::new();
+        list.add("task-1", "Task 1");
+        if let Some(item) = list.get_mut("task-1") {
+            item.priority = 1;
+        }
+        
+        // Create a priority-only change (safe)
+        let change = TodoItemChange {
+            id: "task-1".to_string(),
+            old_status: TodoItemStatus::Pending,
+            new_status: TodoItemStatus::Pending,
+            old_priority: 1,
+            new_priority: 5,
+            old_description: "Task 1".to_string(),
+            new_description: "Task 1".to_string(),
+        };
+        
+        let diff = TodoListDiff {
+            added: vec![],
+            removed: vec![],
+            modified: vec![change],
+        };
+        
+        let proposal = TodoListProposal::new(
+            ProposalSource::RoomAgent,
+            "room-agent-1",
+            diff,
+            "Increasing priority",
+        );
+        
+        list.submit_proposal(proposal);
+        
+        // Auto-merge safe proposals
+        let results = list.auto_merge_safe_proposals();
+        
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_accepted());
+        assert_eq!(list.get("task-1").unwrap().priority, 5);
+    }
+
+    #[test]
+    fn test_todo_list_cleanup_expired_proposals() {
+        let mut list = DagTodoList::new();
+        
+        // Create an expired proposal
+        let mut proposal = TodoListProposal::new(
+            ProposalSource::RoomAgent,
+            "room-agent-1",
+            TodoListDiff::default(),
+            "Expired proposal",
+        );
+        proposal.expires_at = Some(chrono::Utc::now() - chrono::Duration::seconds(1));
+        
+        let proposal_id = proposal.id.clone();
+        list.pending_proposals.push(proposal);
+        
+        // Clean up expired
+        let count = list.cleanup_expired_proposals();
+        
+        assert_eq!(count, 1);
+        assert!(list.pending_review().is_empty());
+        assert!(list.proposal_history.iter().any(|r| 
+            matches!(r, ProposalResult::Expired { proposal_id: id } if id == &proposal_id)
+        ));
     }
 }

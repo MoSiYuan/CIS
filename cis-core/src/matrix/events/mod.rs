@@ -29,8 +29,25 @@
 //! let event = SkillEventRegistry::parse_event("io.cis.task.invoke", &content);
 //! ```
 
+pub mod dag;
 pub mod event_types;
 pub mod skill;
+
+// Re-export dag event types
+pub use dag::{
+    DagExecuteEvent,
+    DagExecuteContent,
+    DagStatusEvent,
+    DagStatusContent,
+    TodoProposalEvent,
+    TodoProposalContent,
+    TodoProposalResponseEvent,
+    TodoProposalResponseContent,
+    NodeClaimFilter,
+    parse_dag_event,
+    parse_todo_proposal_event,
+    parse_todo_proposal_response,
+};
 
 // Re-export skill event types
 pub use skill::{

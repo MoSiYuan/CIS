@@ -21,6 +21,9 @@ pub mod federation_db;
 pub mod memory_db;
 pub mod paths;
 pub mod pool;
+pub mod room_manager;
+pub mod room_store;
+pub mod room_types;
 pub mod safety;
 pub mod wal;
 
@@ -32,4 +35,7 @@ pub use federation_db::{FederationDb, FederationLog, PeerInfo, PeerStatus, Trust
 pub use memory_db::{MemoryDb, MemoryEntry};
 pub use paths::Paths;
 pub use pool::{ConnectionPool, PoolConfig, PoolConnectionGuard};
+pub use room_manager::RoomStoreManager;
+pub use room_store::RoomStore;
+pub use room_types::{EventFilter, PaginatedEvents, Pagination, RoomEvent, RoomInfo, RoomMetadata, RoomStats, StoredEvent, SyncPosition};
 pub use wal::{checkpoint, checkpoint_passive, set_wal_mode, SynchronousMode, WALConfig};

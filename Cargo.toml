@@ -6,6 +6,8 @@ members = [
     "cis-node",
     "cis-skill-sdk",
     "cis-skill-sdk/cis-skill-sdk-derive",
+    "crates/cis-capability",
+    "crates/cis-mcp-adapter",
     "skills/init-wizard",
     "skills/push-client",
     "skills/memory-organizer",

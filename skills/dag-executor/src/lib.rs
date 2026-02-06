@@ -26,10 +26,12 @@ use cis_core::matrix::nucleus::{MatrixNucleus, RoomOptions, RoomId};
 use ruma::events::room::message::RoomMessageEventContent;
 
 pub mod error;
+pub mod process_lock;
 pub mod worker;
 
 use error::DagExecutorError;
 use worker::WorkerManager;
+use process_lock::{ProcessLock, OrphanDetector};
 
 /// Task 重试配置
 #[derive(Debug, Clone)]
@@ -309,6 +311,11 @@ impl DagExecutorSkill {
 
         Ok(())
     }
+
+    /// 获取 DAG 运行状态
+    async fn get_run_status(&self, run_id: &str) -> Option<RunStatus> {
+        self.worker_manager.get_run_status(run_id).await
+    }
 }
 
 #[async_trait]
@@ -347,21 +354,49 @@ impl Skill for DagExecutorSkill {
     async fn handle_event(&self, ctx: &dyn SkillContext, event: Event) -> cis_core::error::Result<()> {
         match event {
             Event::Custom { name, data } => {
-                if name == "dag:execute" {
-                    // 解析 DAG 规格
-                    let spec: DagSpec = serde_json::from_value(data)
-                        .map_err(|e| cis_core::error::CisError::skill(format!("Invalid DAG spec: {}", e)))?;
+                match name.as_str() {
+                    "dag:execute" => {
+                        // 解析 DAG 规格
+                        let spec: DagSpec = serde_json::from_value(data)
+                            .map_err(|e| cis_core::error::CisError::skill(format!("Invalid DAG spec: {}", e)))?;
 
-                    // 执行 DAG
-                    match self.execute_dag(spec).await {
-                        Ok(run_id) => {
-                            ctx.log_info(&format!("DAG executed, run_id: {}", run_id));
-                        }
-                        Err(e) => {
-                            ctx.log_error(&format!("DAG execution failed: {}", e));
-                            return Err(cis_core::error::CisError::skill(e.to_string()));
+                        // 执行 DAG
+                        match self.execute_dag(spec).await {
+                            Ok(run_id) => {
+                                ctx.log_info(&format!("DAG executed, run_id: {}", run_id));
+                            }
+                            Err(e) => {
+                                ctx.log_error(&format!("DAG execution failed: {}", e));
+                                return Err(cis_core::error::CisError::skill(e.to_string()));
+                            }
                         }
                     }
+                    "dag:execute:http" => {
+                        // HTTP API 触发
+                        // data 格式: { "dag_spec": {...} }
+                        if let Some(dag_spec) = data.get("dag_spec") {
+                            let spec: DagSpec = serde_json::from_value(dag_spec.clone())
+                                .map_err(|e| cis_core::error::CisError::skill(format!("Invalid DAG spec: {}", e)))?;
+
+                            match self.execute_dag(spec).await {
+                                Ok(run_id) => {
+                                    ctx.log_info(&format!("HTTP triggered DAG executed, run_id: {}", run_id));
+                                }
+                                Err(e) => {
+                                    ctx.log_error(&format!("HTTP triggered DAG execution failed: {}", e));
+                                    return Err(cis_core::error::CisError::skill(e.to_string()));
+                                }
+                            }
+                        }
+                    }
+                    "dag:status" => {
+                        // 查询 DAG 状态
+                        if let Some(run_id) = data.get("run_id").and_then(|v| v.as_str()) {
+                            let status = self.get_run_status(run_id).await;
+                            ctx.log_info(&format!("DAG status for {}: {:?}", run_id, status));
+                        }
+                    }
+                    _ => {}
                 }
             }
             _ => {}
@@ -385,6 +420,18 @@ pub struct DagExecuteEvent {
     pub target_node: Option<String>,
     #[serde(default)]
     pub scope: cis_core::scheduler::DagScope,
+}
+
+/// DAG 运行状态
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunStatus {
+    pub run_id: String,
+    pub worker_id: String,
+    pub status: String,
+    pub task_count: usize,
+    pub completed_count: usize,
+    pub failed_count: usize,
+    pub started_at: String,
 }
 
 #[cfg(test)]

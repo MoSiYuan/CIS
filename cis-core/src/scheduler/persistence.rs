@@ -67,6 +67,33 @@ impl DagPersistence {
             [],
         )?;
 
+        // 创建 task_executions 表 - 存储任务执行日志
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS task_executions (
+                execution_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                output TEXT,
+                error TEXT,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                retry_count INTEGER DEFAULT 0,
+                FOREIGN KEY (run_id) REFERENCES dag_runs(run_id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        // 创建索引
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_task_executions_run_id ON task_executions(run_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_task_executions_task_id ON task_executions(task_id)",
+            [],
+        )?;
+
         Ok(Self { db: conn })
     }
 
@@ -127,6 +154,7 @@ impl DagPersistence {
         let dag_json = run.to_json()?;
         let debts_json = serde_json::to_string(&run.debts)?;
         let status_str = format!("{:?}", run.status);
+        let (scope_type, scope_id) = run.scope.to_db_fields();
 
         self.db.execute(
             "INSERT OR REPLACE INTO dag_runs 
@@ -134,13 +162,13 @@ impl DagPersistence {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
                 run.run_id,
-                "",
+                "", // dag_id not available in DagRun directly
                 status_str,
                 dag_json,
                 debts_json,
-                Option::<String>::None,
-                "Global",
-                Option::<String>::None,
+                run.target_node,
+                scope_type,
+                scope_id,
                 run.created_at.to_rfc3339(),
                 run.updated_at.to_rfc3339(),
             ],
@@ -343,6 +371,140 @@ impl DagPersistence {
             }
             None => Ok(false),
         }
+    }
+
+    // ==================== Task Execution 存储 ====================
+
+    /// 保存任务执行记录
+    pub fn save_task_execution(&self, execution: &TaskExecution) -> Result<()> {
+        self.db.execute(
+            "INSERT OR REPLACE INTO task_executions 
+             (run_id, task_id, status, output, error, started_at, completed_at, retry_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                execution.run_id,
+                execution.task_id,
+                format!("{:?}", execution.status),
+                execution.output.as_deref(),
+                execution.error.as_deref(),
+                execution.started_at.to_rfc3339(),
+                execution.completed_at.map(|t| t.to_rfc3339()),
+                execution.retry_count,
+            ],
+        )?;
+        
+        Ok(())
+    }
+
+    /// 加载任务执行记录
+    pub fn load_task_execution(&self, execution_id: i64) -> Result<Option<TaskExecution>> {
+        let mut stmt = self
+            .db
+            .prepare("SELECT * FROM task_executions WHERE execution_id = ?1")?;
+        
+        let row = stmt.query_row([execution_id], |row| {
+            Ok(TaskExecution {
+                execution_id: Some(row.get(0)?),
+                run_id: row.get(1)?,
+                task_id: row.get(2)?,
+                status: parse_execution_status(&row.get::<_, String>(3)?),
+                output: row.get(4)?,
+                error: row.get(5)?,
+                started_at: row.get::<_, String>(6)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
+                completed_at: row.get::<_, Option<String>>(7)?.and_then(|s| s.parse().ok()),
+                retry_count: row.get(8)?,
+            })
+        }).optional()?;
+        
+        Ok(row)
+    }
+
+    /// 列出运行的任务执行记录
+    pub fn list_task_executions(&self, run_id_filter: Option<&str>) -> Result<Vec<TaskExecution>> {
+        let mut executions = Vec::new();
+        
+        if let Some(run_id) = run_id_filter {
+            let mut stmt = self.db.prepare(
+                "SELECT * FROM task_executions WHERE run_id = ?1 ORDER BY started_at DESC"
+            )?;
+            
+            let rows = stmt.query_map([run_id], |row| {
+                Ok(TaskExecution {
+                    execution_id: Some(row.get(0)?),
+                    run_id: row.get(1)?,
+                    task_id: row.get(2)?,
+                    status: parse_execution_status(&row.get::<_, String>(3)?),
+                    output: row.get(4)?,
+                    error: row.get(5)?,
+                    started_at: row.get::<_, String>(6)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
+                    completed_at: row.get::<_, Option<String>>(7)?.and_then(|s| s.parse().ok()),
+                    retry_count: row.get(8)?,
+                })
+            })?;
+            
+            for row in rows {
+                executions.push(row?);
+            }
+        } else {
+            let mut stmt = self.db.prepare(
+                "SELECT * FROM task_executions ORDER BY started_at DESC LIMIT 100"
+            )?;
+            
+            let rows = stmt.query_map([], |row| {
+                Ok(TaskExecution {
+                    execution_id: Some(row.get(0)?),
+                    run_id: row.get(1)?,
+                    task_id: row.get(2)?,
+                    status: parse_execution_status(&row.get::<_, String>(3)?),
+                    output: row.get(4)?,
+                    error: row.get(5)?,
+                    started_at: row.get::<_, String>(6)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
+                    completed_at: row.get::<_, Option<String>>(7)?.and_then(|s| s.parse().ok()),
+                    retry_count: row.get(8)?,
+                })
+            })?;
+            
+            for row in rows {
+                executions.push(row?);
+            }
+        }
+        
+        Ok(executions)
+    }
+}
+
+/// 任务执行记录
+#[derive(Debug, Clone)]
+pub struct TaskExecution {
+    pub execution_id: Option<i64>,
+    pub run_id: String,
+    pub task_id: String,
+    pub status: TaskExecutionStatus,
+    pub output: Option<String>,
+    pub error: Option<String>,
+    pub started_at: chrono::DateTime<chrono::Utc>,
+    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub retry_count: i32,
+}
+
+/// 任务执行状态
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskExecutionStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+fn parse_execution_status(s: &str) -> TaskExecutionStatus {
+    match s {
+        "Pending" => TaskExecutionStatus::Pending,
+        "Running" => TaskExecutionStatus::Running,
+        "Completed" => TaskExecutionStatus::Completed,
+        "Failed" => TaskExecutionStatus::Failed,
+        "Cancelled" => TaskExecutionStatus::Cancelled,
+        _ => TaskExecutionStatus::Pending,
     }
 }
 

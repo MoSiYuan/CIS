@@ -1148,8 +1148,8 @@ mod tests {
         let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
         
         let db_manager = Arc::new(crate::storage::db::DbManager::new().unwrap());
-        let skill_manager = Arc::new(SkillManager::new(db_manager).unwrap());
-        let mut router = SkillVectorRouter::new(storage, embedding, skill_manager);
+        let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+        let mut router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
         
         // 注册测试技能
         router.register_global_skill(create_test_skill(
@@ -1185,8 +1185,8 @@ mod tests {
         let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
         
         let db_manager = Arc::new(crate::storage::db::DbManager::new().unwrap());
-        let skill_manager = Arc::new(SkillManager::new(db_manager).unwrap());
-        let mut router = SkillVectorRouter::new(storage, embedding, skill_manager);
+        let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+        let mut router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
         
         // 注册测试技能
         router.register_global_skill(create_test_skill(
@@ -1232,8 +1232,8 @@ mod tests {
         let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
         
         let db_manager = Arc::new(crate::storage::db::DbManager::new().unwrap());
-        let skill_manager = Arc::new(SkillManager::new(db_manager).unwrap());
-        let router = SkillVectorRouter::new(storage, embedding, skill_manager);
+        let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+        let router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
         
         let source = create_test_skill(
             "source",

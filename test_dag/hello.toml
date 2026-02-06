@@ -1,0 +1,37 @@
+# CIS Hello World DAG
+# 简单任务执行示例
+
+[skill]
+name = "hello-world"
+version = "1.0.0"
+type = "dag"
+description = "Hello World DAG for CIS testing"
+
+[dag]
+# DAG 执行策略: all_success | first_success | allow_debt
+policy = "all_success"
+
+[[dag.tasks]]
+# 任务 ID
+id = "init"
+# 任务名称
+name = "Initialize"
+# 要调用的 Skill
+skill = "shell"
+# 四级决策级别模仿
+level = { type = "mechanical", retry = 3 }
+
+[[dag.tasks]]
+id = "hello"
+name = "Hello World"
+skill = "shell"
+# 依赖的任务 ID 列表
+deps = ["init"]
+level = { type = "mechanical", retry = 3 }
+
+[[dag.tasks]]
+id = "complete"
+name = "Complete"
+skill = "shell"
+deps = ["hello"]
+level = { type = "mechanical", retry = 3 }

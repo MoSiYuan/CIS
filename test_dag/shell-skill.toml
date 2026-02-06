@@ -1,0 +1,11 @@
+[skill]
+name = "shell"
+version = "1.0.0"
+type = "native"
+description = "Shell command execution skill"
+author = "CIS"
+entry = "sh"
+
+[execution]
+binary = "sh"
+args = ["-c"]

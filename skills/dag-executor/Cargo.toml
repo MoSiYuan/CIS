@@ -38,5 +38,9 @@ uuid = { version = "1", features = ["v4"] }
 # Matrix (ruma)
 ruma = { version = "0.10", features = ["client-api-c"] }
 
+# Platform-specific dependencies
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
