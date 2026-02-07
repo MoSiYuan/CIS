@@ -21,7 +21,9 @@ use crate::agent::cluster::SessionId;
 use crate::error::{CisError, Result};
 
 /// Default terminal size
+#[allow(dead_code)]
 const DEFAULT_COLS: u16 = 80;
+#[allow(dead_code)]
 const DEFAULT_ROWS: u16 = 24;
 
 /// Default output buffer size (max lines)

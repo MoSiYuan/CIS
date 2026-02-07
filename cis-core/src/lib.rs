@@ -1,6 +1,4 @@
 //! # CIS Core Library
-#![allow(dead_code)]
-#![allow(private_interfaces)]
 //!
 //! Core library for CIS (Cluster of Independent Systems).
 //!
