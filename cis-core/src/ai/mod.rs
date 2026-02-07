@@ -42,6 +42,7 @@ mod kimi;
 mod opencode;
 
 pub mod embedding;
+pub mod embedding_download;
 pub mod embedding_init;
 
 pub use claude::{ClaudeCliProvider, ClaudeConfig};
@@ -52,6 +53,11 @@ pub use embedding::{
     LocalEmbeddingService, OpenAIEmbeddingService,
     ClaudeCliEmbeddingService, SqlFallbackEmbeddingService,
     DEFAULT_EMBEDDING_DIM, MIN_SIMILARITY_THRESHOLD,
+};
+pub use embedding_download::{
+    auto_download_model, download_model_with_retry, download_file_sync,
+    get_download_status, is_model_downloaded, redownload_model, verify_model,
+    DownloadStatus, ModelFile,
 };
 pub use embedding_init::{
     interactive_init, auto_init, needs_init,

@@ -196,7 +196,7 @@ fn handle_download_model(config: &ModelDownloadConfig) -> Result<EmbeddingInitCo
 }
 
 /// 处理 OpenAI 配置
-fn handle_openai_config() -> Result<EmbeddingInitConfig> {
+pub fn handle_openai_config() -> Result<EmbeddingInitConfig> {
     println!("\n🔑 OpenAI API 配置");
     
     // 检查是否已有环境变量
@@ -256,7 +256,7 @@ fn handle_openai_config() -> Result<EmbeddingInitConfig> {
 }
 
 /// 处理 Claude CLI 配置
-fn handle_claude_cli() -> Result<EmbeddingInitConfig> {
+pub fn handle_claude_cli() -> Result<EmbeddingInitConfig> {
     println!("\n🤖 Claude CLI 代理配置 (实验性)");
     println!("\n此选项使用已安装的 Claude CLI 来生成文本嵌入。");
     println!("注意：这是一个实验性功能，速度较慢。\n");

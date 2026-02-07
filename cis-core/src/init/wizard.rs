@@ -497,15 +497,22 @@ bootstrap_nodes = []
     // ==================== 向量引擎配置 ====================
 
     async fn configure_vector_engine(&self) -> Result<()> {
-        use crate::ai::embedding_init::{interactive_init, EmbeddingInitOption, needs_init};
+        use crate::ai::embedding_download::{
+            auto_download_model, is_model_downloaded, get_download_status,
+        };
+        use crate::ai::embedding_init::{
+            handle_openai_config, handle_claude_cli, EmbeddingInitConfig, EmbeddingInitOption,
+        };
         
         println!("  检查向量引擎状态...");
         
-        // 检查是否已配置
-        if !needs_init() {
-            println!("  ✓ 向量引擎已配置");
+        // 检查是否已下载
+        if is_model_downloaded() {
+            println!("  ✓ 向量模型已安装 (Nomic Embed Text v1.5)");
             return Ok(());
         }
+        
+        let status = get_download_status();
         
         println!("\n  📚 CIS 向量引擎用于：");
         println!("     • 语义记忆检索（自然语言搜索）");
@@ -513,75 +520,77 @@ bootstrap_nodes = []
         println!("     • 对话上下文理解");
         println!("     • 项目知识库搜索\n");
         
+        println!("  📦 本地模型 (推荐)：Nomic Embed Text v1.5 (~130 MB)");
+        println!("     优点：离线使用、无需 API Key、隐私性好\n");
+        
         if self.interactive {
             // 交互式配置
-            println!("  是否现在配置向量引擎? (推荐)");
-            print!("  (Y/n): ");
-            std::io::stdout().flush()?;
+            println!("  选择向量引擎配置方式:");
+            println!("    1) 下载本地模型 (推荐) ⭐");
+            println!("    2) 使用 OpenAI API (需要 Key)");
+            println!("    3) 使用 Claude CLI 代理 (实验性)");
+            println!("    4) 回退到 SQL 搜索 (无需配置)");
+            println!("    5) 跳过 (稍后手动配置)\n");
             
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
+            let choice = self.prompt_input("请输入选项 (1-5, 默认1): ")?;
             
-            if input.trim().to_lowercase() == "n" {
-                println!("  ⚠️  已跳过向量引擎配置");
-                println!("     记忆和语义搜索功能将受限");
-                println!("     稍后可通过 `cis config vector` 重新配置\n");
-                return Ok(());
-            }
-            
-            // 调用交互式 embedding 初始化
-            match interactive_init() {
-                Ok(config) => {
-                    match config.option {
-                        EmbeddingInitOption::DownloadLocalModel => {
-                            println!("  ✓ 已配置本地向量模型 (Nomic Embed v1.5)");
-                        }
-                        EmbeddingInitOption::UseOpenAI => {
-                            println!("  ✓ 已配置 OpenAI Embedding API");
-                        }
-                        EmbeddingInitOption::UseClaudeCli => {
-                            println!("  ✓ 已配置 Claude CLI 代理");
-                        }
-                        EmbeddingInitOption::UseSqlFallback => {
-                            println!("  ⚠️  已配置 SQL 回退模式（无语义搜索）");
-                        }
-                        EmbeddingInitOption::Skip => {
-                            println!("  ⚠️  已跳过向量引擎配置");
-                            println!("     稍后可通过 `cis config vector` 重新配置");
+            match choice.trim() {
+                "2" => {
+                    // OpenAI 配置
+                    match handle_openai_config() {
+                        Ok(_) => println!("  ✓ 已配置 OpenAI Embedding API"),
+                        Err(e) => {
+                            println!("  ⚠️  配置失败: {}", e);
+                            println!("     将尝试下载本地模型...");
+                            self.download_vector_model().await?;
                         }
                     }
                 }
-                Err(e) => {
-                    println!("  ⚠️  向量引擎配置失败: {}", e);
+                "3" => {
+                    // Claude CLI 配置
+                    match handle_claude_cli() {
+                        Ok(_) => println!("  ✓ 已配置 Claude CLI 代理"),
+                        Err(e) => {
+                            println!("  ⚠️  配置失败: {}", e);
+                            self.download_vector_model().await?;
+                        }
+                    }
+                }
+                "4" => {
+                    println!("  ⚠️  已配置 SQL 回退模式（无语义搜索）");
+                    println!("     记忆和搜索功能将受限。");
+                }
+                "5" => {
+                    println!("  ⚠️  已跳过向量引擎配置");
                     println!("     稍后可通过 `cis config vector` 重新配置");
+                }
+                _ => {
+                    // 默认：下载本地模型
+                    self.download_vector_model().await?;
                 }
             }
         } else {
-            // 非交互模式：使用自动配置
-            println!("  非交互模式：使用自动配置...");
-            use crate::ai::embedding_init::auto_init;
-            
-            match auto_init() {
-                Ok(config) => {
-                    match config.option {
-                        EmbeddingInitOption::DownloadLocalModel => {
-                            println!("  ✓ 自动配置：本地向量模型");
-                        }
-                        EmbeddingInitOption::UseOpenAI => {
-                            println!("  ✓ 自动配置：OpenAI API");
-                        }
-                        EmbeddingInitOption::UseClaudeCli => {
-                            println!("  ✓ 自动配置：Claude CLI 代理");
-                        }
-                        _ => {
-                            println!("  ⚠️  自动配置：SQL 回退模式");
-                            println!("     记忆和语义搜索功能将受限");
-                        }
-                    }
-                }
-                Err(e) => {
-                    println!("  ⚠️  自动配置失败: {}", e);
-                }
+            // 非交互模式：自动下载
+            println!("  非交互模式：自动下载本地模型...");
+            self.download_vector_model().await?;
+        }
+        
+        Ok(())
+    }
+    
+    /// 下载向量模型
+    async fn download_vector_model(&self) -> Result<()> {
+        use crate::ai::embedding_download::download_model_with_retry;
+        
+        match download_model_with_retry(3).await {
+            Ok(_) => {
+                println!("  ✓ 向量模型下载并绑定成功！");
+                println!("     语义搜索和记忆功能已启用。");
+            }
+            Err(e) => {
+                println!("  ⚠️  模型下载失败: {}", e);
+                println!("     将使用 SQL 回退模式。");
+                println!("     稍后可通过 `cis config vector` 重试。");
             }
         }
         
