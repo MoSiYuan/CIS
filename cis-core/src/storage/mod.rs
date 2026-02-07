@@ -25,6 +25,7 @@ pub mod room_manager;
 pub mod room_store;
 pub mod room_types;
 pub mod safety;
+pub mod unified_paths;
 pub mod wal;
 
 pub use backup::BackupManager;

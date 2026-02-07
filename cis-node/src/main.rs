@@ -160,6 +160,12 @@ enum Commands {
         #[command(subcommand)]
         action: commands::worker::WorkerCommands,
     },
+    
+    /// System management (directories, migration, cleanup)
+    System {
+        #[command(subcommand)]
+        action: commands::system::SystemCommands,
+    },
 }
 
 /// Agent subcommands
@@ -983,6 +989,10 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
         
         Commands::Worker { action } => {
             commands::worker::handle(action).await
+        }
+        
+        Commands::System { action } => {
+            commands::system::handle(action).await
         }
     }
 }
