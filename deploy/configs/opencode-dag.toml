@@ -1,0 +1,63 @@
+# CIS DAG OpenCode 配置
+# 用于 DAG 任务执行的 OpenCode Agent 配置
+
+[node]
+id = ""
+name = "CIS DAG Worker (OpenCode)"
+
+# ==================== AI 配置 ====================
+[ai]
+# 默认 AI Provider: opencode | claude | kimi | aider
+default_provider = "opencode"
+
+[ai.opencode]
+# OpenCode 配置
+# 可用模型：
+#   - opencode/glm-4.7-free (免费，推荐)
+#   - opencode/kimi-k2.5-free (免费)
+#   - opencode/gpt-5-nano
+#   - opencode/big-pickle
+#   - anthropic/claude-3-opus-20240229
+#   - openai/gpt-4
+model = "opencode/glm-4.7-free"
+
+# 最大 token 数
+max_tokens = 4096
+
+# 温度参数 (0-1)
+temperature = 0.7
+
+# ==================== DAG 执行配置 ====================
+[dag]
+# 默认 Agent 类型
+agent_type = "opencode"
+
+# 最大并发 Worker 数
+max_workers = 4
+
+# 任务超时（秒）
+task_timeout_secs = 3600
+
+# 启用上下文注入
+enable_context_injection = true
+
+# 工作目录
+work_dir = "/var/lib/cis/dag-sessions"
+
+# ==================== 存储配置 ====================
+[storage]
+data_dir = "/var/lib/cis/data"
+log_dir = "/var/log/cis"
+max_backups = 10
+backup_interval_days = 7
+
+# ==================== 日志配置 ====================
+[log]
+level = "info"
+file_output = true
+file_rotation = "daily"
+
+# ==================== 监控配置 ====================
+[telemetry]
+enabled = true
+log_retention_days = 30

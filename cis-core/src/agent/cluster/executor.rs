@@ -71,7 +71,7 @@ impl Default for AgentClusterConfig {
     fn default() -> Self {
         Self {
             max_workers: 4,
-            default_agent: AgentType::Claude,
+            default_agent: AgentType::OpenCode,  // 使用 OpenCode 作为默认 Agent
             base_work_dir: std::env::temp_dir().join("cis").join("dag-sessions"),
             enable_context_injection: true,
             auto_attach_on_block: false,

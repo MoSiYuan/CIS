@@ -38,6 +38,9 @@ pub mod manager;
 pub mod monitor;
 pub mod session;
 
+#[cfg(test)]
+pub mod opencode_migration_test;
+
 // Re-export main types
 pub use context::{build_task_prompt, ContextEntry, ContextStore, OutputFormat};
 pub use events::{SessionEvent, SessionState, SessionSummary};

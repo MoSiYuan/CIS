@@ -105,8 +105,9 @@ impl InitWizard {
 
             if check.ai_agents.iter().all(|a| !a.available) {
                 println!("\n⚠️  警告: 未检测到任何 AI Agent");
-                println!("   建议安装 Claude CLI 或 Kimi Code");
-                println!("   https://github.com/anthropics/anthropic-cli");
+                println!("   建议安装 OpenCode（DAG 任务推荐）:");
+                println!("   https://github.com/your-opencode-repo");
+                println!("   或 Claude CLI: https://github.com/anthropics/anthropic-cli");
 
                 if self.interactive && !self.confirm_continue()? {
                     return Ok(result);
@@ -197,6 +198,15 @@ impl InitWizard {
 
     async fn check_ai_agents(&self) -> Vec<AgentCheck> {
         let mut agents = Vec::new();
+
+        // Check OpenCode (推荐，DAG 任务默认)
+        let opencode = self.check_agent("opencode", &["--version"]).await;
+        agents.push(AgentCheck {
+            name: "OpenCode (推荐)".to_string(),
+            available: opencode.is_ok(),
+            version: opencode.as_ref().ok().cloned(),
+            path: which::which("opencode").ok().map(|p| p.to_string_lossy().to_string()),
+        });
 
         // Check Claude CLI
         let claude = self.check_agent("claude", &["--version"]).await;
@@ -315,21 +325,23 @@ impl InitWizard {
             p.clone()
         } else if self.interactive {
             println!("  选择默认 AI Provider:");
-            println!("    1) Claude CLI (推荐)");
-            println!("    2) Kimi Code");
-            println!("    3) Aider");
+            println!("    1) OpenCode (推荐，DAG 任务优化)");
+            println!("    2) Claude CLI");
+            println!("    3) Kimi Code");
+            println!("    4) Aider");
 
-            let choice = self.prompt_input("请输入选项 (1-3, 默认1): ")?;
+            let choice = self.prompt_input("请输入选项 (1-4, 默认1): ")?;
 
             match choice.trim() {
-                "2" => "kimi".to_string(),
-                "3" => "aider".to_string(),
-                _ => "claude".to_string(),
+                "2" => "claude".to_string(),
+                "3" => "kimi".to_string(),
+                "4" => "aider".to_string(),
+                _ => "opencode".to_string(),
             }
         } else {
-            // 非交互模式，自动检测
+            // 非交互模式，自动检测（优先 OpenCode）
             self.detect_default_provider()
-                .unwrap_or_else(|| "claude".to_string())
+                .unwrap_or_else(|| "opencode".to_string())
         };
 
         // 生成节点密钥
@@ -349,8 +361,20 @@ name = "{}"
 key = "{}"
 
 [ai]
-# 默认 AI Provider: claude | kimi | aider
+# 默认 AI Provider: opencode | claude | kimi | aider
 default_provider = "{}"
+
+[ai.opencode]
+# OpenCode 配置（DAG 任务推荐）
+# 可用模型：
+#   - opencode/glm-4.7-free (免费)
+#   - opencode/kimi-k2.5-free (免费)
+#   - opencode/gpt-5-nano (免费)
+#   - anthropic/claude-3-opus-20240229 (付费)
+#   - openai/gpt-4 (付费)
+model = "opencode/glm-4.7-free"
+max_tokens = 4096
+temperature = 0.7
 
 [ai.claude]
 # Claude Code 配置
@@ -394,7 +418,13 @@ bootstrap_nodes = []
     }
 
     fn detect_default_provider(&self) -> Option<String> {
-        let providers = vec![("claude", "claude"), ("kimi", "kimi"), ("aider", "aider")];
+        // 优先检测 OpenCode（DAG 任务推荐）
+        let providers = vec![
+            ("opencode", "opencode"),
+            ("claude", "claude"),
+            ("kimi", "kimi"),
+            ("aider", "aider"),
+        ];
 
         for (cmd, name) in providers {
             if which::which(cmd).is_ok() {
@@ -585,7 +615,7 @@ bootstrap_nodes = []
             .get("ai")
             .and_then(|ai| ai.get("default_provider"))
             .and_then(|p| p.as_str())
-            .unwrap_or("claude");
+            .unwrap_or("opencode");
 
         // 检查 provider 是否可用
         if which::which(provider).is_err() {

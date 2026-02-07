@@ -218,7 +218,7 @@ mod tests {
                 short_id: session_id.short(),
                 dag_run_id: "run-123".to_string(),
                 task_id: "task-456".to_string(),
-                agent_type: AgentType::Claude,
+                agent_type: AgentType::OpenCode,
                 state: "spawning".to_string(),
                 runtime_secs: 0,
                 output_preview: String::new(),
