@@ -116,7 +116,7 @@ impl InitWizard {
         }
 
         // Step 2: 全局配置
-        self.print_step(2, 4, "全局配置");
+        self.print_step(2, 5, "全局配置");
         let config_content = self.generate_global_config().await?;
         self.save_global_config(&config_content).await?;
         result.config_created = true;
@@ -126,9 +126,15 @@ impl InitWizard {
         ));
         println!("✅ 全局配置完成\n");
 
-        // Step 3: 项目初始化 (可选)
+        // Step 3: 向量引擎配置（记忆、语义搜索必需）
+        self.print_step(3, 5, "向量引擎配置");
+        self.configure_vector_engine().await?;
+        result.messages.push("向量引擎配置完成".to_string());
+        println!("✅ 向量引擎配置完成\n");
+
+        // Step 4: 项目初始化 (可选)
         if project_mode {
-            self.print_step(3, 4, "项目初始化");
+            self.print_step(4, 5, "项目初始化");
             self.initialize_project().await?;
             result.project_initialized = true;
             let project_toml = std::env::current_dir()?.join(".cis/project.toml");
@@ -139,8 +145,8 @@ impl InitWizard {
             println!("✅ 项目初始化完成\n");
         }
 
-        // Step 4: 验证
-        self.print_step(4, 4, "验证");
+        // Step 5: 验证
+        self.print_step(5, 5, "验证");
         let tests = self.run_verification_tests().await?;
         result.tests_passed = tests;
 
@@ -387,6 +393,20 @@ temperature = 0.7
 model = "kimi-k2"
 max_tokens = 8192
 
+[vector]
+# 向量引擎配置（用于语义搜索和记忆）
+# 嵌入维度: 768 (Nomic Embed), 1536 (OpenAI), 384 (MiniLM)
+embedding_dim = 768
+
+# 是否启用 HNSW 索引（推荐启用）
+use_hnsw = true
+
+# 相似度阈值（0-1，越高越严格）
+default_threshold = 0.7
+
+# 向量存储路径（默认使用数据目录）
+# storage_path = "/var/lib/cis/vectors"
+
 [storage]
 # 自动备份数量
 max_backups = 10
@@ -474,6 +494,100 @@ bootstrap_nodes = []
         Ok(())
     }
 
+    // ==================== 向量引擎配置 ====================
+
+    async fn configure_vector_engine(&self) -> Result<()> {
+        use crate::ai::embedding_init::{interactive_init, EmbeddingInitOption, needs_init};
+        
+        println!("  检查向量引擎状态...");
+        
+        // 检查是否已配置
+        if !needs_init() {
+            println!("  ✓ 向量引擎已配置");
+            return Ok(());
+        }
+        
+        println!("\n  📚 CIS 向量引擎用于：");
+        println!("     • 语义记忆检索（自然语言搜索）");
+        println!("     • 智能技能匹配");
+        println!("     • 对话上下文理解");
+        println!("     • 项目知识库搜索\n");
+        
+        if self.interactive {
+            // 交互式配置
+            println!("  是否现在配置向量引擎? (推荐)");
+            print!("  (Y/n): ");
+            std::io::stdout().flush()?;
+            
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            
+            if input.trim().to_lowercase() == "n" {
+                println!("  ⚠️  已跳过向量引擎配置");
+                println!("     记忆和语义搜索功能将受限");
+                println!("     稍后可通过 `cis config vector` 重新配置\n");
+                return Ok(());
+            }
+            
+            // 调用交互式 embedding 初始化
+            match interactive_init() {
+                Ok(config) => {
+                    match config.option {
+                        EmbeddingInitOption::DownloadLocalModel => {
+                            println!("  ✓ 已配置本地向量模型 (Nomic Embed v1.5)");
+                        }
+                        EmbeddingInitOption::UseOpenAI => {
+                            println!("  ✓ 已配置 OpenAI Embedding API");
+                        }
+                        EmbeddingInitOption::UseClaudeCli => {
+                            println!("  ✓ 已配置 Claude CLI 代理");
+                        }
+                        EmbeddingInitOption::UseSqlFallback => {
+                            println!("  ⚠️  已配置 SQL 回退模式（无语义搜索）");
+                        }
+                        EmbeddingInitOption::Skip => {
+                            println!("  ⚠️  已跳过向量引擎配置");
+                            println!("     稍后可通过 `cis config vector` 重新配置");
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("  ⚠️  向量引擎配置失败: {}", e);
+                    println!("     稍后可通过 `cis config vector` 重新配置");
+                }
+            }
+        } else {
+            // 非交互模式：使用自动配置
+            println!("  非交互模式：使用自动配置...");
+            use crate::ai::embedding_init::auto_init;
+            
+            match auto_init() {
+                Ok(config) => {
+                    match config.option {
+                        EmbeddingInitOption::DownloadLocalModel => {
+                            println!("  ✓ 自动配置：本地向量模型");
+                        }
+                        EmbeddingInitOption::UseOpenAI => {
+                            println!("  ✓ 自动配置：OpenAI API");
+                        }
+                        EmbeddingInitOption::UseClaudeCli => {
+                            println!("  ✓ 自动配置：Claude CLI 代理");
+                        }
+                        _ => {
+                            println!("  ⚠️  自动配置：SQL 回退模式");
+                            println!("     记忆和语义搜索功能将受限");
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("  ⚠️  自动配置失败: {}", e);
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
     // ==================== 项目初始化 ====================
 
     async fn initialize_project(&self) -> Result<()> {
@@ -529,7 +643,7 @@ bootstrap_nodes = []
         println!("  运行验证测试...\n");
 
         // Test 1: 配置读取
-        print!("  [1/4] 配置读取... ");
+        print!("  [1/5] 配置读取... ");
         match self.test_config_read().await {
             Ok(_) => println!("✅ 通过"),
             Err(e) => {
@@ -539,7 +653,7 @@ bootstrap_nodes = []
         }
 
         // Test 2: 目录写入
-        print!("  [2/4] 目录写入... ");
+        print!("  [2/5] 目录写入... ");
         match self.test_directory_write().await {
             Ok(_) => println!("✅ 通过"),
             Err(e) => {
@@ -549,7 +663,7 @@ bootstrap_nodes = []
         }
 
         // Test 3: 节点密钥
-        print!("  [3/4] 节点密钥... ");
+        print!("  [3/5] 节点密钥... ");
         match self.test_node_key().await {
             Ok(_) => println!("✅ 通过"),
             Err(e) => {
@@ -558,8 +672,18 @@ bootstrap_nodes = []
             }
         }
 
-        // Test 4: AI Provider
-        print!("  [4/4] AI Provider... ");
+        // Test 4: 向量引擎
+        print!("  [4/5] 向量引擎... ");
+        match self.test_vector_engine().await {
+            Ok(_) => println!("✅ 通过"),
+            Err(e) => {
+                println!("⚠️  警告: {}", e);
+                // 向量引擎失败不视为整体失败，但提醒用户
+            }
+        }
+
+        // Test 5: AI Provider
+        print!("  [5/5] AI Provider... ");
         match self.test_ai_provider().await {
             Ok(_) => println!("✅ 通过"),
             Err(e) => {
@@ -601,6 +725,19 @@ bootstrap_nodes = []
             return Err(CisError::other("Node key not found in config"));
         }
 
+        Ok(())
+    }
+
+    async fn test_vector_engine(&self) -> Result<()> {
+        use crate::ai::embedding_init::needs_init;
+        
+        // 检查向量引擎是否需要初始化
+        if needs_init() {
+            return Err(CisError::other(
+                "向量引擎未配置。运行 `cis config vector` 进行配置"
+            ));
+        }
+        
         Ok(())
     }
 
