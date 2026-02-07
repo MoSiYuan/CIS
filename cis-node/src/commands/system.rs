@@ -77,6 +77,32 @@ pub enum SystemCommands {
         #[arg(short, long)]
         fix: bool,
     },
+
+    /// Manage embedding models
+    Model {
+        #[command(subcommand)]
+        action: ModelAction,
+    },
+}
+
+/// Model management actions
+#[derive(Debug, Subcommand)]
+pub enum ModelAction {
+    /// Download embedding model
+    Download {
+        /// Force re-download even if already exists
+        #[arg(short, long)]
+        force: bool,
+    },
+
+    /// Check model download status
+    Status,
+
+    /// Verify model integrity
+    Verify,
+
+    /// Remove downloaded model
+    Remove,
 }
 
 /// Handle system commands
@@ -88,6 +114,7 @@ pub async fn handle(cmd: SystemCommands) -> Result<()> {
         SystemCommands::Clean { cache, logs, all } => clean_system(cache, logs, all).await?,
         SystemCommands::Purge { force, include_backup } => purge_system(force, include_backup).await?,
         SystemCommands::Check { format, fix } => check_system(&format, fix).await?,
+        SystemCommands::Model { action } => handle_model_command(action).await?,
     }
 
     Ok(())
@@ -405,4 +432,89 @@ fn check_health() -> serde_json::Value {
         "status": if issues.is_empty() { "healthy" } else { "needs_attention" },
         "issues": issues,
     })
+}
+
+/// Handle model management commands
+async fn handle_model_command(action: ModelAction) -> Result<()> {
+    use cis_core::ai::embedding_download::{
+        download_model_with_retry, get_download_status, is_model_downloaded,
+        redownload_model, verify_model,
+    };
+
+    match action {
+        ModelAction::Download { force } => {
+            if is_model_downloaded() && !force {
+                println!("✓ 向量模型已存在，跳过下载");
+                println!("   如需重新下载，请使用 --force 参数");
+                return Ok(());
+            }
+
+            if force && is_model_downloaded() {
+                println!("🔄 强制重新下载向量模型...");
+                redownload_model().await?;
+            } else {
+                println!("📥 开始下载向量模型...");
+                download_model_with_retry(3).await?;
+            }
+
+            println!("\n✅ 向量模型准备就绪！");
+        }
+
+        ModelAction::Status => {
+            let status = get_download_status();
+            status.print();
+
+            if !status.is_complete {
+                println!("\n💡 提示: 使用 `cis system model download` 下载模型");
+            }
+        }
+
+        ModelAction::Verify => {
+            println!("🔍 正在验证模型文件...");
+
+            match verify_model() {
+                Ok(true) => {
+                    println!("✅ 模型文件完整");
+                }
+                Ok(false) => {
+                    println!("⚠️  模型文件不完整或已损坏");
+                    println!("   建议重新下载: cis system model download --force");
+                }
+                Err(e) => {
+                    println!("✗ 验证失败: {}", e);
+                }
+            }
+        }
+
+        ModelAction::Remove => {
+            if !is_model_downloaded() {
+                println!("ℹ️  模型尚未下载");
+                return Ok(());
+            }
+
+            print!("⚠️  确认删除向量模型? (y/N): ");
+            std::io::Write::flush(&mut std::io::stdout())?;
+
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+
+            if input.trim().to_lowercase() != "y" {
+                println!("已取消");
+                return Ok(());
+            }
+
+            let (model, tokenizer) = cis_core::ai::embedding_download::get_model_paths();
+
+            if model.path.exists() {
+                tokio::fs::remove_file(&model.path).await?;
+            }
+            if tokenizer.path.exists() {
+                tokio::fs::remove_file(&tokenizer.path).await?;
+            }
+
+            println!("✓ 模型已删除");
+        }
+    }
+
+    Ok(())
 }
