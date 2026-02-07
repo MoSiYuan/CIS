@@ -1,10 +1,10 @@
 //! # Embedding Service
 //!
-//! 提供文本向量化的统一接口，支持本地模型 (MiniLM-L6-v2) 和云端 API (OpenAI) 降级。
+//! 提供文本向量化的统一接口，支持本地模型 (Nomic Embed Text v1.5) 和云端 API (OpenAI) 降级。
 //!
 //! ## 特性
 //!
-//! - 本地嵌入: 使用 ONNX Runtime 运行 MiniLM-L6-v2 (768维)
+//! - 本地嵌入: 使用 ONNX Runtime 运行 Nomic Embed v1.5 (768维)
 //! - 云端降级: OpenAI text-embedding-3-small 备用
 //! - 延迟初始化: 首次调用时加载模型（约2秒）
 //! - 批量处理: 支持批量向量化提升性能
@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use crate::error::{CisError, Result};
 
-/// 默认嵌入维度 (MiniLM-L6-v2)
+/// 默认嵌入维度 (Nomic Embed v1.5)
 pub const DEFAULT_EMBEDDING_DIM: usize = 768;
 
 /// 最小相似度阈值
@@ -74,9 +74,9 @@ impl Default for EmbeddingConfig {
     }
 }
 
-/// 本地嵌入服务 (MiniLM-L6-v2 via ONNX Runtime)
+/// 本地嵌入服务 (Nomic Embed v1.5 via ONNX Runtime)
 ///
-/// 使用 ONNX Runtime 本地运行 all-MiniLM-L6-v2 模型，输出 768 维向量。
+/// 使用 ONNX Runtime 本地运行 Nomic Embed v1.5 模型，输出 768 维向量。
 /// 首次加载模型可能需要 1-3 秒，后续调用是毫秒级。
 #[cfg(feature = "vector")]
 pub struct LocalEmbeddingService {
@@ -107,9 +107,9 @@ impl LocalEmbeddingService {
             .or_else(|| {
                 // 尝试默认路径
                 let default_paths = [
-                    "models/all-MiniLM-L6-v2",
-                    "models/all-MiniLM-L6-v2.onnx",
-                    "/usr/share/cis/models/all-MiniLM-L6-v2",
+                    "models/nomic-embed-text-v1.5",
+                    "models/nomic-embed-text-v1.5.onnx",
+                    "/usr/share/cis/models/nomic-embed-text-v1.5",
                 ];
                 default_paths.iter()
                     .map(|p| std::path::PathBuf::from(p))
@@ -117,7 +117,7 @@ impl LocalEmbeddingService {
             })
             .ok_or_else(|| CisError::configuration(
                 "Model path not specified and default model not found. \
-                 Please specify model_path in config or place model at models/all-MiniLM-L6-v2/"
+                 Please specify model_path in config or place model at models/nomic-embed-text-v1.5/"
             ))?;
 
         // 加载 tokenizer
@@ -575,7 +575,7 @@ impl EmbeddingService for SqlFallbackEmbeddingService {
 /// Embedding Service 创建函数（支持所有选项）
 /// 
 /// 优先级（从高到低）：
-/// 1. 本地模型（MiniLM-L6-v2）- 最高优先级
+/// 1. 本地模型（Nomic Embed v1.5）- 最高优先级
 /// 2. Claude CLI（Agent 工具）
 /// 3. OpenAI API（需要 API Key）
 /// 4. SQL LIKE 回退
@@ -591,7 +591,7 @@ pub fn create_embedding_service_with_fallback(
             // 1. 首先尝试本地模型
             let model_config = crate::ai::embedding_init::ModelDownloadConfig::default();
             if model_config.exists() {
-                tracing::info!("Using local MiniLM-L6-v2 model (highest priority)");
+                tracing::info!("Using local Nomic Embed v1.5 model (highest priority)");
                 let local_config = EmbeddingConfig {
                     provider: EmbeddingProvider::Local,
                     model_path: Some(model_config.local_path.to_string_lossy().to_string()),

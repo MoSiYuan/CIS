@@ -14,10 +14,12 @@ use crate::error::Result;
 
 pub mod bridge;
 pub mod cluster;
+pub mod config;
 pub mod providers;
 
 pub use bridge::AgentBridgeSkill;
 pub use cluster::{SessionManager, SessionId, SessionEvent, SessionState};
+pub use config::AgentCommandConfig;
 
 /// Agent 请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,6 +172,7 @@ impl AgentProviderFactory {
             AgentType::Claude => Ok(Box::new(providers::ClaudeProvider::new(config.clone()))),
             AgentType::Kimi => Ok(Box::new(providers::KimiProvider::new(config.clone()))),
             AgentType::Aider => Ok(Box::new(providers::AiderProvider::new(config.clone()))),
+            AgentType::OpenCode => Ok(Box::new(providers::OpenCodeProvider::new(config.clone()))),
             AgentType::Custom => {
                 // 自定义 Provider 通过插件机制加载
                 Err(crate::error::CisError::configuration(
@@ -181,24 +184,29 @@ impl AgentProviderFactory {
 
     /// 创建默认 Provider
     pub async fn default_provider() -> Result<Box<dyn AgentProvider>> {
-        // 尝试按优先级创建：Claude → Kimi → Aider
+        // 尝试按优先级创建：Claude → OpenCode → Kimi → Aider
         let claude = providers::ClaudeProvider::default();
         if claude.available().await {
             return Ok(Box::new(claude));
         }
-        
+
+        let opencode = providers::OpenCodeProvider::default();
+        if opencode.available().await {
+            return Ok(Box::new(opencode));
+        }
+
         let kimi = providers::KimiProvider::default();
         if kimi.available().await {
             return Ok(Box::new(kimi));
         }
-        
+
         let aider = providers::AiderProvider::default();
         if aider.available().await {
             return Ok(Box::new(aider));
         }
 
         Err(crate::error::CisError::configuration(
-            "No AI agent available. Please install Claude Code, Kimi, or Aider."
+            "No AI agent available. Please install Claude Code, OpenCode, Kimi, or Aider."
         ))
     }
 }
@@ -236,7 +244,72 @@ pub enum AgentType {
     Claude,
     Kimi,
     Aider,
+    OpenCode,
     Custom,
+}
+
+impl AgentType {
+    /// 获取命令名称
+    pub fn command_name(&self) -> Option<&'static str> {
+        match self {
+            AgentType::Claude => Some("claude"),
+            AgentType::Kimi => Some("kimi"),
+            AgentType::Aider => Some("aider"),
+            AgentType::OpenCode => Some("opencode"),
+            AgentType::Custom => None,
+        }
+    }
+
+    /// 获取显示名称
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            AgentType::Claude => "Claude Code",
+            AgentType::Kimi => "Kimi Code",
+            AgentType::Aider => "Aider",
+            AgentType::OpenCode => "OpenCode",
+            AgentType::Custom => "Custom",
+        }
+    }
+
+    /// 是否支持 PTY 交互
+    pub fn supports_pty(&self) -> bool {
+        match self {
+            AgentType::Claude | AgentType::Kimi | AgentType::Aider | AgentType::OpenCode => true,
+            AgentType::Custom => false,
+        }
+    }
+
+    /// 从字符串解析（用于配置文件）
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "claude" => Some(AgentType::Claude),
+            "kimi" => Some(AgentType::Kimi),
+            "aider" => Some(AgentType::Aider),
+            "opencode" => Some(AgentType::OpenCode),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for AgentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
+
+impl std::str::FromStr for AgentType {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "claude" => Ok(AgentType::Claude),
+            "kimi" => Ok(AgentType::Kimi),
+            "aider" => Ok(AgentType::Aider),
+            "opencode" => Ok(AgentType::OpenCode),
+            "custom" => Ok(AgentType::Custom),
+            _ => Err(format!("Invalid agent type: {}", s)),
+        }
+    }
 }
 
 /// Agent 管理器

@@ -1,7 +1,7 @@
 //! # Embedding 服务初始化向导
 //!
 //! 提供渐进式的 embedding 服务配置：
-//! 1. 下载本地模型 (MiniLM-L6-v2)
+//! 1. 下载本地模型 (Nomic Embed Text v1.5)
 //! 2. 配置 OpenAI API Key
 //! 3. 使用 Claude CLI 代理
 //! 4. 回退到 SQL LIKE 搜索 (无向量功能)
@@ -38,10 +38,10 @@ pub struct ModelDownloadConfig {
 impl Default for ModelDownloadConfig {
     fn default() -> Self {
         Self {
-            name: "MiniLM-L6-v2",
-            url: "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
-            size_mb: 85.0,
-            local_path: Paths::models_dir().join("minilm-l6-v2").join("model.onnx"),
+            name: "nomic-embed-text-v1.5",
+            url: "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/onnx/model.onnx",
+            size_mb: 130.0,
+            local_path: Paths::models_dir().join("nomic-embed-text-v1.5").join("model.onnx"),
         }
     }
 }
@@ -49,7 +49,7 @@ impl Default for ModelDownloadConfig {
 impl ModelDownloadConfig {
     /// 获取 tokenizer URL
     pub fn tokenizer_url(&self) -> &'static str {
-        "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
+        "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/tokenizer.json"
     }
     
     /// 获取 tokenizer 本地路径
@@ -93,9 +93,9 @@ pub fn interactive_init() -> Result<EmbeddingInitConfig> {
     // 交互式选择
     loop {
         println!("\n请选择 embedding 服务配置方式：\n");
-        println!("  [1] 下载本地模型 (MiniLM-L6-v2, ~85MB) ⭐ 推荐");
+        println!("  [1] 下载本地模型 (Nomic Embed v1.5, ~130MB) ⭐ 推荐");
         println!("      - 优点：离线使用，无需 API Key，隐私性好，语义搜索质量高");
-        println!("      - 缺点：需要下载模型文件 (~85MB)\n");
+        println!("      - 缺点：需要下载模型文件 (~130MB)\n");
         
         println!("  [2] 使用 Claude CLI 代理");
         println!("      - 优点：利用已安装的 Claude CLI，无需下载");
@@ -356,7 +356,7 @@ impl EmbeddingInitConfig {
         Self {
             option: EmbeddingInitOption::DownloadLocalModel,
             openai_api_key: None,
-            model_path: Some(Paths::models_dir().join("minilm-l6-v2").join("model.onnx")),
+            model_path: Some(Paths::models_dir().join("nomic-embed-text-v1.5").join("model.onnx")),
         }
     }
     
@@ -437,16 +437,16 @@ pub fn needs_init() -> bool {
 /// 非交互式自动配置（用于 CI/自动化场景）
 /// 
 /// 优先级（从高到低）：
-/// 1. 本地模型（MiniLM-L6-v2）- 优先使用本地模型
+/// 1. 本地模型（Nomic Embed v1.5）- 优先使用本地模型
 /// 2. Claude CLI（Agent 工具）
 /// 3. OpenAI API（需要 API Key）
 /// 4. SQL LIKE 回退
 pub fn auto_init() -> Result<EmbeddingInitConfig> {
     let config = ModelDownloadConfig::default();
     
-    // 1. 优先检查本地模型（MiniLM-L6-v2）
+    // 1. 优先检查本地模型（Nomic Embed v1.5）
     if config.exists() {
-        info!("Using local embedding model (MiniLM-L6-v2)");
+        info!("Using local embedding model (Nomic Embed v1.5)");
         return Ok(EmbeddingInitConfig::local());
     }
     

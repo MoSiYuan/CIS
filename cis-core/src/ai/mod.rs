@@ -39,6 +39,7 @@ use thiserror::Error;
 
 mod claude;
 mod kimi;
+mod opencode;
 
 pub mod embedding;
 pub mod embedding_init;
@@ -47,7 +48,7 @@ pub use claude::{ClaudeCliProvider, ClaudeConfig};
 pub use embedding::{
     create_embedding_service, create_embedding_service_with_fallback,
     cosine_similarity, filter_by_similarity,
-    EmbeddingConfig, EmbeddingProvider, EmbeddingService as EmbeddingServiceTrait, 
+    EmbeddingConfig, EmbeddingProvider, EmbeddingService as EmbeddingServiceTrait,
     LocalEmbeddingService, OpenAIEmbeddingService,
     ClaudeCliEmbeddingService, SqlFallbackEmbeddingService,
     DEFAULT_EMBEDDING_DIM, MIN_SIMILARITY_THRESHOLD,
@@ -57,6 +58,7 @@ pub use embedding_init::{
     EmbeddingInitConfig, EmbeddingInitOption, ModelDownloadConfig,
 };
 pub use kimi::{KimiCodeProvider, KimiConfig};
+pub use opencode::{OpenCodeProvider, OpenCodeConfig};
 
 /// AI Provider 错误
 #[derive(Error, Debug)]
@@ -232,6 +234,9 @@ impl AiProviderFactory {
             ProviderType::Kimi => {
                 Box::new(KimiCodeProvider::new(config.kimi.unwrap_or_default()))
             }
+            ProviderType::OpenCode => {
+                Box::new(OpenCodeProvider::new(config.opencode.unwrap_or_default()))
+            }
         }
     }
 }
@@ -242,6 +247,7 @@ impl AiProviderFactory {
 pub enum ProviderType {
     Claude,
     Kimi,
+    OpenCode,
 }
 
 impl Default for ProviderType {
@@ -255,9 +261,10 @@ impl Default for ProviderType {
 pub struct AiProviderConfig {
     #[serde(default)]
     pub provider_type: ProviderType,
-    
+
     pub claude: Option<ClaudeConfig>,
     pub kimi: Option<KimiConfig>,
+    pub opencode: Option<OpenCodeConfig>,
 }
 
 impl Default for AiProviderConfig {
@@ -266,6 +273,7 @@ impl Default for AiProviderConfig {
             provider_type: ProviderType::Claude,
             claude: Some(ClaudeConfig::default()),
             kimi: None,
+            opencode: None,
         }
     }
 }

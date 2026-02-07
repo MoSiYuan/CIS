@@ -1,0 +1,84 @@
+# CIS Worker 节点配置
+# 部署在计算节点上（CUDA/Metal/CPU）
+
+[node]
+# 节点唯一标识（建议根据主机名设置）
+id = ""
+
+# 节点名称
+name = ""
+
+# 节点角色
+role = "worker"
+
+# Worker 类型: cuda | metal | cpu
+worker_type = "cpu"
+
+# ==================== P2P 网络配置 ====================
+[p2p]
+enabled = true
+
+# 监听地址
+listen_address = "0.0.0.0:7677"
+
+# 外部地址（用于 NAT 场景）
+# external_address = "worker-public-ip:7677"
+
+# mDNS 发现
+mdns_enabled = false
+
+# Bootstrap 节点（填写协调器地址）
+bootstrap_nodes = [
+    # "/ip4/COORDINATOR_IP/udp/7677/quic-v1"
+]
+
+# 同步间隔
+sync_interval_sec = 60
+
+# ==================== Worker 配置 ====================
+[worker]
+# 最大并发任务数
+max_concurrent_tasks = 4
+
+# 任务超时（秒）
+task_timeout_sec = 3600
+
+# 心跳间隔（秒）
+heartbeat_interval_sec = 30
+
+# ==================== CUDA 配置（如适用）====================
+[cuda]
+# 启用 CUDA
+enabled = false
+
+# CUDA 设备 ID
+device_id = 0
+
+# 显存限制（MB）
+memory_limit_mb = 4096
+
+# ==================== Metal 配置（如适用）====================
+[metal]
+# 启用 Metal
+enabled = false
+
+# 设备 ID
+device_id = 0
+
+# ==================== 存储配置 ====================
+[storage]
+data_dir = "/var/lib/cis/data"
+log_dir = "/var/log/cis"
+max_backups = 5
+backup_interval_days = 7
+
+# ==================== 日志配置 ====================
+[log]
+level = "info"
+file_output = true
+file_rotation = "daily"
+
+# ==================== 监控配置 ====================
+[telemetry]
+enabled = true
+log_retention_days = 30

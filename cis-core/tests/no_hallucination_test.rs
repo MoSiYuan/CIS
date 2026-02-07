@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use cis_core::skill::router::SkillVectorRouter;
+use cis_core::skill::SkillManager;
+use cis_core::storage::db::DbManager;
 use cis_core::skill::semantics::{SkillIoSignature, SkillScope, SkillSemanticsExt};
 use cis_core::vector::storage::{SkillSemantics as StorageSkillSemantics, VectorStorage};
 
@@ -80,7 +82,9 @@ async fn test_no_hallucination_across_projects() {
         ).unwrap()
     );
     
-    let router = SkillVectorRouter::new(storage_b.clone(), Arc::new(MockEmbeddingService));
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let router = SkillVectorRouter::new(storage_b.clone(), Arc::new(MockEmbeddingService), skill_manager, db_manager);
     
     // 尝试匹配项目A的技能
     let result = router.route_by_intent("项目A的特殊操作").await;

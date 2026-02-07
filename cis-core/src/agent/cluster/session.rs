@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::agent::AgentType;
+use crate::agent::{AgentType, AgentCommandConfig};
 use crate::agent::cluster::events::{EventBroadcaster, SessionEvent, SessionState};
 use crate::agent::cluster::SessionId;
 use crate::error::{CisError, Result};
@@ -262,33 +262,18 @@ impl AgentSession {
         Ok(())
     }
 
-    /// Build command for agent type
+    /// Build command for agent type (重构版本)
     fn build_agent_command(&self) -> Result<CommandBuilder> {
-        let cmd_name = match self.agent_type {
-            AgentType::Claude => "claude",
-            AgentType::Kimi => "kimi",
-            AgentType::Aider => "aider",
-            AgentType::Custom => {
-                return Err(CisError::configuration(
-                    "Custom agent type not supported for cluster sessions",
-                ));
-            }
-        };
+        // 获取 Agent 配置
+        let config = AgentCommandConfig::from_agent_type(self.agent_type)
+            .ok_or_else(|| CisError::configuration(
+                format!("Agent type {:?} not supported for cluster sessions", self.agent_type)
+            ))?;
 
-        let mut cmd = CommandBuilder::new(cmd_name);
-        
-        // Set working directory
-        cmd.cwd(&self.work_dir);
-        cmd.env("CIS_PROJECT_PATH", self.work_dir.to_string_lossy().as_ref());
-        cmd.env("CIS_SESSION_ID", self.id.to_string());
-        
-        // Common agent flags
-        match self.agent_type {
-            AgentType::Claude | AgentType::Kimi => {
-                cmd.arg("--dangerously-skip-permissions");
-            }
-            _ => {}
-        }
+        // 构建命令
+        let mut cmd = config.build_command(&self.work_dir, &self.id.to_string())?;
+
+        debug!("Built agent command: {:?} with args {:?}", config.command, config.base_args);
 
         Ok(cmd)
     }

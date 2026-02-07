@@ -91,7 +91,7 @@ pub enum DagCommands {
         #[arg(short, long)]
         status: Option<String>,
         /// Filter by scope (global, project, user, type or specific scope_id)
-        #[arg(short, long)]
+        #[arg(short = 'S', long)]
         scope: Option<String>,
         /// Filter by target node
         #[arg(short, long)]

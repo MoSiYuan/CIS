@@ -422,6 +422,10 @@ impl AgentSession {
                 let path = self.info.blocking_read().project_path.clone();
                 ("aider".to_string(), path)
             }
+            AgentType::OpenCode => {
+                let path = self.info.blocking_read().project_path.clone();
+                ("opencode".to_string(), path)
+            }
             AgentType::Custom => {
                 return Err(CisError::configuration(
                     "Custom agent type not supported for remote sessions",

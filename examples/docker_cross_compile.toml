@@ -1,0 +1,140 @@
+# Docker 多节点跨平台编译测试 DAG
+#
+# 使用方式:
+#   docker compose -f docker-compose.multi-node.yml up -d
+#   docker compose -f docker-compose.multi-node.yml exec cis-coordinator \
+#     cis-node dag run /app/dags/docker_cross_compile.toml
+
+[skill]
+name = "docker-cross-compile"
+version = "1.0.0"
+type = "dag"
+description = "Docker 多节点跨平台编译测试"
+author = "CIS"
+
+[dag]
+policy = "all_success"
+
+[dag.env]
+PROJECT_NAME = "ml-accelerator"
+BUILD_DIR = "/tmp/build"
+
+# ============ 阶段 1: 准备 ============
+[[dag.tasks]]
+id = "prepare"
+name = "准备构建环境"
+skill = "shell-exec"
+command = "echo '[$(hostname)] 准备构建环境...' && mkdir -p /tmp/build/{cuda,metal}"
+level = { type = "mechanical", retry = 3 }
+deps = []
+# 无 target_node，任何 worker 可执行
+
+[[dag.tasks]]
+id = "check-env"
+name = "检查环境"
+skill = "shell-exec"
+command = "echo '[$(hostname)] Node ID: $CIS_NODE_ID, Worker Type: $WORKER_TYPE'"
+level = { type = "mechanical", retry = 3 }
+deps = ["prepare"]
+
+# ============ 阶段 2: CUDA 编译 (computer-b) ============
+[[dag.tasks]]
+id = "cuda-init"
+name = "CUDA 环境初始化"
+skill = "shell-exec"
+command = "echo '[$(hostname)] CUDA Worker: 初始化 CUDA 环境...' && sleep 1"
+level = { type = "mechanical", retry = 3 }
+deps = ["check-env"]
+target_node = "computer-b"
+
+[[dag.tasks]]
+id = "cuda-compile"
+name = "CUDA 模块编译"
+skill = "shell-exec"
+command = "echo '[$(hostname)] CUDA Worker: 编译 CUDA kernels...' && sleep 2 && echo 'CUDA 编译完成'"
+level = { type = "mechanical", retry = 2 }
+deps = ["cuda-init"]
+target_node = "computer-b"
+
+[[dag.tasks]]
+id = "cuda-test"
+name = "CUDA 模块测试"
+skill = "shell-exec"
+command = "echo '[$(hostname)] CUDA Worker: 测试 CUDA 模块...' && sleep 1 && echo 'CUDA 测试通过'"
+level = { type = "mechanical", retry = 2 }
+deps = ["cuda-compile"]
+target_node = "computer-b"
+
+# ============ 阶段 3: Metal 编译 (computer-c) ============
+[[dag.tasks]]
+id = "metal-init"
+name = "Metal 环境初始化"
+skill = "shell-exec"
+command = "echo '[$(hostname)] Metal Worker: 初始化 Metal 环境...' && sleep 1"
+level = { type = "mechanical", retry = 3 }
+deps = ["check-env"]
+target_node = "computer-c"
+
+[[dag.tasks]]
+id = "metal-compile"
+name = "Metal 模块编译"
+skill = "shell-exec"
+command = "echo '[$(hostname)] Metal Worker: 编译 Metal shaders...' && sleep 2 && echo 'Metal 编译完成'"
+level = { type = "mechanical", retry = 2 }
+deps = ["metal-init"]
+target_node = "computer-c"
+
+[[dag.tasks]]
+id = "metal-test"
+name = "Metal 模块测试"
+skill = "shell-exec"
+command = "echo '[$(hostname)] Metal Worker: 测试 Metal 模块...' && sleep 1 && echo 'Metal 测试通过'"
+level = { type = "mechanical", retry = 2 }
+deps = ["metal-compile"]
+target_node = "computer-c"
+
+# ============ 阶段 4: 合并发布 ============
+[[dag.tasks]]
+id = "merge"
+name = "合并编译结果"
+skill = "shell-exec"
+command = "echo '[$(hostname)] 合并 CUDA 和 Metal 编译结果...' && echo '✓ CUDA 结果' && echo '✓ Metal 结果'"
+level = { type = "mechanical", retry = 3 }
+deps = ["cuda-test", "metal-test"]
+# 无 target_node，协调器执行
+
+[[dag.tasks]]
+id = "package"
+name = "打包发布"
+skill = "shell-exec"
+command = "echo '[$(hostname)] 打包发布...' && echo 'Package: ml-accelerator-v1.0.tar.gz'"
+level = { type = "mechanical", retry = 2 }
+deps = ["merge"]
+
+# ============ TODO List ============
+
+[[dag.todo]]
+id = "setup"
+description = "环境准备"
+priority = 100
+status = "pending"
+
+[[dag.todo]]
+id = "cuda-phase"
+description = "CUDA 编译阶段 (computer-b)"
+priority = 80
+status = "pending"
+assignee = "computer-b"
+
+[[dag.todo]]
+id = "metal-phase"
+description = "Metal 编译阶段 (computer-c)"
+priority = 80
+status = "pending"
+assignee = "computer-c"
+
+[[dag.todo]]
+id = "finalize"
+description = "最终打包"
+priority = 60
+status = "pending"

@@ -1,0 +1,93 @@
+# CIS 多机部署 Docker Compose
+# 用于在单机上部署，多机部署请使用 configs/ 目录下的配置
+
+version: '3.8'
+
+services:
+  # 协调器节点
+  coordinator:
+    image: cis:production
+    container_name: cis-coordinator
+    hostname: coordinator
+    restart: unless-stopped
+    
+    command: >
+      cis-node daemon
+      --config /etc/cis/config.toml
+    
+    ports:
+      - "7676:7676"  # Federation API
+      - "7677:7677/udp"  # P2P QUIC
+    
+    volumes:
+      - ./configs/coordinator.toml:/etc/cis/config.toml:ro
+      - coordinator-data:/var/lib/cis/data
+      - coordinator-logs:/var/log/cis
+      # - /etc/cis/certs:/etc/cis/certs:ro  # TLS 证书
+    
+    environment:
+      - RUST_LOG=info
+      - CIS_NODE_ID=coordinator
+    
+    healthcheck:
+      test: ["CMD", "cis-node", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - cis-network
+
+  # Worker 节点（可根据需要启动多个）
+  worker:
+    image: cis:production
+    container_name: cis-worker
+    hostname: worker
+    restart: unless-stopped
+    
+    command: >
+      cis-node daemon
+      --config /etc/cis/config.toml
+    
+    ports:
+      - "7678:7677/udp"  # P2P QUIC（映射到不同端口避免冲突）
+    
+    volumes:
+      - ./configs/worker.toml:/etc/cis/config.toml:ro
+      - worker-data:/var/lib/cis/data
+      - worker-logs:/var/log/cis
+    
+    environment:
+      - RUST_LOG=info
+      - CIS_NODE_ID=worker-1
+      - CIS_COORDINATOR=coordinator:7676
+    
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    
+    networks:
+      - cis-network
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+volumes:
+  coordinator-data:
+  coordinator-logs:
+  worker-data:
+  worker-logs:
+
+networks:
+  cis-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

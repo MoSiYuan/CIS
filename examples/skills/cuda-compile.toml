@@ -1,0 +1,39 @@
+# CUDA 编译 Skill
+
+[skill]
+name = "cuda-compile"
+version = "1.0.0"
+type = "executor"
+description = "编译 CUDA 加速模块"
+
+[executor]
+type = "claude-agent"  # 使用 Claude Agent 执行
+
+[executor.steps]
+# 步骤1: 检查 CUDA 环境
+step1 = "检查 nvcc 版本和 CUDA 可用性"
+# 步骤2: 配置编译
+step2 = "根据系统配置 CMake: cmake -B build -DENABLE_CUDA=ON"
+# 步骤3: 编译
+step3 = "执行编译: cmake --build build --target cuda_modules -j$(nproc)"
+# 步骤4: 验证
+step4 = "运行 CUDA 测试: ./build/tests/cuda_test"
+
+[executor.on_error]
+# 编译失败时的处理
+action = "claude_fix"
+prompt = """
+CUDA 编译失败，请分析错误日志并修复:
+
+1. 读取 build/CMakeFiles/CMakeError.log
+2. 识别错误类型 (语法错误/缺失依赖/配置问题)
+3. 修改相应源文件
+4. 重新运行编译
+
+如果修复成功，提交更改到 git。
+"""
+
+[executor.env]
+CUDA_HOME = "/usr/local/cuda"
+PATH = "${CUDA_HOME}/bin:${PATH}"
+LD_LIBRARY_PATH = "${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}"

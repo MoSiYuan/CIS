@@ -3,10 +3,10 @@
 //! 展示如何使用 CIS Skill SDK 开发一个简单的 Skill
 
 use cis_skill_sdk::{
-    Event, HttpMethod, HttpRequest, LogLevel, MemoryOp, MessageContent, Result, Skill, SkillConfig,
+    Event, Result, Skill, SkillConfig,
     SkillContext, SkillMeta, Permission,
 };
-use cis_skill_sdk::im::{ImContextExt, ImMessage, ImMessageBuilder, MessageType};
+use cis_skill_sdk::im::{ImContextExt, ImMessage, ImMessageBuilder, MessageContent};
 
 /// 简单的问候 Skill
 pub struct HelloSkill {

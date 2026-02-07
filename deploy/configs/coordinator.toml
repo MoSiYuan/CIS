@@ -1,0 +1,94 @@
+# CIS Coordinator 节点配置
+# 部署在具有公网 IP 的服务器上
+
+[node]
+# 节点唯一标识（首次启动自动生成，不建议修改）
+id = "coordinator-node"
+
+# 节点名称
+name = "CIS Coordinator"
+
+# 节点角色: coordinator | worker
+role = "coordinator"
+
+# ==================== P2P 网络配置 ====================
+[p2p]
+# 启用 P2P 网络
+enabled = true
+
+# 监听地址（0.0.0.0 表示所有接口）
+listen_address = "0.0.0.0:7677"
+
+# 外部地址（用于 NAT 场景，填写公网 IP）
+# external_address = "your-public-ip:7677"
+
+# mDNS 发现（局域网内自动发现，云服务器建议关闭）
+mdns_enabled = false
+
+# Bootstrap 节点（协调器为空，worker 填写协调器地址）
+bootstrap_nodes = []
+
+# 同步间隔（秒）
+sync_interval_sec = 60
+
+# ==================== 联邦网络配置 ====================
+[federation]
+# 启用联邦网络
+enabled = true
+
+# 监听地址
+listen_address = "0.0.0.0:7676"
+
+# 外部可访问地址（用于 NAT 场景）
+# external_address = "your-domain.com:7676"
+
+# 联邦 ID
+federation_id = "production-cluster"
+
+# 信任节点列表（DID 列表）
+trusted_nodes = []
+
+# ==================== 存储配置 ====================
+[storage]
+# 数据目录
+data_dir = "/var/lib/cis/data"
+
+# 日志目录
+log_dir = "/var/log/cis"
+
+# 自动备份数量
+max_backups = 10
+
+# 备份间隔（天）
+backup_interval_days = 7
+
+# ==================== 日志配置 ====================
+[log]
+# 日志级别: trace | debug | info | warn | error
+level = "info"
+
+# 是否输出到文件
+file_output = true
+
+# 日志文件轮转
+file_rotation = "daily"
+
+# ==================== 安全配置 ====================
+[security]
+# 启用 TLS
+enable_tls = true
+
+# 证书路径（留空则自动生成）
+# cert_file = "/etc/cis/certs/server.crt"
+# key_file = "/etc/cis/certs/server.key"
+
+# DID 白名单（空表示允许所有）
+did_whitelist = []
+
+# ==================== 监控配置 ====================
+[telemetry]
+# 启用请求日志
+enabled = true
+
+# 日志保留天数
+log_retention_days = 30

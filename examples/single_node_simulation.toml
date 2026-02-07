@@ -1,0 +1,115 @@
+# 单机多节点模拟 DAG
+# 
+# 用途: 在没有多机环境时，模拟多节点任务分发
+# 
+# 执行方式:
+#   1. Embedded 模式: cis-node dag run single_node_simulation.toml
+#                    cis-node dag execute --use-agent
+#   
+#   2. 多进程模式: CIS_NODE_ID=node-a cis-node dag execute
+#
+# 预期行为:
+#   - prepare:      所有节点可执行
+#   - compile-cuda: 只有 node-b (CUDA) 执行
+#   - compile-metal:只有 node-c (Metal) 执行
+#   - merge:        所有节点可执行 (依赖前两个完成)
+
+[skill]
+name = "single-node-simulation"
+version = "1.0.0"
+type = "dag"
+description = "单机模拟多节点任务分发"
+author = "CIS"
+
+[dag]
+policy = "all_success"
+
+# 环境变量 (可在运行时使用 -e 覆盖)
+[dag.env]
+PROJECT_PATH = "/tmp/test-project"
+BUILD_TYPE = "release"
+
+# ============ 阶段 1: 准备 ============
+[[dag.tasks]]
+id = "prepare"
+name = "准备编译环境"
+skill = "shell-exec"
+command = "echo '准备编译环境...' && mkdir -p /tmp/test-project/build"
+level = { type = "mechanical", retry = 3 }
+deps = []
+# 无 target_node = 任意节点可执行
+
+[[dag.tasks]]
+id = "check-deps"
+name = "检查依赖"
+skill = "shell-exec"
+command = "echo '检查系统依赖...'"
+level = { type = "mechanical", retry = 3 }
+deps = ["prepare"]
+
+# ============ 阶段 2: 并行编译 ============
+# CUDA 编译 (模拟 node-b)
+[[dag.tasks]]
+id = "compile-cuda"
+name = "CUDA 模块编译"
+skill = "shell-exec"
+command = "echo '[node-b] 编译 CUDA 模块...' && sleep 2 && echo 'CUDA 编译完成'"
+level = { type = "confirmed" }
+deps = ["check-deps"]
+target_node = "node-b"
+
+# Metal 编译 (模拟 node-c)
+[[dag.tasks]]
+id = "compile-metal"
+name = "Metal 模块编译"
+skill = "shell-exec"
+command = "echo '[node-c] 编译 Metal 模块...' && sleep 2 && echo 'Metal 编译完成'"
+level = { type = "confirmed" }
+deps = ["check-deps"]
+target_node = "node-c"
+
+# ============ 阶段 3: 合并发布 ============
+[[dag.tasks]]
+id = "merge"
+name = "合并编译结果"
+skill = "shell-exec"
+command = "echo '合并 CUDA 和 Metal 编译结果...'"
+level = { type = "confirmed" }
+deps = ["compile-cuda", "compile-metal"]
+# 无 target_node = 协调器执行
+
+[[dag.tasks]]
+id = "publish"
+name = "发布构建"
+skill = "shell-exec"
+command = "echo '发布构建到 /tmp/test-project/dist'"
+level = { type = "arbitrated", stakeholders = ["admin", "lead"] }
+deps = ["merge"]
+
+# ============ TODO List 跟踪 ============
+
+[[dag.todo]]
+id = "setup"
+description = "环境准备"
+priority = 100
+status = "pending"
+
+[[dag.todo]]
+id = "cuda-phase"
+description = "CUDA 编译阶段 (node-b)"
+priority = 80
+status = "pending"
+assignee = "node-b"
+
+[[dag.todo]]
+id = "metal-phase"
+description = "Metal 编译阶段 (node-c)"
+priority = 80
+status = "pending"
+assignee = "node-c"
+
+[[dag.todo]]
+id = "finalize"
+description = "最终发布"
+priority = 60
+status = "pending"

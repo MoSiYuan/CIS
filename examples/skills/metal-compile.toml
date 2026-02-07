@@ -1,0 +1,32 @@
+# Metal 编译 Skill
+
+[skill]
+name = "metal-compile"
+version = "1.0.0"
+type = "executor"
+description = "编译 Metal 加速模块"
+
+[executor]
+type = "claude-agent"
+
+[executor.steps]
+step1 = "检查 Xcode 和 Metal 工具链"
+step2 = "配置构建: cmake -B build -DENABLE_METAL=ON"
+step3 = "编译: cmake --build build --target metal_modules -j$(sysctl -n hw.ncpu)"
+step4 = "测试: ./build/tests/metal_test"
+
+[executor.on_error]
+action = "claude_fix"
+prompt = """
+Metal 编译失败，请分析并修复:
+
+1. 检查 Xcode 版本兼容性
+2. 检查 Metal Shaders 语法
+3. 修复 Swift/Objective-C++ 代码
+4. 重新编译
+
+修复成功后提交更改。
+"""
+
+[executor.env]
+DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer"

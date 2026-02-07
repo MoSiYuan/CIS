@@ -1,0 +1,168 @@
+# 跨平台编译流水线 - CUDA + Metal
+# 
+# 使用方式:
+# 1. 主控节点 (电脑A) 部署此 DAG
+# 2. 电脑B 和 电脑C 启动 Worker，监听 Matrix Room
+# 3. 主控执行: cis dag run cross_compile_pipeline.toml
+
+[skill]
+name = "cross-platform-build"
+version = "1.0.0"
+type = "dag"
+description = "跨平台 CUDA/Metal 编译流水线"
+author = "CIS Team"
+
+[dag]
+policy = "all_success"
+
+# 全局配置
+dag.env = { REPO_URL = "https://github.com/example/ml-accelerator.git", BASE_BRANCH = "main" }
+
+# ============ 阶段 1: 代码准备 ============
+
+[[dag.tasks]]
+id = "fetch-code"
+name = "拉取最新代码"
+skill = "git-sync"
+level = { type = "mechanical", retry = 3 }
+deps = []
+
+[[dag.tasks]]
+id = "check-branch"
+name = "检查分支状态"
+skill = "git-branch-check"
+level = { type = "mechanical", retry = 3 }
+deps = ["fetch-code"]
+
+# ============ 阶段 2: CUDA 编译 (电脑B) ============
+
+[[dag.tasks]]
+id = "cuda-setup"
+name = "CUDA 环境检查"
+skill = "cuda-env-check"
+level = { type = "mechanical", retry = 3 }
+deps = ["check-branch"]
+target_node = "computer-b"  # 定向到电脑B
+
+[[dag.tasks]]
+id = "cuda-compile"
+name = "CUDA 模块编译"
+skill = "cuda-compile"
+level = { type = "confirmed" }  # 需要确认，因为编译可能耗时
+deps = ["cuda-setup"]
+target_node = "computer-b"
+# 失败后自动修复重试
+on_failure = "cuda-fix-and-retry"
+
+[[dag.tasks]]
+id = "cuda-fix-and-retry"
+name = "修复 CUDA 编译错误"
+skill = "claude-code-fix"
+level = { type = "arbitrated", retry = 5 }  # 最多重试5次
+deps = ["cuda-compile"]
+target_node = "computer-b"
+condition = "if cuda-compile.status == 'failed'"
+
+[[dag.tasks]]
+id = "cuda-test"
+name = "CUDA 模块测试"
+skill = "cuda-test"
+level = { type = "mechanical", retry = 2 }
+deps = ["cuda-compile"]
+target_node = "computer-b"
+
+# ============ 阶段 3: Metal 编译 (电脑C) ============
+
+[[dag.tasks]]
+id = "metal-setup"
+name = "Metal 环境检查"
+skill = "metal-env-check"
+level = { type = "mechanical", retry = 3 }
+deps = ["check-branch"]
+target_node = "computer-c"  # 定向到电脑C
+
+[[dag.tasks]]
+id = "metal-compile"
+name = "Metal 模块编译"
+skill = "metal-compile"
+level = { type = "confirmed" }
+deps = ["metal-setup"]
+target_node = "computer-c"
+on_failure = "metal-fix-and-retry"
+
+[[dag.tasks]]
+id = "metal-fix-and-retry"
+name = "修复 Metal 编译错误"
+skill = "claude-code-fix"
+level = { type = "arbitrated", retry = 5 }
+deps = ["metal-compile"]
+target_node = "computer-c"
+condition = "if metal-compile.status == 'failed'"
+
+[[dag.tasks]]
+id = "metal-test"
+name = "Metal 模块测试"
+skill = "metal-test"
+level = { type = "mechanical", retry = 2 }
+deps = ["metal-compile"]
+target_node = "computer-c"
+
+# ============ 阶段 4: 合并发布 ============
+
+[[dag.tasks]]
+id = "merge-results"
+name = "合并编译结果"
+skill = "git-merge-branches"
+level = { type = "confirmed" }
+deps = ["cuda-test", "metal-test"]
+
+[[dag.tasks]]
+id = "publish-release"
+name = "发布到 Git"
+skill = "git-publish"
+level = { type = "arbitrated" }  # 需要审核
+deps = ["merge-results"]
+
+# ============ TODO List 动态调整 ============
+
+[[dag.todo]]
+id = "init"
+description = "初始化编译环境"
+priority = 100
+status = "pending"
+
+[[dag.todo]]
+id = "cuda-phase"
+description = "CUDA 编译阶段 (电脑B)"
+priority = 80
+status = "pending"
+assignee = "computer-b"
+
+[[dag.todo]]
+id = "metal-phase"
+description = "Metal 编译阶段 (电脑C)"
+priority = 80
+status = "pending"
+assignee = "computer-c"
+
+[[dag.todo]]
+id = "validation"
+description = "验证编译结果"
+priority = 60
+status = "pending"
+
+[[dag.todo]]
+id = "release"
+description = "发布到 Git 仓库"
+priority = 40
+status = "pending"
+
+# ============ 动态调整规则 ============
+
+[dag.adaptive]
+# 如果 CUDA 编译失败超过 2 次，提高优先级
+rules = [
+    "if cuda-compile.fail_count > 2 then set cuda-fix-and-retry.priority = 100",
+    "if metal-compile.fail_count > 2 then set metal-fix-and-retry.priority = 100",
+    "if cuda-compile.status == 'completed' and metal-compile.status == 'completed' then notify "
+]

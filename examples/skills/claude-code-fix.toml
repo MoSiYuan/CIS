@@ -1,0 +1,68 @@
+# Claude 自动代码修复 Skill
+
+[skill]
+name = "claude-code-fix"
+version = "1.0.0"
+type = "claude-agent"
+description = "使用 Claude Agent 分析并修复编译错误"
+
+[agent]
+# Agent 配置
+model = "claude-3-5-sonnet-20241022"
+max_tokens = 4000
+
+[agent.context]
+# 提供给 Agent 的上下文
+files = [
+    "CMakeLists.txt",
+    "build/CMakeFiles/CMakeError.log",
+    "build/CMakeFiles/CMakeOutput.log"
+]
+
+[agent.prompt]
+system = """
+你是一个专业的编译错误修复专家。你的任务是:
+
+1. 分析编译错误日志
+2. 定位问题根源
+3. 修改源代码修复问题
+4. 验证修复是否成功
+
+修复原则:
+- 最小化修改，只修复必要的代码
+- 保持代码风格一致
+- 添加必要的注释说明修复原因
+- 不要破坏现有功能
+"""
+
+user_template = """
+编译任务失败了，请分析并修复:
+
+项目: {{PROJECT_NAME}}
+任务: {{TASK_NAME}}
+错误日志:
+```
+{{ERROR_LOG}}
+```
+
+当前分支: {{GIT_BRANCH}}
+工作目录: {{WORK_DIR}}
+
+请:
+1. 读取错误日志，找出关键错误
+2. 检查相关源文件
+3. 实施修复
+4. 运行编译验证
+5. 如果成功，提交更改: git commit -m "fix: {{TASK_NAME}} - {{FIX_SUMMARY}}"
+"""
+
+[agent.tools]
+# Agent 可用的工具
+allow_edit = true
+allow_shell = true
+allow_git = true
+
+[agent.retry]
+# 重试配置
+max_attempts = 5
+backoff = "exponential"  # 指数退避

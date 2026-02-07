@@ -1,0 +1,39 @@
+# Git 自动化同步 Skill
+
+[skill]
+name = "git-sync"
+version = "1.0.0"
+type = "shell"
+description = "自动拉取最新代码并检查分支"
+
+[[commands]]
+name = "fetch"
+description = "获取远程更新"
+command = "git fetch origin"
+
+[[commands]]
+name = "check-update"
+description = "检查是否有更新"
+command = """
+LOCAL=$(git rev-parse HEAD)
+REMOTE=$(git rev-parse origin/main)
+if [ $LOCAL != $REMOTE ]; then
+    echo "有更新需要拉取"
+    git pull origin main
+else
+    echo "已是最新"
+fi
+"""
+
+[[commands]]
+name = "create-branch"
+description = "创建编译分支"
+command = """
+BRANCH_NAME="build/$(date +%Y%m%d-%H%M%S)"
+git checkout -b $BRANCH_NAME
+export CURRENT_BRANCH=$BRANCH_NAME
+"""
+
+[hooks]
+# 拉取后自动检查
+post_fetch = "git status"

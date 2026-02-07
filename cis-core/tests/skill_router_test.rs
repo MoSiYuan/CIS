@@ -6,6 +6,8 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use cis_core::skill::router::{SkillVectorRouter, ResolvedParameters, RouteResult};
+use cis_core::skill::SkillManager;
+use cis_core::storage::db::DbManager;
 use cis_core::skill::semantics::{SkillSemanticsExt, SkillIoSignature, SkillScope};
 use cis_core::intent::{ParsedIntent, ActionType};
 use cis_core::vector::VectorStorage;
@@ -96,7 +98,9 @@ async fn test_route_by_intent() {
     let embedding = Arc::new(MockEmbeddingService);
     let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
     
-    let mut router = SkillVectorRouter::new(storage.clone(), embedding.clone());
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let mut router = SkillVectorRouter::new(storage.clone(), embedding.clone(), skill_manager, db_manager);
     
     // 注册测试技能
     router.register_global_skill(create_test_skill(
@@ -138,7 +142,9 @@ async fn test_discover_skill_chain() {
     let embedding = Arc::new(MockEmbeddingService);
     let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
     
-    let mut router = SkillVectorRouter::new(storage, embedding);
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let mut router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
     
     // 注册测试技能
     router.register_global_skill(create_test_skill(
@@ -180,7 +186,9 @@ async fn test_execute_chain() {
     let embedding = Arc::new(MockEmbeddingService);
     let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
     
-    let router = SkillVectorRouter::new(storage, embedding);
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
     
     use cis_core::skill::chain::SkillChain;
     
@@ -210,7 +218,9 @@ async fn test_auto_discover_compatibility() {
     let embedding = Arc::new(MockEmbeddingService);
     let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
     
-    let mut router = SkillVectorRouter::new(storage, embedding);
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let mut router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
     
     // 注册测试技能
     router.register_global_skill(create_test_skill(
@@ -273,7 +283,9 @@ async fn test_register_global_skill() {
     let embedding = Arc::new(MockEmbeddingService);
     let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone()).unwrap());
     
-    let mut router = SkillVectorRouter::new(storage, embedding);
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let mut router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
     
     let skill = create_test_skill(
         "test-skill",
