@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::error::{CisError, Result};
 use crate::storage::unified_paths::UnifiedPaths;

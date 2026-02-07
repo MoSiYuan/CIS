@@ -298,9 +298,6 @@ pub struct TaskInfo {
     pub status: String,
 }
 
-/// CLI 接口供 Agent 调用
-///
-/// 这些命令通过 `cis agent` 子命令暴露
 pub mod cli {
     //! Agent 可调用的 CIS CLI 命令
 

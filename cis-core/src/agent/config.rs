@@ -8,7 +8,7 @@ use std::path::Path;
 use portable_pty::CommandBuilder;
 
 use crate::agent::AgentType;
-use crate::error::{CisError, Result};
+use crate::error::Result;
 
 /// Agent 命令配置
 #[derive(Debug, Clone, Serialize, Deserialize)]

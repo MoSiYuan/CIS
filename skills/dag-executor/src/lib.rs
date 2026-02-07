@@ -31,7 +31,6 @@ pub mod worker;
 
 use error::DagExecutorError;
 use worker::WorkerManager;
-use process_lock::{ProcessLock, OrphanDetector};
 
 /// Task 重试配置
 #[derive(Debug, Clone)]

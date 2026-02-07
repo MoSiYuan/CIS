@@ -1,6 +1,6 @@
 //! Project context extraction service
 
-use crate::types::{CapabilityError, GitStatus, ProjectContext, Result};
+use crate::types::{GitStatus, ProjectContext, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

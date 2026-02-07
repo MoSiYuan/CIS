@@ -498,10 +498,10 @@ bootstrap_nodes = []
 
     async fn configure_vector_engine(&self) -> Result<()> {
         use crate::ai::embedding_download::{
-            auto_download_model, is_model_downloaded, get_download_status,
+            is_model_downloaded, get_download_status,
         };
         use crate::ai::embedding_init::{
-            handle_openai_config, handle_claude_cli, EmbeddingInitConfig, EmbeddingInitOption,
+            handle_openai_config, handle_claude_cli,
         };
         
         println!("  检查向量引擎状态...");
@@ -512,7 +512,7 @@ bootstrap_nodes = []
             return Ok(());
         }
         
-        let status = get_download_status();
+        let _status = get_download_status();
         
         println!("\n  📚 CIS 向量引擎用于：");
         println!("     • 语义记忆检索（自然语言搜索）");

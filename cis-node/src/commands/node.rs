@@ -2,13 +2,12 @@
 //!
 //! Docker-style node management commands for CIS federation.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Subcommand, ValueEnum};
 use cis_core::service::{
-    node_service::{BindOptions, NodeService, TrustLevel as CoreTrustLevel, NodeStatus},
+    node_service::{BindOptions, NodeService, TrustLevel as CoreTrustLevel},
     ListOptions,
 };
-use std::collections::HashMap;
 
 /// Output format for CLI commands
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]

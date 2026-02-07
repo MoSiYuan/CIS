@@ -40,10 +40,7 @@ pub struct WorkerInfo {
 impl WorkerInfo {
     /// 检查进程是否仍在运行
     pub fn is_alive(&mut self) -> bool {
-        match self.process.try_wait() {
-            Ok(None) => true,
-            _ => false,
-        }
+        matches!(self.process.try_wait(), Ok(None))
     }
     
     /// 终止 Worker 进程

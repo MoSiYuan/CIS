@@ -3,11 +3,10 @@
 //! 实现 AgentProvider trait，支持 OpenCode CLI
 
 use async_trait::async_trait;
-use std::io::BufRead;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::agent::{AgentCapabilities, AgentConfig, AgentRequest, AgentResponse, AgentProvider};
 use crate::error::Result;

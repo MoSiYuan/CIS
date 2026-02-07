@@ -627,8 +627,6 @@ impl WorkerService {
             return Ok(Vec::new());
         }
         
-        let mut lines: Vec<String> = Vec::new();
-        
         if follow {
             // Follow 模式：持续读取新日志
             let file = tokio::fs::File::open(&log_file).await
@@ -644,7 +642,7 @@ impl WorkerService {
             }
             
             let start = if all_lines.len() > tail { all_lines.len() - tail } else { 0 };
-            lines = all_lines[start..].to_vec();
+            let mut lines: Vec<String> = all_lines[start..].to_vec();
             
             // 检查 Worker 进程是否仍在运行
             let pid = info.summary.pid;
@@ -688,16 +686,17 @@ impl WorkerService {
                     }
                 }
             }
+            
+            Ok(lines)
         } else {
             // 非 follow 模式：直接读取文件
             let contents = tokio::fs::read_to_string(log_file).await?;
             let all_lines: Vec<String> = contents.lines().map(String::from).collect();
             
             let start = if all_lines.len() > tail { all_lines.len() - tail } else { 0 };
-            lines = all_lines[start..].to_vec();
+            let lines: Vec<String> = all_lines[start..].to_vec();
+            Ok(lines)
         }
-        
-        Ok(lines)
     }
 
     /// 通过 ID 或前缀查找 Worker

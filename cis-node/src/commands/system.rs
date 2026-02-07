@@ -9,7 +9,7 @@
 
 use anyhow::Result;
 use clap::Subcommand;
-use tracing::{info, warn};
+use tracing::info;
 
 use cis_core::storage::unified_paths::{Cleanup, UnifiedPaths};
 

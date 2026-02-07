@@ -219,7 +219,7 @@ impl AgentSession {
             .map_err(|e| CisError::execution(format!("Failed to open PTY: {}", e)))?;
 
         // Build agent command
-        let mut cmd = self.build_agent_command()?;
+        let cmd = self.build_agent_command()?;
 
         // Spawn agent process
         let child = pair
@@ -271,7 +271,7 @@ impl AgentSession {
             ))?;
 
         // 构建命令
-        let mut cmd = config.build_command(&self.work_dir, &self.id.to_string())?;
+        let cmd = config.build_command(&self.work_dir, &self.id.to_string())?;
 
         debug!("Built agent command: {:?} with args {:?}", config.command, config.base_args);
 

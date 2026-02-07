@@ -4,7 +4,7 @@ use crate::mcp_protocol::*;
 use cis_capability::{CapabilityLayer, CallerType};
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 pub struct CisMcpServer {
     capability: Arc<CapabilityLayer>,
@@ -405,12 +405,12 @@ impl CisMcpServer {
             .and_then(|f| f.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing dag_file"))?;
 
-        let run_id = args.get("run_id").and_then(|r| r.as_str());
+        let _run_id = args.get("run_id").and_then(|r| r.as_str());
         let scope = args.get("scope").and_then(|s| s.as_str()).unwrap_or("global");
-        let target_node = args.get("target_node").and_then(|t| t.as_str());
+        let _target_node = args.get("target_node").and_then(|t| t.as_str());
 
         // Create DAG run using cis-core
-        let scheduler = cis_core::scheduler::DagScheduler::with_persistence(
+        let _scheduler = cis_core::scheduler::DagScheduler::with_persistence(
             &dirs::data_dir()
                 .unwrap_or_default()
                 .join("cis")
@@ -544,7 +544,7 @@ impl CisMcpServer {
 
     async fn dag_list(&self, args: serde_json::Value) -> anyhow::Result<String> {
         let status_filter = args.get("status").and_then(|s| s.as_str());
-        let scope_filter = args.get("scope").and_then(|s| s.as_str());
+        let _scope_filter = args.get("scope").and_then(|s| s.as_str());
         let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
 
         let scheduler = cis_core::scheduler::DagScheduler::with_persistence(
@@ -679,7 +679,7 @@ impl CisMcpServer {
     }
 
     async fn dag_worker_list(&self, args: serde_json::Value) -> anyhow::Result<String> {
-        let scope_filter = args.get("scope").and_then(|s| s.as_str());
+        let _scope_filter = args.get("scope").and_then(|s| s.as_str());
 
         // Query workers from database
         let result = "Active DAG Workers:\n\n  (Worker listing requires WorkerService - implement as needed)";

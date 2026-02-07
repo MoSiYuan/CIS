@@ -168,12 +168,7 @@ impl ConversationDb {
             })
         })?;
 
-        let mut conversations = Vec::new();
-        for row in rows {
-            if let Ok(conv) = row {
-                conversations.push(conv);
-            }
-        }
+        let conversations: Vec<_> = rows.into_iter().flatten().collect();
         Ok(conversations)
     }
 

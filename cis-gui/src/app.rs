@@ -760,7 +760,7 @@ impl CisApp {
     }
     
     /// Handle node tabs events
-    fn handle_node_tabs_events(&mut self, ctx: &egui::Context) {
+    fn handle_node_tabs_events(&mut self, _ctx: &egui::Context) {
         // Handle events from node tabs context menu
         // This is called every frame to process any pending events
     }

@@ -7,7 +7,6 @@ use cis_core::scheduler::{TaskDag, LocalExecutor};
 use cis_core::scheduler::persistence::DagPersistence;
 use cis_core::types::{Task, TaskId, TaskPriority, TaskStatus};
 use std::path::PathBuf;
-use std::collections::HashMap;
 
 /// Task store for managing tasks - 使用 DAG SQLite 数据库
 pub struct TaskStore {

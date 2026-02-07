@@ -14,6 +14,7 @@ pub mod network;
 pub mod node;
 pub mod peer;
 pub mod p2p;
+pub mod schema;
 pub mod skill;
 pub mod system;
 pub mod task;

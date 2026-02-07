@@ -688,7 +688,7 @@ pub async fn set_active_run(run_id: &str) -> Result<()> {
 
 /// List all DAG workers
 pub async fn list_workers() -> Result<()> {
-    use cis_core::scheduler::{DagPersistence};
+    
     use cis_core::storage::Paths;
     
     let data_dir = Paths::data_dir();
@@ -1267,7 +1267,7 @@ async fn execute_run(run_id: Option<&str>) -> Result<()> {
 
 /// List active Agent sessions
 async fn list_sessions(dag_filter: Option<&str>, all: bool) -> Result<()> {
-    use cis_core::agent::cluster::{SessionManager, SessionState};
+    use cis_core::agent::cluster::SessionManager;
     
     let manager = SessionManager::global();
     
@@ -1385,7 +1385,7 @@ async fn attach_session(
     }
     
     // Create attach handle
-    let mut handle = manager.attach_session(&session_id, "cli-user").await?;
+    let handle = manager.attach_session(&session_id, "cli-user").await?;
     
     println!("=== Attached to {} ===", session_id.short());
     println!("Commands:");

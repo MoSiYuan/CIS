@@ -14,6 +14,7 @@ use eframe::egui;
 use tracing::info;
 
 mod app;
+mod app_element;
 mod decision_panel;
 mod glm_panel;
 mod node_tabs;
@@ -21,8 +22,9 @@ mod node_manager;
 mod terminal_panel;
 mod remote_session;
 mod theme;
+mod layout;
 
-use app::CisApp;
+use app_element::CisAppElement;
 
 fn main() -> eframe::Result {
     // Initialize logging
@@ -40,6 +42,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "CIS - Cluster of Independent Systems",
         options,
-        Box::new(|cc| Ok(Box::new(CisApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(CisAppElement::new(cc)))),
     )
 }

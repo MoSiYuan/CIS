@@ -320,7 +320,7 @@ impl SessionManager {
 
         // Mark as attached
         drop(session);
-        let mut session = session_arc.write().await;
+        let session = session_arc.write().await;
         session.attach(user).await?;
 
         info!("User {} attached to session {}", user, session_id.short());

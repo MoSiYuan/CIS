@@ -12,7 +12,6 @@
 
 use clap::Subcommand;
 use cis_core::network::{NetworkAcl, NetworkMode};
-use cis_core::p2p::P2PNetwork;
 // use colored::Colorize;
 
 /// Network management commands

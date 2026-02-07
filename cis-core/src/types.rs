@@ -81,22 +81,17 @@ impl TaskStatus {
 }
 
 /// Task priority levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord, Default)]
 pub enum TaskPriority {
     /// Urgent priority
     Urgent = 4,
     /// High priority
     High = 3,
     /// Medium priority
+    #[default]
     Medium = 2,
     /// Low priority
     Low = 1,
-}
-
-impl Default for TaskPriority {
-    fn default() -> Self {
-        Self::Medium
-    }
 }
 
 /// Core task structure

@@ -98,6 +98,27 @@
 
 ### 安装
 
+#### 方式一：自动安装脚本（推荐）
+
+**macOS / Linux**:
+```bash
+curl -fsSL https://raw.githubusercontent.com/MoSiYuan/CIS/main/scripts/install/install.sh | bash
+```
+
+**Windows (PowerShell)**:
+```powershell
+irm https://raw.githubusercontent.com/MoSiYuan/CIS/main/scripts/install/install.ps1 | iex
+```
+
+#### 方式二：Homebrew（macOS/Linux）
+
+```bash
+brew tap mosiyuan/cis
+brew install cis
+```
+
+#### 方式三：手动下载
+
 **macOS**:
 ```bash
 curl -fsSL https://github.com/MoSiYuan/CIS/releases/latest/download/cis-macos.tar.gz | tar xz
@@ -112,7 +133,8 @@ sudo mv cis /usr/local/bin/
 cis init
 ```
 
-**从源码构建**:
+#### 方式四：从源码构建
+
 ```bash
 git clone https://github.com/MoSiYuan/CIS.git
 cd CIS
@@ -272,13 +294,23 @@ CIS Node Architecture
 
 ## 📚 文档
 
-- [快速开始指南](docs/USAGE.md)
-- [架构设计文档](docs/ARCHITECTURE.md)
-- [网络安全设计](plan/NETWORK_ACCESS_DESIGN.md)（新增）
-- [GUI+安全设计](plan/GUI_SECURITY_DESIGN.md)（新增）
-- [Matrix Federation 实现](docs/MATRIX_FEDERATION_IMPROVEMENT_PLAN.md)
-- [生产就绪检查](docs/PRODUCTION_READINESS.md)
-- [开发文档](docs/STORAGE_DESIGN.md)
+### 用户文档
+- [📖 文档中心](docs/README.md) - 从这里开始
+- [🚀 快速开始](docs/getting-started/quickstart.md) - 5 分钟上手指南
+- [⚙️ 安装指南](docs/getting-started/installation.md) - 详细安装说明
+- [🔧 配置指南](docs/getting-started/configuration.md) - 完整配置参考
+- [❓ 故障排除](docs/TROUBLESHOOTING.md) - 常见问题解决方案
+
+### 开发文档
+- [🏗️ 架构设计](docs/ARCHITECTURE.md)
+- [🛠️ Skill 开发](docs/SKILL_DEVELOPMENT.md)
+- [🔐 网络安全设计](plan/NETWORK_ACCESS_DESIGN.md)
+- [🎨 GUI+安全设计](plan/GUI_SECURITY_DESIGN.md)
+- [🌐 Matrix Federation](docs/MATRIX_FEDERATION_IMPROVEMENT_PLAN.md)
+
+### 贡献指南
+- [🤝 参与贡献](CONTRIBUTING.md)
+- [📋 生产就绪检查](docs/PRODUCTION_READINESS.md)
 
 ---
 

@@ -207,15 +207,15 @@ impl MultiDbConnection {
         let mut stmt = self
             .primary
             .prepare(sql)
-            .map_err(|e| CisError::Database(e))?;
+            .map_err(CisError::Database)?;
 
         let rows = stmt
             .query_map([], |row| Ok(CrossDbRow::from_rusqlite(row)))
-            .map_err(|e| CisError::Database(e))?;
+            .map_err(CisError::Database)?;
 
         let mut result = Vec::new();
         for row in rows {
-            result.push(row.map_err(|e| CisError::Database(e))?);
+            result.push(row.map_err(CisError::Database)?);
         }
 
         Ok(result)
@@ -232,15 +232,15 @@ impl MultiDbConnection {
         let mut stmt = self
             .primary
             .prepare(sql)
-            .map_err(|e| CisError::Database(e))?;
+            .map_err(CisError::Database)?;
 
         let rows = stmt
             .query_map(params, |row| Ok(CrossDbRow::from_rusqlite(row)))
-            .map_err(|e| CisError::Database(e))?;
+            .map_err(CisError::Database)?;
 
         let mut result = Vec::new();
         for row in rows {
-            result.push(row.map_err(|e| CisError::Database(e))?);
+            result.push(row.map_err(CisError::Database)?);
         }
 
         Ok(result)
@@ -256,7 +256,7 @@ impl MultiDbConnection {
     pub fn execute_cross_db(&self, sql: &str) -> Result<usize> {
         self.primary
             .execute(sql, [])
-            .map_err(|e| CisError::Database(e))
+            .map_err(CisError::Database)
     }
 
     /// 执行参数化跨库 SQL 语句
@@ -267,7 +267,7 @@ impl MultiDbConnection {
     ) -> Result<usize> {
         self.primary
             .execute(sql, params)
-            .map_err(|e| CisError::Database(e))
+            .map_err(CisError::Database)
     }
 
     /// 列出已挂载的数据库
@@ -342,7 +342,7 @@ impl MultiDbConnection {
     pub fn transaction(&mut self) -> Result<rusqlite::Transaction<'_>> {
         self.primary
             .transaction()
-            .map_err(|e| CisError::Database(e))
+            .map_err(CisError::Database)
     }
 
     /// 验证别名是否合法
@@ -458,22 +458,16 @@ impl SqlValue {
             }
         }
 
-        if let Ok(v) = row.get::<_, Option<f64>>(index) {
-            if let Some(v) = v {
-                return Self::Real(v);
-            }
+        if let Ok(Some(v)) = row.get::<_, Option<f64>>(index) {
+            return Self::Real(v);
         }
 
-        if let Ok(v) = row.get::<_, Option<String>>(index) {
-            if let Some(v) = v {
-                return Self::Text(v);
-            }
+        if let Ok(Some(v)) = row.get::<_, Option<String>>(index) {
+            return Self::Text(v);
         }
 
-        if let Ok(v) = row.get::<_, Option<Vec<u8>>>(index) {
-            if let Some(v) = v {
-                return Self::Blob(v);
-            }
+        if let Ok(Some(v)) = row.get::<_, Option<Vec<u8>>>(index) {
+            return Self::Blob(v);
         }
 
         Self::Null

@@ -1,6 +1,6 @@
 //! Skill execution engine
 
-use crate::types::{ExecutionRequest, ExecutionResult, SkillMatch, SkillMetadata, CallerType, SkillParameter};
+use crate::types::{ExecutionRequest, ExecutionResult, SkillMatch, SkillMetadata};
 use crate::types::{CapabilityError, Result};
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -56,7 +56,7 @@ impl SkillEngine {
     }
 
     /// Find matching skills for a description
-    pub async fn discover(&self, description: &str, context: &crate::types::ProjectContext) -> Result<Vec<SkillMatch>> {
+    pub async fn discover(&self, description: &str, _context: &crate::types::ProjectContext) -> Result<Vec<SkillMatch>> {
         let mut matches = Vec::new();
         
         // Simple keyword matching (can be enhanced with vector search)
@@ -134,7 +134,7 @@ impl SkillEngine {
     }
 
     /// Execute builtin skill
-    async fn execute_builtin(&self, skill: &SkillDef, request: &ExecutionRequest, work_dir: &std::path::Path) -> Result<ExecutionResult> {
+    async fn execute_builtin(&self, skill: &SkillDef, request: &ExecutionRequest, _work_dir: &std::path::Path) -> Result<ExecutionResult> {
         match skill.name.as_str() {
             "context-extract" => {
                 // Return context as JSON

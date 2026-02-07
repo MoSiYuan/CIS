@@ -104,5 +104,8 @@ pub mod glm;
 // Service layer - Unified data access for CLI, GUI, API
 pub mod service;
 
+// CLI module - AI-Native CLI framework
+pub mod cli;
+
 pub use error::{CisError, Result};
 pub use identity::DIDManager;

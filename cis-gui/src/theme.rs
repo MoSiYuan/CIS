@@ -59,6 +59,26 @@ pub const ACCENT_GREEN: Color32 = Color32::from_rgb(46, 204, 113);            //
 pub const ACCENT_RED: Color32 = Color32::from_rgb(231, 76, 60);               // #E74C3C
 pub const ACCENT_YELLOW: Color32 = Color32::from_rgb(241, 196, 15);           // #F1C40F
 
+// ==================== Element-style Layout Colors ====================
+
+/// CIS brand color (teal/green)
+pub const ACCENT_PRIMARY: Color32 = Color32::from_rgb(13, 189, 139);          // #0DBD8B
+pub const ACCENT_SECONDARY: Color32 = Color32::from_rgb(10, 143, 106);        // #0A8F6A
+
+/// Three-panel layout backgrounds
+pub const SIDEBAR_BG: Color32 = Color32::from_rgb(30, 30, 30);                // #1E1E1E
+pub const SESSION_LIST_BG: Color32 = Color32::from_rgb(38, 38, 38);           // #262626
+pub const CONTENT_BG: Color32 = Color32::from_rgb(45, 45, 45);                // #2D2D2D
+pub const SURFACE_BG: Color32 = Color32::from_rgb(51, 51, 51);                // #333333
+
+/// Composer background
+pub const COMPOSER_BG: Color32 = Color32::from_rgb(38, 38, 38);               // #262626
+
+/// Status colors for sessions
+pub const STATUS_RUNNING: Color32 = Color32::from_rgb(13, 189, 139);          // #0DBD8B
+pub const STATUS_SUCCESS: Color32 = Color32::from_rgb(0, 200, 83);            // #00C853
+pub const STATUS_IDLE: Color32 = Color32::from_rgb(149, 165, 166);            // #95A5A6
+
 /// Border color
 pub const BORDER_COLOR: Color32 = Color32::from_rgb(80, 80, 80);              // #505050
 

@@ -192,7 +192,7 @@ impl BackupInfo {
     /// 格式化创建时间
     pub fn format_created(&self) -> String {
         let datetime = chrono::DateTime::from_timestamp(self.created as i64, 0)
-            .unwrap_or_else(|| chrono::DateTime::UNIX_EPOCH);
+            .unwrap_or(chrono::DateTime::UNIX_EPOCH);
         datetime.format("%Y-%m-%d %H:%M:%S UTC").to_string()
     }
 }

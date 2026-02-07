@@ -128,7 +128,7 @@ impl AgentClusterExecutor {
         }
         
         // Subscribe to session events
-        let mut event_rx = self.session_manager.subscribe_events();
+        let event_rx = self.session_manager.subscribe_events();
         
         // Channel for coordinating between event handler and main loop
         let (completion_tx, mut completion_rx) = tokio::sync::mpsc::unbounded_channel::<SessionEvent>();

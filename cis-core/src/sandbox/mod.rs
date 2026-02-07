@@ -366,11 +366,9 @@ impl SandboxConfig {
         };
 
         // Normalize path (remove . and ..)
-        let normalized = abs_path
+        abs_path
             .canonicalize()
-            .unwrap_or_else(|_| abs_path.to_path_buf());
-
-        normalized
+            .unwrap_or_else(|_| abs_path.to_path_buf())
     }
 
     /// Create safe subpath

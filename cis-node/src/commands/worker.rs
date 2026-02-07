@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use clap::Subcommand;
 use tracing::{info, warn, debug, error};
 use cis_core::service::{
-    worker_service::{WorkerService, WorkerCreateOptions, WorkerScope as ServiceWorkerScope},
+    worker_service::WorkerService,
     ListOptions, ResourceStatus,
 };
 

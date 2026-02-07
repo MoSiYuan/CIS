@@ -16,6 +16,10 @@ use cis_core::storage::paths::Paths;
 #[command(about = "CIS - Cluster of Independent Systems")]
 #[command(version = "0.1.0")]
 struct Cli {
+    /// Output JSON format (AI-Native mode)
+    #[arg(long, global = true, help = "Output in JSON format for AI integration")]
+    json: bool,
+    
     #[command(subcommand)]
     command: Commands,
 }
@@ -166,6 +170,32 @@ enum Commands {
         #[command(subcommand)]
         action: commands::system::SystemCommands,
     },
+    
+    /// CLI Schema self-description for AI integration
+    Schema {
+        /// Output format (json, yaml)
+        #[arg(long, short, default_value = "json")]
+        format: String,
+        /// Show command compositions (pipeline patterns)
+        #[arg(long)]
+        compositions: bool,
+    },
+    
+    /// Generate shell completion scripts
+    Completion {
+        /// Shell type (bash, zsh, fish, powershell)
+        shell: ShellType,
+    },
+}
+
+/// Shell types for completion
+#[derive(ValueEnum, Debug, Clone, Copy)]
+enum ShellType {
+    Bash,
+    Zsh,
+    Fish,
+    PowerShell,
+    Elvish,
 }
 
 /// Agent subcommands
@@ -607,7 +637,7 @@ async fn main() {
         std::process::exit(1);
     }
     
-    match run_command(cli.command).await {
+    match run_command(cli.command, cli.json).await {
         Ok(_) => {
             info!("Command completed successfully");
         }
@@ -755,7 +785,9 @@ fn generate_node_key() -> Vec<u8> {
     key.to_vec()
 }
 
-async fn run_command(command: Commands) -> anyhow::Result<()> {
+async fn run_command(command: Commands, json_output: bool) -> anyhow::Result<()> {
+    // Store json_output flag for use in subcommands
+    let _json_mode = json_output;
     match command {
         Commands::Im { action } => {
             let args = commands::im::ImArgs { action: match action {
@@ -994,7 +1026,34 @@ async fn run_command(command: Commands) -> anyhow::Result<()> {
         Commands::System { action } => {
             commands::system::handle(action).await
         }
+        
+        Commands::Schema { format, compositions } => {
+            commands::schema::handle(format, compositions).await
+        }
+        
+        Commands::Completion { shell } => {
+            generate_completion(shell);
+            Ok(())
+        }
     }
+}
+
+/// Generate shell completion script
+fn generate_completion(shell: ShellType) {
+    use clap::CommandFactory;
+    use clap_complete::{generate, Shell};
+    
+    let mut cmd = Cli::command();
+    let shell_type = match shell {
+        ShellType::Bash => Shell::Bash,
+        ShellType::Zsh => Shell::Zsh,
+        ShellType::Fish => Shell::Fish,
+        ShellType::PowerShell => Shell::PowerShell,
+        ShellType::Elvish => Shell::Elvish,
+    };
+    
+    let bin_name = "cis";
+    generate(shell_type, &mut cmd, bin_name, &mut std::io::stdout());
 }
 
 fn show_status() {

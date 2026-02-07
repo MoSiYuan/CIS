@@ -218,8 +218,8 @@ pub async fn set_arbitrated(task_id: &str, stakeholders: Vec<String>) -> Result<
 /// Helper: Update task in store
 fn update_task_in_store(store: &mut TaskStore, updated_task: Task) -> Result<()> {
     // Remove old task and add updated one
-    store.remove(&updated_task.id);
-    store.add(updated_task);
+    store.remove(&updated_task.id).map_err(|e| anyhow::anyhow!("Failed to remove task: {}", e))?;
+    store.add(updated_task).map_err(|e| anyhow::anyhow!("Failed to add task: {}", e))?;
     store.save()?;
     Ok(())
 }

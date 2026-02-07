@@ -754,11 +754,12 @@ impl Default for TaskDag {
 }
 
 /// DAG scope for worker isolation
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DagScope {
     /// Global scope - shared worker for all DAGs
     /// Default: reuse existing worker unless force_new is set
+    #[default]
     Global,
     
     /// Project scope - isolated worker per project
@@ -927,12 +928,6 @@ impl DagScope {
             },
             _ => DagScope::Global,
         }
-    }
-}
-
-impl Default for DagScope {
-    fn default() -> Self {
-        DagScope::Global
     }
 }
 
@@ -1487,7 +1482,7 @@ impl TodoListProposal {
 
     /// 检查是否过期
     pub fn is_expired(&self) -> bool {
-        self.expires_at.map_or(false, |exp| chrono::Utc::now() > exp)
+        self.expires_at.is_some_and(|exp| chrono::Utc::now() > exp)
     }
 
     /// 是否需要 Worker 审核
@@ -1562,6 +1557,7 @@ pub struct TodoListObserver {
     /// Last known state
     last_snapshot: DagTodoList,
     /// Callback for changes
+    #[allow(clippy::type_complexity)]
     change_handler: Option<Box<dyn Fn(&TodoListDiff) + Send + Sync>>,
 }
 
