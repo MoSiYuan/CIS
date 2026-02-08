@@ -374,6 +374,10 @@ impl WorkerService {
             
             if force {
                 // 强制停止：发送 SIGKILL
+                // SAFETY: 调用 libc::kill 是 unsafe 的，但此处：
+                // - PID 来自内部管理的 Worker 状态，已在前文验证非空
+                // - SIGKILL 是标准信号，不会导致未定义行为
+                // - 正确检查返回值并处理错误
                 unsafe {
                     let result = kill(pid_i32, SIGKILL);
                     if result != 0 {
@@ -384,6 +388,10 @@ impl WorkerService {
                 }
             } else {
                 // 优雅停止：发送 SIGTERM
+                // SAFETY: 调用 libc::kill 是 unsafe 的，但此处：
+                // - PID 来自内部管理的 Worker 状态，已验证有效
+                // - SIGTERM 是标准信号，不会导致未定义行为
+                // - 正确检查返回值并处理错误
                 unsafe {
                     let result = kill(pid_i32, SIGTERM);
                     if result != 0 {
@@ -405,6 +413,8 @@ impl WorkerService {
                 
                 // 如果还在运行，强制杀死
                 if !stopped {
+                    // SAFETY: 调用 libc::kill 是 unsafe 的，但此处 PID 来自内部状态
+                    // 忽略返回值是因为进程可能已经退出，失败是可以接受的
                     unsafe {
                         let _ = kill(pid_i32, SIGKILL);
                     }
@@ -776,6 +786,10 @@ impl WorkerService {
         #[cfg(unix)]
         {
             // 在 Unix 上，发送信号 0 检查进程是否存在
+            // SAFETY: 调用 libc::kill 是 unsafe 的，但此处：
+            // - 信号 0 是特殊的空信号，用于测试进程存在性，不会实际发送信号
+            // - PID 来自内部管理的 Worker 状态
+            // - 这是 POSIX 标准检查进程存在性的方法
             unsafe {
                 libc::kill(pid as i32, 0) == 0
             }

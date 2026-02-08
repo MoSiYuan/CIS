@@ -299,6 +299,11 @@ fn ensure_vec_extension_registered() {
     use std::sync::Once;
     static INIT: Once = Once::new();
     INIT.call_once(|| {
+        // SAFETY: 调用 SQLite C API 和 transmute 是 unsafe 的，但此处：
+        // - 使用 std::sync::Once 确保只执行一次，线程安全
+        // - sqlite3_auto_extension 注册自动扩展是标准做法
+        // - transmute 的函数签名与 SQLite 期望的扩展入口点匹配
+        // - sqlite-vec 是可信的扩展库
         unsafe {
             use rusqlite::ffi::sqlite3_auto_extension;
             // 注册 vec 扩展为自动扩展，这样每个新连接都会自动加载它

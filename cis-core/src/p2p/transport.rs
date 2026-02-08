@@ -2,6 +2,7 @@
 
 use crate::error::{CisError, Result};
 use quinn::{Endpoint, Connection as QuinnConnection, ServerConfig, ClientConfig};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -101,8 +102,9 @@ impl QuicTransport {
             .map_err(|e| CisError::p2p(format!("Failed to serialize certificate: {}", e)))?;
         let key_der = cert.serialize_private_key_der();
         
-        let cert_chain = vec![rustls::Certificate(cert_der)];
-        let key = rustls::PrivateKey(key_der);
+        let cert_chain = vec![CertificateDer::from(cert_der)];
+        let key = PrivateKeyDer::try_from(key_der)
+            .map_err(|e| CisError::p2p(format!("Invalid private key: {:?}", e)))?;
         
         let config = ServerConfig::with_single_cert(cert_chain, key)
             .map_err(|e| CisError::p2p(format!("Failed to create server config: {}", e)))?;
@@ -121,7 +123,7 @@ impl QuicTransport {
         // 添加系统根证书
         if let Ok(cert) = rustls_native_certs::load_native_certs() {
             for c in cert {
-                let _ = roots.add(&rustls::Certificate(c.0));
+                let _ = roots.add(CertificateDer::from(c.0));
             }
         }
         
@@ -129,14 +131,15 @@ impl QuicTransport {
         // ...
         
         let config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(roots)
             .with_no_client_auth();
         
         let mut config = config;
         config.alpn_protocols = vec![b"cis/1.0".to_vec()];
         
-        Ok(ClientConfig::new(Arc::new(config)))
+        let quic_config = quinn::crypto::rustls::QuicClientConfig::try_from(config)
+            .map_err(|e| CisError::p2p(format!("Failed to create QUIC client config: {:?}", e)))?;
+        Ok(ClientConfig::new(Arc::new(quic_config)))
     }
 }
 

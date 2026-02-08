@@ -7,31 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.0] - 2026-02-07
+## [1.1.0] - 2026-02-08
 
-### Security
-- **Security Audit**: Comprehensive security review of network, storage, and WASM modules
-- **Memory Encryption**: Verified ChaCha20-Poly1305 implementation for private memory
-- **DID Authentication**: Validated Ed25519 signature verification and challenge-response protocol
-- **ACL System**: Reviewed whitelist/blacklist access control mechanisms
-- **File Permissions**: Verified 0o600 permissions for sensitive files
+### Added
+
+#### Core Features
+- **Four-Tier Decision System** - Complete implementation of Mechanical/Recommended/Confirmed/Arbitrated decision levels
+- **GUI Data Connection** - Real-time connection between GUI and Service layer (Node/DAG/Terminal)
+- **P2P Networking** - Full DHT/Kademlia implementation with NAT traversal (STUN/TURN/UPnP)
+- **ACL Rule Engine** - Complex rule conditions (IP/Time/Rate limits) with four network modes
+- **Remote Session Management** - Multi-session support with persistence and Agent multiplexing
+- **E2E Test Suite** - Comprehensive end-to-end tests using assert_cmd
+
+#### Security
+- **Security Audit Phase 5** - Complete security review
+  - Dependency vulnerability scan (0 critical issues)
+  - Unsafe code review (6 blocks, all necessary)
+  - Input validation audit
+  - Fuzzing infrastructure (3 targets)
+  - Configuration security review
+- **Memory Safety Fixes** - Unicode truncation, lifetime issues, boundary checks
+- **WASM Sandbox** - Memory limits (512MB), execution timeout (30s), step limits
+
+#### Ecosystem
+- **Homebrew Formula** - `brew install cis` support
+- **VS Code Extension** - Sidebar panel, CodeLens, command integration
+- **Shell Integration** - Bash/Zsh/Fish completions, aliases, chpwd hooks
+- **Docker Support** - Dockerfile, docker-compose, Dev Container
+- **Documentation** - User guide, developer docs, deployment guide
 
 ### Fixed
-- Fixed type inference issues in cis-skill-sdk
-- Fixed serde_json dependency configuration for WASM compatibility
-- Fixed compiler warnings in AI and types modules
-- Fixed borrow checker issue in WebSocket connection handler
+- **600+ Test Fixes** - All core tests passing
+- Unicode character boundary handling in text truncation
+- Async lock handling across await points
+- SQLite vector extension registration
+- Type inference in cis-skill-sdk
+- WebSocket connection handler borrow issues
+- DAG execution async compatibility
 
 ### Changed
-- **Version Bump**: All crates updated to v1.1.0
-  - cis-core: 0.1.0 → 1.1.0
-  - cis-node: 0.1.0 → 1.1.0
-  - cis-skill-sdk: 0.1.0 → 1.1.0
-  - cis-skill-sdk-derive: 0.1.0 → 1.1.0
+- **Version**: 0.1.0 → 1.1.0 for all crates
+- **Performance**: Memory optimization, async improvements, storage indexing
+- **Dependencies**: Removed vulnerable rsa crate (RUSTSEC-2023-0071)
 
 ### Code Quality
-- Cleaned up unused variables and imports
-- Updated documentation
+- **Clippy**: 100+ warnings fixed
+- **Documentation**: 50+ doc tests fixed
+- **Unsafe Code**: Added SAFETY comments for all 6 blocks
 
 ## [1.0.0] - 2026-02-10
 

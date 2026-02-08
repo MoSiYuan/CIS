@@ -30,7 +30,7 @@ reqwest = { version = "0.11", features = ["json", "rustls-tls", "blocking"] }
 rpassword = "7.3"
 # Database (with encryption support planned)
 rusqlite = { version = "0.32", features = ["bundled", "backup", "hooks"] }
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"], optional = true }
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "macros"], optional = true }
 
 # Vector extension for SQLite
 sqlite-vec = { version = "0.1", optional = true }
