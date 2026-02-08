@@ -52,21 +52,11 @@ impl MatrixServer {
             .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
             .allow_headers(Any);
 
-        Router::new()
-            .route("/_matrix/client/versions", axum::routing::get(super::routes::discovery::versions))
-            .route("/_matrix/client/v3/login", axum::routing::post(super::routes::login::login))
-            .route("/_matrix/client/v3/sync", axum::routing::get(super::routes::sync::sync))
-            .route("/_matrix/client/v3/createRoom", axum::routing::post(super::routes::room::create_room))
-            .route("/_matrix/client/v3/join/{room_id}", axum::routing::post(super::routes::room::join_room_post))
-            .route("/_matrix/client/v3/rooms/{room_id}/join", axum::routing::post(super::routes::room::join_room))
-            .route("/_matrix/client/v3/rooms/{room_id}/messages", axum::routing::get(super::routes::room::get_messages))
-            .route("/_matrix/client/v3/rooms/{room_id}/send/{event_type}/{txn_id}", axum::routing::put(super::routes::room::send_message))
-            .route("/_matrix/client/v3/rooms/{room_id}/state", axum::routing::get(super::routes::room::get_room_state))
+        // Use the routes module's router and add well-known endpoint
+        super::routes::router(self.store.clone())
             .route("/.well-known/matrix/client", axum::routing::get(well_known_client))
             .layer(cors)
             .layer(TraceLayer::new_for_http())
-            .layer(Extension(self.store.clone()))
-            .with_state(self.store.clone())
     }
 
     pub fn port(&self) -> u16 { self.port }

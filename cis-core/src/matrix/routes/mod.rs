@@ -7,6 +7,9 @@
 //! Phase 0:
 //! - `GET /_matrix/client/versions` - Discovery
 //! - `POST /_matrix/client/v3/login` - Login
+//! - `GET /_matrix/client/v3/register` - Registration flows
+//! - `POST /_matrix/client/v3/register` - Register user
+//! - `GET /_matrix/client/v3/register/available` - Check username
 //!
 //! Phase 1:
 //! - `GET /_matrix/client/v3/sync` - Synchronization
@@ -19,6 +22,7 @@
 pub mod auth;
 pub mod discovery;
 pub mod login;
+pub mod register;
 pub mod room;
 pub mod sync;
 
@@ -35,6 +39,10 @@ pub fn router(store: Arc<MatrixStore>) -> Router {
     Router::new()
         // Discovery
         .route("/_matrix/client/versions", get(discovery::versions))
+        // Registration
+        .route("/_matrix/client/v3/register", get(register::get_register_flows))
+        .route("/_matrix/client/v3/register", post(register::register))
+        .route("/_matrix/client/v3/register/available", get(register::check_username_available))
         // Login
         .route("/_matrix/client/v3/login", post(login::login))
         // Sync

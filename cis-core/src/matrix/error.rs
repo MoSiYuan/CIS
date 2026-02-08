@@ -55,6 +55,18 @@ pub enum MatrixError {
     /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Bad request
+    #[error("Bad request: {0}")]
+    BadRequest(String),
+
+    /// User ID already in use
+    #[error("User ID in use: {0}")]
+    UserInUse(String),
+
+    /// Invalid username
+    #[error("Invalid username: {0}")]
+    InvalidUsername(String),
 }
 
 impl MatrixError {
@@ -71,6 +83,9 @@ impl MatrixError {
             MatrixError::InvalidParameter(_) => "M_INVALID_PARAM",
             MatrixError::NotImplemented(_) => "M_UNRECOGNIZED",
             MatrixError::Internal(_) => "M_UNKNOWN",
+            MatrixError::BadRequest(_) => "M_BAD_REQUEST",
+            MatrixError::UserInUse(_) => "M_USER_IN_USE",
+            MatrixError::InvalidUsername(_) => "M_INVALID_USERNAME",
         }
     }
 
@@ -87,6 +102,9 @@ impl MatrixError {
             MatrixError::InvalidParameter(_) => StatusCode::BAD_REQUEST,
             MatrixError::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
             MatrixError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            MatrixError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            MatrixError::UserInUse(_) => StatusCode::CONFLICT,
+            MatrixError::InvalidUsername(_) => StatusCode::BAD_REQUEST,
         }
     }
 }

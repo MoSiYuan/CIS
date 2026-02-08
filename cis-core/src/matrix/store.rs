@@ -434,6 +434,44 @@ impl MatrixStore {
         Ok(())
     }
 
+    /// Check if a user exists
+    pub fn user_exists(&self, user_id: &str) -> MatrixResult<bool> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let count: i64 = db.query_row(
+            "SELECT COUNT(*) FROM matrix_users WHERE user_id = ?1",
+            [user_id],
+            |row| row.get(0),
+        ).map_err(|e| MatrixError::Store(format!("Failed to check user existence: {}", e)))?;
+
+        Ok(count > 0)
+    }
+
+    /// Register a new user
+    pub fn register_user(&self, user_id: &str, access_token: &str, device_id: &str) -> MatrixResult<()> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        // Insert user
+        db.execute(
+            "INSERT INTO matrix_users (user_id, display_name, created_at) 
+             VALUES (?1, ?1, unixepoch())",
+            [user_id],
+        ).map_err(|e| MatrixError::Store(format!("Failed to register user: {}", e)))?;
+
+        // Store access token in matrix_devices (add token column if needed)
+        db.execute(
+            "INSERT INTO matrix_devices (device_id, user_id, display_name, last_seen) 
+             VALUES (?1, ?2, 'Element Client', unixepoch())
+             ON CONFLICT(device_id) DO UPDATE SET
+             last_seen = unixepoch()",
+            [device_id, user_id],
+        ).map_err(|e| MatrixError::Store(format!("Failed to store device token: {}", e)))?;
+
+        Ok(())
+    }
+
     /// Get database connection for direct access
     pub fn conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
         self.db.lock().expect("Failed to lock database")
