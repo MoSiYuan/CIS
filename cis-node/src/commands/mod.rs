@@ -9,6 +9,7 @@ pub mod doctor;
 pub mod glm;
 pub mod im;
 pub mod init;
+pub mod matrix;
 pub mod memory;
 pub mod network;
 pub mod node;

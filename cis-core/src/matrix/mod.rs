@@ -66,6 +66,7 @@
 pub mod anchor;
 pub mod bridge;
 pub mod broadcast;
+pub mod element_detect;
 pub mod error;
 pub mod events;
 pub mod federation;

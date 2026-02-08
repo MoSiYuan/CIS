@@ -129,6 +129,12 @@ enum Commands {
         action: commands::network::NetworkCommands,
     },
     
+    /// Matrix server management (for Element clients)
+    Matrix {
+        #[command(subcommand)]
+        action: commands::matrix::MatrixCommands,
+    },
+    
     /// Telemetry and request logging
     Telemetry {
         #[command(subcommand)]
@@ -997,6 +1003,10 @@ async fn run_command(command: Commands, json_output: bool) -> anyhow::Result<()>
         
         Commands::Network { action } => {
             commands::network::handle(action).await
+        }
+        
+        Commands::Matrix { action } => {
+            commands::matrix::handle(action).await
         }
         
         Commands::Telemetry { action } => {
