@@ -112,6 +112,7 @@ enum Commands {
     },
     
     /// P2P network management
+    #[cfg(feature = "p2p")]
     P2p {
         #[command(subcommand)]
         action: commands::p2p::P2pAction,
@@ -203,6 +204,18 @@ enum Commands {
     Completion {
         /// Shell type (bash, zsh, fish, powershell)
         shell: ShellType,
+    },
+    
+    /// Check for updates and upgrade CIS
+    Update {
+        #[command(subcommand)]
+        command: commands::update::UpdateCommands,
+    },
+    
+    /// Neighbor node discovery and management
+    Neighbor {
+        #[command(subcommand)]
+        command: commands::neighbor::NeighborCommands,
     },
 }
 
@@ -1004,6 +1017,7 @@ async fn run_command(command: Commands, json_output: bool) -> anyhow::Result<()>
             PeerAction::Sync => commands::peer::sync_status(),
         }
         
+        #[cfg(feature = "p2p")]
         Commands::P2p { action } => {
             let args = commands::p2p::P2pArgs { action };
             commands::p2p::handle_p2p(args).await
@@ -1065,6 +1079,14 @@ async fn run_command(command: Commands, json_output: bool) -> anyhow::Result<()>
         Commands::Completion { shell } => {
             generate_completion(shell);
             Ok(())
+        }
+        
+        Commands::Update { command } => {
+            commands::update::handle(commands::update::UpdateArgs { command }).await
+        }
+        
+        Commands::Neighbor { command } => {
+            commands::neighbor::handle(commands::neighbor::NeighborArgs { command }).await
         }
     }
 }

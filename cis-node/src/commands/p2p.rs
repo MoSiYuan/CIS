@@ -2,6 +2,8 @@
 //!
 //! 管理 P2P 网络连接和节点发现
 
+#![cfg(feature = "p2p")]
+
 use anyhow::Result;
 use clap::{Args, Subcommand};
 

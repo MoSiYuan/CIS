@@ -420,7 +420,7 @@ bootstrap_nodes = []
 "#,
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
             uuid::Uuid::new_v4(),
-            whoami::username(),
+            gethostname::gethostname().to_string_lossy(),
             node_key,
             provider
         );

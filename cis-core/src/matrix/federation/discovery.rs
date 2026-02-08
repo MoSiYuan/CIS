@@ -223,6 +223,7 @@ impl PeerDiscovery {
         }
         
         // If mDNS is enabled, try to discover
+        #[cfg(feature = "p2p")]
         if self.enable_mdns {
             debug!("mDNS discovery enabled, trying to discover {}", server_name);
             if let Ok(nodes) = self.discover_mdns_matrix().await {
@@ -262,6 +263,7 @@ impl PeerDiscovery {
             }
         });
         
+        #[cfg(feature = "p2p")]
         if self.enable_mdns {
             info!("mDNS discovery enabled, starting mDNS services");
             

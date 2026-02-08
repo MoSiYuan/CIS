@@ -952,6 +952,7 @@ async fn test_rule(
 
 /// Sync ACL from peers
 async fn sync_acl(from: Option<String>, broadcast: bool) -> anyhow::Result<()> {
+    #[cfg(feature = "p2p")]
     if broadcast {
         println!("→ Broadcasting local ACL to all connected peers...");
         
@@ -990,7 +991,16 @@ async fn sync_acl(from: Option<String>, broadcast: bool) -> anyhow::Result<()> {
                 println!("  ACL will be synced when P2P is available");
             }
         }
-    } else if let Some(peer) = from {
+    }
+    
+    #[cfg(not(feature = "p2p"))]
+    if broadcast {
+        println!("⚠️  P2P feature not enabled, cannot broadcast ACL");
+        println!("  Build with --features p2p to enable P2P networking");
+    }
+    
+    #[cfg(feature = "p2p")]
+    if let Some(peer) = from {
         println!("→ Syncing ACL from {}...", peer);
         
         println!("  Requesting ACL sync from peer: {}", peer);
@@ -1025,7 +1035,15 @@ async fn sync_acl(from: Option<String>, broadcast: bool) -> anyhow::Result<()> {
                 println!("⚠️  P2P network not available: {}", e);
             }
         }
-    } else {
+    }
+    
+    #[cfg(not(feature = "p2p"))]
+    if from.is_some() {
+        println!("⚠️  P2P feature not enabled, cannot sync ACL from peer");
+        println!("  Build with --features p2p to enable P2P networking");
+    }
+    
+    if from.is_none() && !broadcast {
         println!("Error: Either --from or --broadcast must be specified");
         println!("  cis network sync --from <peer-id>    # Sync from specific peer");
         println!("  cis network sync --broadcast         # Broadcast to all peers");
@@ -1224,6 +1242,7 @@ fn exp_desc(entry: &AclEntry) -> String {
 }
 
 /// Helper: Broadcast ACL update to P2P network
+#[cfg(feature = "p2p")]
 async fn broadcast_acl_update(acl: &NetworkAcl) {
     println!("  Broadcasting ACL update to peers...");
     
@@ -1262,4 +1281,10 @@ async fn broadcast_acl_update(acl: &NetworkAcl) {
             println!("     ACL update will be synced on next network startup");
         }
     }
+}
+
+/// Helper: Broadcast ACL update to P2P network (stub when p2p disabled)
+#[cfg(not(feature = "p2p"))]
+async fn broadcast_acl_update(_acl: &NetworkAcl) {
+    println!("  ⚠️  P2P feature not enabled, skipping ACL broadcast");
 }

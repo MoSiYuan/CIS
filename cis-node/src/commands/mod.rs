@@ -12,9 +12,11 @@ pub mod im;
 pub mod init;
 pub mod matrix;
 pub mod memory;
+pub mod neighbor;
 pub mod network;
 pub mod node;
 pub mod peer;
+#[cfg(feature = "p2p")]
 pub mod p2p;
 pub mod schema;
 pub mod session;
@@ -23,5 +25,6 @@ pub mod system;
 pub mod task;
 pub mod task_level;
 pub mod telemetry;
+pub mod update;
 pub mod worker;
 
