@@ -39,13 +39,13 @@
 //! ## Usage
 //!
 //! ### Server-side:
-//! ```rust
+//! ```rust,ignore
 //! let auth = WebSocketAuth::new_server(did_manager, acl, connection_id);
 //! auth.send_challenge(&ws_sender).await?;
 //! ```
 //!
 //! ### Client-side:
-//! ```rust
+//! ```rust,ignore
 //! let auth = WebSocketAuth::new_client(did_manager, connection_id);
 //! auth.handle_challenge(challenge, &ws_sender).await?;
 //! ```

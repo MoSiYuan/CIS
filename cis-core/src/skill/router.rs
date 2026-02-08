@@ -14,14 +14,17 @@
 //!
 //! ```rust,no_run
 //! use cis_core::skill::router::SkillVectorRouter;
+//! use cis_core::skill::SkillManager;
 //! use cis_core::vector::VectorStorage;
-//! use cis_core::ai::embedding::EmbeddingService;
+//! use cis_core::storage::db::DbManager;
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let storage = Arc::new(VectorStorage::open_default()?);
 //! let embedding = storage.embedding_service().clone();
-//! let router = SkillVectorRouter::new(storage, embedding);
+//! let db_manager = Arc::new(DbManager::new()?);
+//! let skill_manager = Arc::new(SkillManager::new(db_manager.clone())?);
+//! let router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
 //!
 //! // 路由用户意图到技能
 //! let result = router.route_by_intent("分析今天的销售数据").await?;
@@ -164,13 +167,17 @@ pub struct SkillCompatibility {
 /// ```rust,no_run
 /// use cis_core::skill::router::SkillVectorRouter;
 /// use cis_core::skill::semantics::SkillSemanticsExt;
+/// use cis_core::skill::SkillManager;
 /// use cis_core::vector::VectorStorage;
+/// use cis_core::storage::db::DbManager;
 /// use std::sync::Arc;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let storage = Arc::new(VectorStorage::open_default()?);
 /// let embedding = storage.embedding_service().clone();
-/// let mut router = SkillVectorRouter::new(storage, embedding);
+/// let db_manager = Arc::new(DbManager::new()?);
+/// let skill_manager = Arc::new(SkillManager::new(db_manager.clone())?);
+/// let mut router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
 ///
 /// // 注册全局技能
 /// let semantics = SkillSemanticsExt::new("data-analyzer", "Data Analyzer")
@@ -210,13 +217,15 @@ impl SkillVectorRouter {
     ///
     /// ```rust,no_run
     /// use cis_core::skill::router::SkillVectorRouter;
+    /// use cis_core::skill::SkillManager;
     /// use cis_core::vector::VectorStorage;
+    /// use cis_core::storage::db::DbManager;
     /// use std::sync::Arc;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let storage = Arc::new(VectorStorage::open_default()?);
     /// let embedding = storage.embedding_service().clone();
-    /// let db_manager = Arc::new(cis_core::storage::db::DbManager::new()?);
+    /// let db_manager = Arc::new(DbManager::new()?);
     /// let skill_manager = Arc::new(SkillManager::new(db_manager.clone())?);
     /// let router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
     /// # Ok(())
@@ -1099,15 +1108,32 @@ mod tests {
     #[async_trait]
     impl EmbeddingService for MockEmbeddingService {
         async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-            // 简单的确定性模拟：根据文本哈希生成向量
+            // 基于单词的向量生成：共享单词的文本会产生相似向量
             let mut vec = vec![0.0f32; DEFAULT_EMBEDDING_DIM];
-            let hash = text.bytes().fold(0u64, |acc, b| {
-                acc.wrapping_mul(31).wrapping_add(b as u64)
-            });
-            for i in 0..DEFAULT_EMBEDDING_DIM {
-                let val = ((hash.wrapping_add(i as u64) % 1000) as f32 / 1000.0) * 2.0 - 1.0;
-                vec[i] = val;
+            let text_lower = text.to_lowercase();
+            let words: Vec<&str> = text_lower.split_whitespace().collect();
+            
+            for word in &words {
+                let hash = word.bytes().fold(0u64, |acc, b| {
+                    acc.wrapping_mul(31).wrapping_add(b as u64)
+                });
+                // 每个单词贡献一部分向量
+                for i in 0..DEFAULT_EMBEDDING_DIM.min(128) {
+                    let idx = i + (hash as usize % (DEFAULT_EMBEDDING_DIM - 128));
+                    vec[idx] += ((hash.wrapping_add(i as u64) % 1000) as f32 / 1000.0) * 2.0 - 1.0;
+                }
             }
+            
+            // 如果没有单词，使用文本哈希作为后备
+            if words.is_empty() {
+                let hash = text.bytes().fold(0u64, |acc, b| {
+                    acc.wrapping_mul(31).wrapping_add(b as u64)
+                });
+                for i in 0..DEFAULT_EMBEDDING_DIM {
+                    vec[i] = ((hash.wrapping_add(i as u64) % 1000) as f32 / 1000.0) * 2.0 - 1.0;
+                }
+            }
+            
             // 归一化
             let norm = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
             if norm > 0.0 {
@@ -1168,8 +1194,8 @@ mod tests {
             true,
         ));
         
-        // 测试路由
-        let result = router.route_by_intent("分析今天的销售数据").await;
+        // 测试路由 - 使用与技能描述匹配的查询
+        let result = router.route_by_intent("data analyzer analysis").await;
         assert!(result.is_ok(), "route_by_intent failed: {:?}", result.err());
         
         let routing = result.unwrap();

@@ -231,7 +231,7 @@ pub async fn debt_summary() -> Result<()> {
     if !run_stats.is_empty() {
         println!();
         println!("By DAG Run:");
-        println!("{:<36} {:<10} {}", "Run ID", "Total", "Unresolved");
+        println!("{:<36} {:<10} Unresolved", "Run ID", "Total");
         println!("{}", "-".repeat(60));
 
         for (run_id, (total, unresolved)) in run_stats {

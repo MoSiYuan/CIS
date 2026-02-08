@@ -265,7 +265,7 @@ pub async fn handle(cmd: DagCommands) -> Result<()> {
         }
         DagCommands::Logs { session_id, tail, follow } => {
             // Try database logs first, fallback to session logs
-            if let Err(_) = view_logs_from_db(&session_id, tail).await {
+            if view_logs_from_db(&session_id, tail).await.is_err() {
                 view_logs(&session_id, tail, follow).await?;
             }
         }
@@ -628,8 +628,8 @@ pub async fn list_runs(all: bool) -> Result<()> {
     println!("DAG Runs:");
     println!();
     println!(
-        "{:<36} {:<12} {:<10} {:<20} {}",
-        "Run ID", "Status", "Tasks", "Created", "Active"
+        "{:<36} {:<12} {:<10} {:<20} Active",
+        "Run ID", "Status", "Tasks", "Created"
     );
     println!("{}", "-".repeat(90));
 
@@ -716,8 +716,8 @@ pub async fn list_workers() -> Result<()> {
                         println!();
                         println!("Use 'cis worker run' to start a worker.");
                     } else {
-                        println!("{:<30} {:<15} {:<10} {:<10} {}", 
-                            "Worker ID", "Scope", "Status", "PID", "Uptime");
+                        println!("{:<30} {:<15} {:<10} {:<10} Uptime", 
+                            "Worker ID", "Scope", "Status", "PID");
                         println!("{}", "-".repeat(90));
                         
                         for worker in result.items {
@@ -1301,8 +1301,8 @@ async fn list_sessions(dag_filter: Option<&str>, all: bool) -> Result<()> {
     println!("Agent Sessions:");
     println!();
     println!(
-        "{:<20} {:<15} {:<12} {:<36} {:<10} {}",
-        "Session ID", "Task", "Agent", "DAG Run", "Status", "Runtime"
+        "{:<20} {:<15} {:<12} {:<36} {:<10} Runtime",
+        "Session ID", "Task", "Agent", "DAG Run", "Status"
     );
     println!("{}", "-".repeat(110));
     
@@ -1683,8 +1683,8 @@ async fn list_definitions(
     println!("DAG Definitions:");
     println!();
     println!(
-        "{:<30} {:<12} {:<15} {:<15} {:<10} {}",
-        "DAG ID", "Scope", "Scope ID", "Target Node", "Priority", "Version"
+        "{:<30} {:<12} {:<15} {:<15} {:<10} Version",
+        "DAG ID", "Scope", "Scope ID", "Target Node", "Priority"
     );
     println!("{}", "-".repeat(110));
     
@@ -1789,8 +1789,8 @@ async fn list_runs_filtered(
     println!("DAG Runs:");
     println!();
     println!(
-        "{:<36} {:<30} {:<12} {:<15} {:<15} {}",
-        "Run ID", "DAG ID", "Status", "Scope", "Target Node", "Created"
+        "{:<36} {:<30} {:<12} {:<15} {:<15} Created",
+        "Run ID", "DAG ID", "Status", "Scope", "Target Node"
     );
     println!("{}", "-".repeat(130));
     

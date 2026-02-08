@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 /// NAT 类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum NatType {
     /// 开放网络（无 NAT）
     Open,
@@ -19,14 +20,10 @@ pub enum NatType {
     /// 对称型 NAT
     Symmetric,
     /// 未知类型
+    #[default]
     Unknown,
 }
 
-impl Default for NatType {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
 
 impl NatType {
     /// 判断是否容易穿透

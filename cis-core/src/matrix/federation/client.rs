@@ -15,7 +15,7 @@
 //! use cis_core::matrix::federation::{FederationClient, PeerInfo, CisMatrixEvent};
 //!
 //! # async fn example() -> anyhow::Result<()> {
-//! let client = FederationClient::new().await?;
+//! let client = FederationClient::new()?;
 //!
 //! let peer = PeerInfo::new("kitchen.local", "kitchen.local");
 //! let event = CisMatrixEvent::new(
@@ -90,7 +90,7 @@ impl FederationClient {
             .pool_idle_timeout(Duration::from_secs(60))
             .pool_max_idle_per_host(10)
             .build()
-            .map_err(|e| FederationClientError::HttpError(e))?;
+            .map_err(FederationClientError::HttpError)?;
         
         Ok(Self {
             client,
@@ -130,7 +130,7 @@ impl FederationClient {
         
         let client = builder
             .build()
-            .map_err(|e| FederationClientError::HttpError(e))?;
+            .map_err(FederationClientError::HttpError)?;
         
         Ok(Self {
             client,

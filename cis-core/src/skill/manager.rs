@@ -32,6 +32,7 @@ struct ActiveSkill {
     /// Skill 元数据
     _info: SkillInfo,
     /// Skill 数据库连接
+    #[allow(dead_code)]
     db: Arc<Mutex<SkillDb>>,
     /// 配置
     config: SkillConfig,
@@ -41,6 +42,45 @@ struct ActiveSkill {
     event_sender: Option<mpsc::UnboundedSender<SkillEventCommand>>,
     /// 停止信号
     shutdown_tx: Option<oneshot::Sender<()>>,
+}
+
+#[allow(dead_code)]
+impl ActiveSkill {
+    /// 检查 Skill 是否处于活跃状态
+    fn is_active(&self) -> bool {
+        self.event_sender.is_some()
+    }
+
+    /// 安全关闭 Skill 事件循环
+    async fn shutdown(&mut self) {
+        // 发送停止命令到事件循环
+        if let Some(ref sender) = self.event_sender {
+            let _ = sender.send(SkillEventCommand::Stop);
+        }
+        
+        // 发送 shutdown 信号（备用）
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
+        }
+        
+        // 清除通道引用
+        self.event_sender = None;
+        
+        // 小延迟确保事件循环有时间处理停止命令
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    }
+}
+
+impl Drop for ActiveSkill {
+    fn drop(&mut self) {
+        // 尝试同步关闭（仅清理资源，不阻塞）
+        if let Some(ref sender) = self.event_sender {
+            let _ = sender.send(SkillEventCommand::Stop);
+        }
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
+        }
+    }
 }
 
 /// 简单的 SkillContext 实现
@@ -149,12 +189,17 @@ impl SkillManager {
         use crate::memory::MemoryService;
         use std::sync::Mutex as StdMutex;
 
+        // 验证 WASM 魔术数字
+        crate::validate_wasm_magic(wasm_bytes)?;
+
+        // 检查 WASM 字节码大小
+        crate::check_allocation_size(wasm_bytes.len(), 128 * 1024 * 1024)?; // 128MB 限制
+
         tracing::info!("Loading WASM skill '{}'...", name);
 
         // 获取或创建记忆服务
-        let core_db = self.db_manager.core();
         let memory_service: Arc<StdMutex<dyn crate::memory::MemoryServiceTrait>> = 
-            Arc::new(StdMutex::new(MemoryService::new(core_db)));
+            Arc::new(StdMutex::new(MemoryService::open_default("default")?));
 
         // 使用 WasmSkillBuilder 构建 WASM Skill
         let mut wasm_skill = crate::wasm::WasmSkillBuilder::new()
@@ -188,6 +233,9 @@ impl SkillManager {
     ///
     /// 将已安装的 Skill 注册到系统中，但不加载。
     pub fn register(&self, meta: SkillMeta) -> Result<()> {
+        // 验证 Skill 名称
+        crate::check_string_length(&meta.name, 256)?;
+        
         let mut registry = self.registry.lock()
             .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
 
@@ -221,6 +269,9 @@ impl SkillManager {
     ///
     /// 创建数据库连接，初始化 Skill，但不激活。
     pub async fn load(&self, name: &str, options: LoadOptions) -> Result<()> {
+        // 验证 Skill 名称长度
+        crate::check_string_length(name, 256)?;
+
         // 检查是否已加载
         if self.is_loaded(name)? && !options.force_reload {
             return Ok(());
@@ -318,11 +369,18 @@ impl SkillManager {
             self.deactivate(name).await?;
         }
 
-        // 2. 从活跃列表移除
-        {
+        // 2. 从活跃列表移除（先取出以触发 Drop）
+        let active_skill_to_shutdown = {
             let mut active_skills = self.active_skills.lock()
                 .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
-            active_skills.remove(name);
+            
+            // 取出以触发 Drop 执行
+            active_skills.remove(name)
+        };
+        
+        // 确保事件循环已停止（在锁外执行 await）
+        if let Some(mut active_skill) = active_skill_to_shutdown {
+            active_skill.shutdown().await;
         }
 
         // 3. 从多库连接卸载
@@ -411,6 +469,8 @@ impl SkillManager {
 
         // 启动事件处理循环
         let skill_name = name.to_string();
+        let _active_skills = self.active_skills.clone();
+        
         tokio::spawn(async move {
             tracing::info!("Skill '{}' event loop started", skill_name);
             
@@ -469,14 +529,18 @@ impl SkillManager {
     ///
     /// 停止 Skill 处理事件，但保持加载状态。
     pub async fn deactivate(&self, name: &str) -> Result<()> {
-        let mut registry = self.registry.lock()
-            .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+        let is_active = {
+            let registry = self.registry.lock()
+                .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+            
+            let info = registry
+                .get(name)
+                .ok_or_else(|| CisError::not_found(format!("Skill '{}' not found", name)))?;
+            
+            info.runtime.state.is_active()
+        };
 
-        let info = registry
-            .get(name)
-            .ok_or_else(|| CisError::not_found(format!("Skill '{}' not found", name)))?;
-
-        if !info.runtime.state.is_active() {
+        if !is_active {
             return Ok(());
         }
 
@@ -501,7 +565,15 @@ impl SkillManager {
             }
         }
 
-        registry.update_state(name, SkillState::Loaded)?;
+        // 等待一小段时间确保事件循环停止
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // 重新获取锁并更新状态
+        {
+            let mut registry = self.registry.lock()
+                .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
+            registry.update_state(name, SkillState::Loaded)?;
+        }
 
         tracing::info!("Skill '{}' deactivated", name);
 
@@ -569,9 +641,16 @@ impl SkillManager {
         }
 
         let manifest_content = std::fs::read_to_string(&manifest_path)?;
+        
+        // 验证 manifest 大小
+        crate::check_string_length(&manifest_content, 1024 * 1024)?; // 1MB 限制
+        
         let meta: SkillMeta = toml::from_str(&manifest_content)
             .map_err(|e| CisError::skill(format!("Failed to parse skill.toml: {}", e)))?;
 
+        // 验证 Skill 名称
+        crate::check_string_length(&meta.name, 256)?;
+        
         let name = &meta.name;
         tracing::info!("Installing skill '{}' from {:?}...", name, source_path);
 
@@ -687,6 +766,9 @@ impl SkillManager {
     ///
     /// 用于外部模块（如 GLM API）触发 Skill 的事件处理
     pub async fn send_event(&self, skill_name: &str, event: Event) -> Result<()> {
+        // 验证 Skill 名称
+        crate::check_string_length(skill_name, 256)?;
+        
         // 检查 skill 是否活跃，并获取事件发送通道
         let event_sender = {
             let active_skills = self.active_skills.lock()
@@ -711,11 +793,7 @@ impl SkillManager {
                 let active_skills = self.active_skills.lock()
                     .map_err(|e| CisError::skill(format!("Lock failed: {}", e)))?;
                 
-                if let Some(active) = active_skills.get(skill_name) {
-                    Some((active.skill.clone(), active.config.clone()))
-                } else {
-                    None
-                }
+                active_skills.get(skill_name).map(|active| (active.skill.clone(), active.config.clone()))
             };
 
             if let Some((skill, config)) = skill {
@@ -734,6 +812,9 @@ impl SkillManager {
     /// 允许外部模块注册一个具体的 Skill trait 对象，使其可以接收事件
     pub async fn register_skill_instance(&self, skill: Arc<dyn Skill>, options: LoadOptions) -> Result<()> {
         let name = skill.name().to_string();
+        
+        // 验证 Skill 名称
+        crate::check_string_length(&name, 256)?;
         
         // 检查是否已加载
         if self.is_loaded(&name)? && !options.force_reload {
@@ -819,6 +900,26 @@ impl SkillManager {
         Ok(())
     }
 
+    /// 安全关闭所有 Skills
+    ///
+    /// 在应用关闭时调用，确保所有 Skill 资源被正确释放
+    pub async fn shutdown(&self) -> Result<()> {
+        tracing::info!("Shutting down SkillManager...");
+        
+        // 获取所有已加载的 Skill 名称
+        let skill_names = self.list_loaded()?;
+        
+        // 逐个卸载
+        for name in skill_names {
+            if let Err(e) = self.unload(&name).await {
+                tracing::warn!("Failed to unload skill '{}': {}", name, e);
+            }
+        }
+        
+        tracing::info!("SkillManager shutdown completed");
+        Ok(())
+    }
+
     // ==================== 工具方法 ====================
 
     /// 递归复制目录
@@ -847,20 +948,28 @@ impl SkillManager {
 mod tests {
     use super::*;
 
-    fn setup_test_env() {
-        let temp_dir = std::env::temp_dir().join("cis_test_skill_manager");
+    fn setup_test_env() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static TEST_ID: AtomicU64 = AtomicU64::new(0);
+        let test_id = TEST_ID.fetch_add(1, Ordering::SeqCst);
+        let temp_dir = std::env::temp_dir()
+            .join("cis_test_skill_manager")
+            .join(format!("pid_{}_test_{}", std::process::id(), test_id));
         let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
         std::env::set_var("CIS_DATA_DIR", &temp_dir);
         crate::storage::paths::Paths::ensure_dirs().unwrap();
+        temp_dir
     }
 
-    fn cleanup_test_env() {
+    fn cleanup_test_env(temp_dir: &std::path::Path) {
         std::env::remove_var("CIS_DATA_DIR");
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 
     #[tokio::test]
     async fn test_skill_lifecycle() {
-        setup_test_env();
+        let temp_dir = setup_test_env();
 
         let db_manager = Arc::new(DbManager::new().unwrap());
         let manager = SkillManager::new(db_manager).unwrap();
@@ -903,6 +1012,16 @@ mod tests {
         manager.unregister("test-skill").await.unwrap();
         assert!(manager.get_info("test-skill").unwrap().is_none());
 
-        cleanup_test_env();
+        cleanup_test_env(&temp_dir);
+    }
+
+    #[test]
+    fn test_skill_name_validation() {
+        // 测试名称长度验证
+        let long_name = "a".repeat(300);
+        assert!(crate::check_string_length(&long_name, 256).is_err());
+        
+        let valid_name = "a".repeat(255);
+        assert!(crate::check_string_length(&valid_name, 256).is_ok());
     }
 }

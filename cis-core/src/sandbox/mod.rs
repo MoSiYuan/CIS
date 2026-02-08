@@ -423,7 +423,7 @@ impl SandboxConfig {
         }
 
         // Check special characters and strings
-        let forbidden_chars = ['~', '$', '\0'];
+        let forbidden_chars = ['~', '$', '\0', '?'];
 
         for forbidden_char in &forbidden_chars {
             if filename.contains(*forbidden_char) {

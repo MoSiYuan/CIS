@@ -16,13 +16,11 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::matrix::error::{MatrixError, MatrixResult};
 use crate::matrix::routes::auth::authenticate;
 use crate::matrix::routes::AppState;
-use crate::matrix::store::MatrixStore;
 
 // ==================== Create Room ====================
 
@@ -31,6 +29,7 @@ use crate::matrix::store::MatrixStore;
 pub struct CreateRoomRequest {
     /// A public visibility indicates that the room will be shown in the published room list
     #[serde(rename = "visibility")]
+    #[allow(dead_code)]
     visibility: Option<String>,
     /// A list of user IDs to invite to the room
     #[serde(rename = "invite")]
@@ -43,18 +42,23 @@ pub struct CreateRoomRequest {
     topic: Option<String>,
     /// The room alias (localpart only)
     #[serde(rename = "room_alias_name")]
+    #[allow(dead_code)]
     room_alias_name: Option<String>,
     /// Whether this is a direct message room
     #[serde(rename = "is_direct")]
+    #[allow(dead_code)]
     is_direct: Option<bool>,
     /// Preset configuration
     #[serde(rename = "preset")]
+    #[allow(dead_code)]
     preset: Option<String>,
     /// Initial state events
     #[serde(rename = "initial_state")]
+    #[allow(dead_code)]
     initial_state: Option<Vec<InitialStateEvent>>,
     /// Room creation content
     #[serde(rename = "creation_content")]
+    #[allow(dead_code)]
     creation_content: Option<serde_json::Value>,
 }
 
@@ -62,9 +66,12 @@ pub struct CreateRoomRequest {
 #[derive(Debug, Deserialize)]
 pub struct InitialStateEvent {
     #[serde(rename = "type")]
+    #[allow(dead_code)]
     event_type: String,
     #[serde(rename = "state_key")]
+    #[allow(dead_code)]
     state_key: Option<String>,
+    #[allow(dead_code)]
     content: serde_json::Value,
 }
 
@@ -247,18 +254,21 @@ pub async fn send_message(
 pub struct GetMessagesRequest {
     /// The direction to return events from
     #[serde(rename = "dir")]
+    #[allow(dead_code)]
     dir: Option<String>,
     /// The token to start returning events from
     #[serde(rename = "from")]
     from: Option<String>,
     /// The token to stop returning events at
     #[serde(rename = "to")]
+    #[allow(dead_code)]
     to: Option<String>,
     /// The maximum number of events to return
     #[serde(rename = "limit")]
     limit: Option<usize>,
     /// A filter to apply to the returned events
     #[serde(rename = "filter")]
+    #[allow(dead_code)]
     filter: Option<String>,
 }
 
@@ -349,9 +359,11 @@ pub async fn get_messages(
 pub struct JoinRoomRequest {
     /// The reason for joining (optional)
     #[serde(rename = "reason")]
+    #[allow(dead_code)]
     reason: Option<String>,
     /// Third-party signed signature (for restricted rooms)
     #[serde(rename = "third_party_signed")]
+    #[allow(dead_code)]
     third_party_signed: Option<serde_json::Value>,
 }
 

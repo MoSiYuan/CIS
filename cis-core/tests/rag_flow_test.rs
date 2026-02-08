@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use cis_core::conversation::context::ConversationContext;
-use cis_core::memory::service::{MemoryService, SearchOptions};
+use cis_core::memory::service::MemoryService;
 use cis_core::storage::memory_db::MemoryDb;
 use cis_core::types::{MemoryCategory, MemoryDomain};
 use cis_core::vector::storage::VectorStorage;
@@ -106,7 +106,7 @@ async fn test_rag_with_memory_search() {
     
     // 创建 MemoryService
     let memory_service = MemoryService::new(
-        Arc::new(std::sync::Mutex::new(memory_db)),
+        Arc::new(tokio::sync::Mutex::new(memory_db)),
         vector_storage.clone(),
         "node-1",
     ).unwrap();
@@ -251,7 +251,7 @@ async fn test_memory_domain_isolation_in_search() {
     
     // 创建 MemoryService
     let memory_service = MemoryService::new(
-        Arc::new(std::sync::Mutex::new(memory_db)),
+        Arc::new(tokio::sync::Mutex::new(memory_db)),
         vector_storage,
         "node-1",
     ).unwrap();
@@ -262,7 +262,7 @@ async fn test_memory_domain_isolation_in_search() {
         "public configuration data".as_bytes(),
         MemoryDomain::Public,
         MemoryCategory::Context,
-    ).unwrap();
+    ).await.unwrap();
     
     // 存储私域记忆
     memory_service.set(
@@ -270,20 +270,20 @@ async fn test_memory_domain_isolation_in_search() {
         "private configuration data".as_bytes(),
         MemoryDomain::Private,
         MemoryCategory::Context,
-    ).unwrap();
+    ).await.unwrap();
     
     // 验证可以直接获取公域记忆
-    let public_item = memory_service.get("public-config").unwrap();
+    let public_item = memory_service.get("public-config").await.unwrap();
     assert!(public_item.is_some(), "应该能找到公域记忆");
     assert_eq!(public_item.unwrap().key, "public-config");
     
     // 验证可以直接获取私域记忆
-    let private_item = memory_service.get("private-config").unwrap();
+    let private_item = memory_service.get("private-config").await.unwrap();
     assert!(private_item.is_some(), "应该能找到私域记忆");
     assert_eq!(private_item.unwrap().key, "private-config");
     
     // 使用 SearchOptions 指定域过滤（使用 list_keys 验证）
-    let keys = memory_service.list_keys(None).unwrap();
+    let keys = memory_service.list_keys(None).await.unwrap();
     assert!(keys.iter().any(|k| k == "public-config"), "应该包含公域记忆的key");
     assert!(keys.iter().any(|k| k == "private-config"), "应该包含私域记忆的key");
 }

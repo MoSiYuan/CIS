@@ -28,6 +28,7 @@ use tokio::time::timeout;
 use tracing::{debug, info, warn};
 
 use crate::error::Result;
+#[cfg(feature = "p2p")]
 use crate::p2p::nat::{HolePunchCoordinator, HolePunchResult, NatTraversal, NatType};
 
 /// 默认 STUN 服务器列表

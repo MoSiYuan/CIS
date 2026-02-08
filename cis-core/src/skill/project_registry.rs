@@ -425,9 +425,9 @@ mod tests {
         
         SkillInfo {
             meta: SkillMeta {
-                name: name.to_string(),
+                name: id.to_string(),
                 version: "0.1.0".to_string(),
-                description: "Test skill".to_string(),
+                description: name.to_string(),
                 author: "Test".to_string(),
                 skill_type: crate::skill::types::SkillType::Wasm,
                 path: format!("/test/{}", id),

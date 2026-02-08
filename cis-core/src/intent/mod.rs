@@ -20,7 +20,7 @@ use crate::ai::embedding::EmbeddingService;
 use crate::error::{CisError, Result};
 
 /// 意图类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum IntentType {
     /// 查询类意图
@@ -36,17 +36,12 @@ pub enum IntentType {
     /// 更新类意图
     Update,
     /// 其他
+    #[default]
     Other,
 }
 
-impl Default for IntentType {
-    fn default() -> Self {
-        Self::Other
-    }
-}
-
 /// 动作类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionType {
     /// 查询
@@ -62,13 +57,8 @@ pub enum ActionType {
     /// 提交
     Commit,
     /// 其他
+    #[default]
     Other,
-}
-
-impl Default for ActionType {
-    fn default() -> Self {
-        Self::Other
-    }
 }
 
 /// 实体值类型
@@ -475,8 +465,9 @@ impl IntentManager {
             }
             
             if !matched_keywords.is_empty() || score > 0.0 {
-                // 归一化分数
-                score = score / (intent.keywords.len() as f32 + 1.0);
+                // 归一化分数（确保匹配的关键词能超过阈值）
+                let max_possible_score = intent.keywords.len() as f32 + 0.5; // 关键词满分 + 名称匹配
+                score = (score / max_possible_score).min(1.0);
                 
                 if score >= intent.threshold {
                     matches.push(IntentMatch {

@@ -213,6 +213,7 @@ impl AgentClusterExecutor {
     }
     
     /// Start a single task (internal, uses DagRun)
+    #[allow(dead_code)]
     async fn start_task(&self, run: &DagRun, task_id: &str, command: &str) -> Result<()> {
         // Get dependencies for this task
         let upstream_deps = run.dag.get_task_dependencies(task_id);
@@ -345,24 +346,18 @@ impl AgentClusterExecutor {
         run_id: String,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            loop {
-                match event_rx.recv().await {
-                    Ok(event) => {
-                        let should_forward = match &event {
-                            SessionEvent::Completed { session_id, .. } => session_id.dag_run_id == run_id,
-                            SessionEvent::Failed { session_id, .. } => session_id.dag_run_id == run_id,
-                            SessionEvent::Blocked { session_id, .. } => session_id.dag_run_id == run_id,
-                            _ => false,
-                        };
-                        
-                        if should_forward {
-                            if completion_tx.send(event).is_err() {
-                                break;
-                            }
-                        }
+            while let Ok(event) = event_rx.recv().await {
+                let should_forward = match &event {
+                    SessionEvent::Completed { session_id, .. } => session_id.dag_run_id == run_id,
+                    SessionEvent::Failed { session_id, .. } => session_id.dag_run_id == run_id,
+                    SessionEvent::Blocked { session_id, .. } => session_id.dag_run_id == run_id,
+                    _ => false,
+                };
+                
+                if should_forward
+                    && completion_tx.send(event).is_err() {
+                        break;
                     }
-                    Err(_) => break,
-                }
             }
         })
     }
@@ -468,6 +463,7 @@ impl AgentClusterExecutor {
     }
     
     /// Prepare upstream context for a task
+    #[allow(dead_code)]
     async fn prepare_upstream_context(&self, run: &DagRun, task_id: &str) -> String {
         // Get dependencies
         if let Some(node) = run.dag.get_node(task_id) {

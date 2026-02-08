@@ -4,6 +4,15 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::string::String;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::vec::Vec;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::format;
+
 /// 消息角色
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -145,12 +154,12 @@ impl Ai {
         
         let sentiment = result
             .get("sentiment")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("neutral");
             
         let score = result
             .get("score")
-            .and_then(|v| v.as_f64())
+            .and_then(|v: &serde_json::Value| v.as_f64())
             .unwrap_or(0.5);
             
         Ok(Sentiment {

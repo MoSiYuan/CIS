@@ -6,6 +6,12 @@
 use crate::error::Result;
 use crate::types::{HttpRequest, HttpResponse, LogLevel};
 
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::string::String;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::vec::Vec;
+
 // ==================== Native Host API ====================
 
 #[cfg(feature = "native")]
@@ -91,13 +97,13 @@ pub mod wasm {
     //!
     //! 这些函数由 CIS WASM Runtime 提供
 
-    /// 记录日志
+    // 记录日志
     #[link(wasm_import_module = "cis")]
     extern "C" {
         pub fn host_log(level: i32, ptr: *const u8, len: usize);
     }
 
-    /// 读取记忆
+    // 读取记忆
     #[link(wasm_import_module = "cis")]
     extern "C" {
         pub fn host_memory_get(
@@ -108,7 +114,7 @@ pub mod wasm {
         ) -> i32;
     }
 
-    /// 写入记忆
+    // 写入记忆
     #[link(wasm_import_module = "cis")]
     extern "C" {
         pub fn host_memory_set(
@@ -119,13 +125,13 @@ pub mod wasm {
         ) -> i32;
     }
 
-    /// 删除记忆
+    // 删除记忆
     #[link(wasm_import_module = "cis")]
     extern "C" {
         pub fn host_memory_delete(key_ptr: *const u8, key_len: usize) -> i32;
     }
 
-    /// 调用 AI
+    // 调用 AI
     #[link(wasm_import_module = "cis")]
     extern "C" {
         pub fn host_ai_chat(
@@ -136,7 +142,7 @@ pub mod wasm {
         ) -> i32;
     }
 
-    /// 发送 HTTP POST
+    // 发送 HTTP POST
     #[link(wasm_import_module = "cis")]
     extern "C" {
         pub fn host_http_post(
@@ -149,19 +155,19 @@ pub mod wasm {
         ) -> i32;
     }
 
-    /// 获取时间戳
+    // 获取时间戳
     #[link(wasm_import_module = "cis")]
     extern "C" {
         pub fn host_now() -> u64;
     }
 
-    /// 分配内存（返回指针）
+    // 分配内存（返回指针）
     #[link(wasm_import_module = "cis")]
     extern "C" {
         pub fn host_alloc(size: usize) -> *mut u8;
     }
 
-    /// 释放内存
+    // 释放内存
     #[link(wasm_import_module = "cis")]
     extern "C" {
         pub fn host_free(ptr: *mut u8, size: usize);
@@ -184,7 +190,7 @@ impl Host {
         }
     }
     
-    #[cfg(feature = "wasm")]
+    #[cfg(all(feature = "wasm", not(feature = "native")))]
     pub fn log(level: LogLevel, message: &str) {
         use wasm::host_log;
         let level_i32 = match level {

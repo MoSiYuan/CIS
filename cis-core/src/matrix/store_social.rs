@@ -380,7 +380,7 @@ impl MatrixSocialStore {
             .map_err(|e| MatrixError::Store(format!("Failed to query devices: {}", e)))?
             .collect();
 
-        Ok(devices.map_err(|e| MatrixError::Store(format!("Failed to collect devices: {}", e)))?)
+        devices.map_err(|e| MatrixError::Store(format!("Failed to collect devices: {}", e)))
     }
 
     /// 获取单个设备信息
@@ -605,7 +605,7 @@ fn generate_access_token() -> String {
 /// 生成设备 ID
 fn generate_device_id() -> String {
     format!("{}_{}", 
-        uuid::Uuid::new_v4().to_string()[..8].to_string(),
+        &uuid::Uuid::new_v4().to_string()[..8],
         chrono::Utc::now().timestamp_millis()
     )
 }

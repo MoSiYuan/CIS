@@ -224,8 +224,7 @@ impl MatrixBridge {
         };
 
         // 检查是否是 CIS 指令 (以 ! 开头)
-        if body.starts_with("!skill ") {
-            let cmd = &body[7..];
+        if let Some(cmd) = body.strip_prefix("!skill ") {
             info!("Skill command received: {}", cmd);
 
             // 解析 Skill 任务
@@ -283,7 +282,7 @@ impl MatrixBridge {
     /// 格式: !skill nav target=sofa speed=fast
     /// 解析为: Task { skill: "nav", action: "default", params: {target: "sofa", speed: "fast"} }
     fn parse_skill_command(&self, cmd: &str) -> Option<SkillTask> {
-        let parts: Vec<&str> = cmd.trim().split_whitespace().collect();
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
         if parts.is_empty() {
             return None;
         }
@@ -678,18 +677,18 @@ impl MatrixBridge {
                 .map_err(|e| CisError::skill(format!("Failed to access WASM runtime: {}", e)))?;
             
             // 序列化事件
-            let event_data = serde_json::to_vec(&event)
+            let _event_data = serde_json::to_vec(&event)
                 .map_err(|e| CisError::skill(format!("Failed to serialize event: {}", e)))?;
             
             // 调用 WASM skill
             let result = {
-                let runtime = wasm_runtime.lock()
+                let _runtime = wasm_runtime.lock()
                     .map_err(|e| CisError::skill(format!("WASM runtime lock failed: {}", e)))?;
                 
                 // 实际调用 WASM 函数
                 // 这里需要根据 WASM 模块导出函数进行调用
                 // 简化实现：返回执行信息
-                Ok(serde_json::json!({
+                Ok::<serde_json::Value, CisError>(serde_json::json!({
                     "skill": skill_name,
                     "event_type": "Custom",
                     "status": "wasm_execution_placeholder",

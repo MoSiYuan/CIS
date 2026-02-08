@@ -219,13 +219,13 @@ impl StoredEvent {
     /// Get received time as DateTime
     pub fn received_datetime(&self) -> DateTime<Utc> {
         DateTime::from_timestamp_millis(self.received_at)
-            .unwrap_or_else(|| Utc::now())
+            .unwrap_or_else(Utc::now)
     }
 
     /// Get origin server time as DateTime
     pub fn origin_datetime(&self) -> DateTime<Utc> {
         DateTime::from_timestamp_millis(self.origin_server_ts)
-            .unwrap_or_else(|| Utc::now())
+            .unwrap_or_else(Utc::now)
     }
 }
 

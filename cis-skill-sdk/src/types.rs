@@ -1,7 +1,18 @@
 //! 通用类型定义
 
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "native")]
 use std::collections::HashMap;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use hashbrown::HashMap;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::string::String;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::vec::Vec;
 
 /// Skill 元数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,7 +110,7 @@ pub struct SkillConfig {
 
 impl SkillConfig {
     pub fn get<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Option<T> {
-        self.values.get(key).and_then(|v| serde_json::from_value(v.clone()).ok())
+        self.values.get(key).and_then(|v: &serde_json::Value| serde_json::from_value(v.clone()).ok())
     }
     
     pub fn set<T: Serialize>(&mut self, key: impl Into<String>, value: T) {

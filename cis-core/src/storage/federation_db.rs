@@ -210,7 +210,7 @@ impl FederationDb {
         let trustees: Result<Vec<String>> = stmt
             .query_map(rusqlite::params![trustor, level_int], |row| row.get(0))
             .map_err(|e| CisError::Storage(format!("Failed to query trusted list: {}", e)))?
-            .map(|r| r.map_err(|e| CisError::Database(e)))
+            .map(|r| r.map_err(CisError::Database))
             .collect();
 
         trustees
@@ -254,7 +254,7 @@ impl FederationDb {
              FROM network_peers WHERE node_id = ?1"
         ).map_err(|e| CisError::Storage(format!("Failed to prepare get_peer query: {}", e)))?;
 
-        let result = stmt.query_row([node_id], |row| Self::row_to_peer_info(row));
+        let result = stmt.query_row([node_id], Self::row_to_peer_info);
 
         match result {
             Ok(info) => Ok(Some(info)),
@@ -271,9 +271,9 @@ impl FederationDb {
         ).map_err(|e| CisError::Storage(format!("Failed to prepare list_online_peers query: {}", e)))?;
 
         let peers: Result<Vec<PeerInfo>> = stmt
-            .query_map([], |row| Self::row_to_peer_info(row))
+            .query_map([], Self::row_to_peer_info)
             .map_err(|e| CisError::Storage(format!("Failed to query online peers: {}", e)))?
-            .map(|r| r.map_err(|e| CisError::Database(e)))
+            .map(|r| r.map_err(CisError::Database))
             .collect();
 
         peers
@@ -349,7 +349,7 @@ impl FederationDb {
                 })
             })
             .map_err(|e| CisError::Storage(format!("Failed to query pending tasks: {}", e)))?
-            .map(|r| r.map_err(|e| CisError::Database(e)))
+            .map(|r| r.map_err(CisError::Database))
             .collect();
 
         tasks
@@ -413,7 +413,7 @@ impl FederationDb {
             }).map_err(|e| CisError::Storage(format!("Failed to query logs: {}", e)))?;
             
             for row in rows {
-                logs.push(row.map_err(|e| CisError::Database(e))?);
+                logs.push(row.map_err(CisError::Database)?);
             }
         } else {
             let mut stmt = self.conn.prepare(
@@ -433,7 +433,7 @@ impl FederationDb {
             }).map_err(|e| CisError::Storage(format!("Failed to query logs: {}", e)))?;
             
             for row in rows {
-                logs.push(row.map_err(|e| CisError::Database(e))?);
+                logs.push(row.map_err(CisError::Database)?);
             }
         }
         

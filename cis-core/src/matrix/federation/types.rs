@@ -33,6 +33,7 @@ pub struct CisMatrixEvent {
     pub sender: String,
     
     /// Event type (e.g., "m.room.message", "cis.task.request")
+    #[serde(rename = "type")]
     pub event_type: String,
     
     /// Event content

@@ -228,6 +228,7 @@ pub struct FederationManager {
     /// Reconnection queue
     reconnect_queue: Arc<Mutex<Vec<String>>>,
     /// Event sender for incoming events
+    #[allow(dead_code)]
     event_tx: mpsc::Sender<CisMatrixEvent>,
     /// Shutdown signal
     shutdown_tx: Arc<Mutex<Option<mpsc::Sender<()>>>>,

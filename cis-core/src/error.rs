@@ -231,4 +231,14 @@ impl CisError {
     pub fn serialization(msg: impl Into<String>) -> Self {
         Self::Other(format!("Serialization error: {}", msg.into()))
     }
+
+    /// Create a new invalid state error
+    pub fn invalid_state(msg: impl Into<String>) -> Self {
+        Self::Other(format!("Invalid state: {}", msg.into()))
+    }
+
+    /// Create a new internal error
+    pub fn internal(msg: impl Into<String>) -> Self {
+        Self::Other(format!("Internal error: {}", msg.into()))
+    }
 }

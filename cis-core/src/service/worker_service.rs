@@ -131,7 +131,7 @@ impl WorkerService {
 
     /// 创建 Worker
     pub async fn create(&self, options: WorkerCreateOptions) -> Result<WorkerInfo> {
-        let id = options.name.unwrap_or_else(|| generate_worker_id());
+        let id = options.name.unwrap_or_else(generate_worker_id);
         
         // 构建启动参数
         let worker_args = WorkerStartArgs {

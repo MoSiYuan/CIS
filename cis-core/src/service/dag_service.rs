@@ -32,7 +32,7 @@ impl From<crate::storage::DagRecord> for DagSummary {
             status: record.status.parse().unwrap_or(DagStatus::Draft),
             scope: record.scope.parse().unwrap_or(DagScope::User),
             tasks_count: record.tasks_count,
-            created_at: Utc.timestamp_opt(record.created_at, 0).single().unwrap_or_else(|| Utc::now()),
+            created_at: Utc.timestamp_opt(record.created_at, 0).single().unwrap_or_else(Utc::now),
             last_run: record.last_run_at.and_then(|t| Utc.timestamp_opt(t, 0).single()),
         }
     }
@@ -69,7 +69,7 @@ impl TryFrom<crate::storage::DagDetail> for DagInfo {
                 status: detail.status.parse().unwrap_or(DagStatus::Draft),
                 scope: detail.scope.parse().unwrap_or(DagScope::User),
                 tasks_count: detail.tasks_count,
-                created_at: Utc.timestamp_opt(detail.created_at, 0).single().unwrap_or_else(|| Utc::now()),
+                created_at: Utc.timestamp_opt(detail.created_at, 0).single().unwrap_or_else(Utc::now),
                 last_run: detail.last_run_at.and_then(|t| Utc.timestamp_opt(t, 0).single()),
             },
             description: detail.description.unwrap_or_default(),
@@ -173,7 +173,7 @@ impl From<crate::storage::DagRunRecord> for DagRun {
             run_id: record.run_id,
             dag_id: record.dag_id,
             status: record.status.parse().unwrap_or(RunStatus::Pending),
-            started_at: Utc.timestamp_opt(record.started_at, 0).single().unwrap_or_else(|| Utc::now()),
+            started_at: Utc.timestamp_opt(record.started_at, 0).single().unwrap_or_else(Utc::now),
             finished_at: record.finished_at.and_then(|t| Utc.timestamp_opt(t, 0).single()),
             tasks_completed: record.tasks_completed,
             tasks_failed: record.tasks_failed,
@@ -277,7 +277,7 @@ impl DagService {
             .map_err(|e| CisError::storage(format!("Failed to lock core db: {}", e)))?;
 
         // 检查名称是否已存在
-        if let Some(_) = core.get_dag_by_name(name)? {
+        if core.get_dag_by_name(name)?.is_some() {
             return Err(CisError::already_exists(format!("DAG with name '{}' already exists", name)));
         }
 
@@ -443,7 +443,7 @@ impl DagService {
             .map(|log| {
                 let time = Utc.timestamp_opt(log.timestamp, 0)
                     .single()
-                    .unwrap_or_else(|| Utc::now())
+                    .unwrap_or_else(Utc::now)
                     .format("%Y-%m-%d %H:%M:%S");
                 format!("[{}] [{}] {}", time, log.level.to_uppercase(), log.message)
             })
@@ -505,7 +505,7 @@ impl DagService {
             .map_err(|e| CisError::storage(format!("Failed to lock core db: {}", e)))?;
 
         let count = core.prune_dag_runs(max_age_days)?;
-        Ok(count as usize)
+        Ok(count)
     }
 }
 

@@ -6,6 +6,7 @@ use super::{ListOptions, PaginatedResult, ResourceStats};
 use crate::error::{CisError, Result};
 use crate::identity::did::DIDManager;
 use crate::network::acl::NetworkAcl;
+#[cfg(feature = "p2p")]
 use crate::p2p::peer::{PeerInfo as P2PPeerInfo, PeerManager};
 use crate::storage::federation_db::{FederationDb, PeerInfo as DbPeerInfo, PeerStatus};
 use crate::storage::paths::Paths;
@@ -116,6 +117,7 @@ impl From<TrustLevel> for crate::storage::federation_db::TrustLevel {
 #[derive(Debug, Clone)]
 pub struct NodeService {
     federation_db: Arc<RwLock<FederationDb>>,
+    #[cfg(feature = "p2p")]
     peer_manager: Arc<PeerManager>,
     acl: Arc<RwLock<NetworkAcl>>,
     local_did: String,
@@ -137,7 +139,9 @@ impl NodeService {
         let local_did = acl.local_did.clone();
         
         Ok(Self {
+            #[allow(clippy::arc_with_non_send_sync)]
             federation_db: Arc::new(RwLock::new(federation_db)),
+            #[cfg(feature = "p2p")]
             peer_manager: Arc::new(PeerManager::new()),
             acl: Arc::new(RwLock::new(acl)),
             local_did,
@@ -305,7 +309,7 @@ impl NodeService {
             (parsed.0, did_str.clone(), parsed.1)
         } else {
             // 生成临时节点 ID
-            let temp_id = format!("node-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+            let temp_id = format!("node-{}", &uuid::Uuid::new_v4().to_string()[..8]);
             let temp_did = format!("did:cis:{}:temp", temp_id);
             (temp_id, temp_did, String::new())
         };
@@ -342,16 +346,19 @@ impl NodeService {
         }
         
         // 添加到对等节点管理器
-        let p2p_peer = P2PPeerInfo {
-            node_id: node_id.clone(),
-            did: did.clone(),
-            address: options.endpoint.clone(),
-            last_seen: now,
-            last_sync_at: None,
-            is_connected: false,
-            capabilities: vec![],
-        };
-        self.peer_manager.update_peer(p2p_peer).await?;
+        #[cfg(feature = "p2p")]
+        {
+            let p2p_peer = P2PPeerInfo {
+                node_id: node_id.clone(),
+                did: did.clone(),
+                address: options.endpoint.clone(),
+                last_seen: now,
+                last_sync_at: None,
+                is_connected: false,
+                capabilities: vec![],
+            };
+            self.peer_manager.update_peer(p2p_peer).await?;
+        }
         
         info!("Bound new node: {} ({})", node_id, did);
         
@@ -389,6 +396,7 @@ impl NodeService {
         drop(db);
         
         // 更新对等节点管理器
+        #[cfg(feature = "p2p")]
         if let Some(mut p2p_peer) = self.peer_manager.get_peer(id).await? {
             p2p_peer.is_connected = false;
             self.peer_manager.update_peer(p2p_peer).await?;
@@ -476,6 +484,7 @@ impl NodeService {
         
         // 模拟 ping 操作（实际实现会使用 WebSocket 或其他协议）
         // 这里我们检查对等节点管理器中的状态
+        #[cfg(feature = "p2p")]
         if let Some(p2p_peer) = self.peer_manager.get_peer(id).await? {
             let is_healthy = !p2p_peer.is_unhealthy();
             
@@ -518,6 +527,7 @@ impl NodeService {
         }
         
         // 更新同步时间
+        #[cfg(feature = "p2p")]
         self.peer_manager.update_sync_time(id).await?;
         
         // 添加同步任务到数据库
@@ -592,6 +602,7 @@ impl NodeService {
         drop(db);
         
         // 从 peer_manager 中移除
+        #[cfg(feature = "p2p")]
         for node_id in &removed {
             // 注意: P2P PeerManager 没有直接删除方法，我们标记为不健康
             let _ = self.peer_manager.mark_unhealthy(node_id).await;
@@ -620,8 +631,8 @@ impl NodeService {
                     public_key: row.get(6)?,
                 })
             })
-            .map_err(|e| CisError::Database(e))?
-            .map(|r| r.map_err(|e| CisError::Database(e)))
+            .map_err(CisError::Database)?
+            .map(|r| r.map_err(CisError::Database))
             .collect();
         
         peers

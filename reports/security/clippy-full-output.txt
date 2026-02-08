@@ -1,0 +1,2000 @@
+    Blocking waiting for file lock on build directory
+    Checking bytes v1.11.1
+    Checking bitflags v2.10.0
+    Checking zerocopy v0.8.37
+    Checking zeroize v1.8.2
+   Compiling cfg_aliases v0.2.1
+   Compiling getrandom v0.3.4
+   Compiling thiserror v2.0.18
+    Checking num-traits v0.2.19
+   Compiling thiserror-impl v2.0.18
+   Compiling ahash v0.8.12
+    Checking objc2-encode v4.1.0
+    Checking regex-automata v0.4.13
+   Compiling rustix v1.1.3
+    Checking foldhash v0.1.5
+    Checking tokio v1.49.0
+    Checking http v1.4.0
+    Checking http v0.2.12
+    Checking time v0.3.47
+   Compiling form_urlencoded v1.2.2
+    Checking hashbrown v0.15.5
+    Checking core-foundation v0.10.1
+   Compiling idna v1.1.0
+    Checking der v0.7.10
+    Checking http-body v1.0.1
+    Checking cipher v0.4.4
+   Compiling concurrent-queue v2.5.0
+   Compiling libsqlite3-sys v0.30.1
+   Compiling parking v2.2.1
+   Compiling heck v0.5.0
+   Compiling event-listener v5.4.1
+    Checking spki v0.7.3
+   Compiling hashlink v0.10.0
+   Compiling url v2.5.8
+    Checking rand_core v0.9.5
+    Checking regex v1.12.2
+    Checking security-framework v2.11.1
+    Checking rustls-pki-types v1.14.0
+   Compiling libm v0.2.16
+   Compiling ryu v1.0.22
+    Checking ruma-common v0.13.0
+   Compiling rustls v0.23.36
+   Compiling rustls v0.21.12
+   Compiling objc2 v0.6.3
+   Compiling base64 v0.22.1
+   Compiling objc-sys v0.3.5
+    Checking ppv-lite86 v0.2.21
+    Checking rand_chacha v0.3.1
+    Checking rand_chacha v0.9.0
+    Checking hashbrown v0.14.5
+    Checking rustls-webpki v0.103.9
+    Checking rand v0.8.5
+   Compiling serde_urlencoded v0.7.1
+    Checking tempfile v3.24.0
+   Compiling atoi v2.0.0
+    Checking pkcs8 v0.10.2
+    Checking curve25519-dalek v4.1.3
+    Checking tokio-util v0.7.18
+    Checking http-body v0.4.6
+    Checking ed25519 v2.2.3
+    Checking native-tls v0.2.14
+    Checking tokio-stream v0.1.18
+    Checking rand v0.9.2
+    Checking h2 v0.3.27
+    Checking http-body-util v0.1.3
+    Checking security-framework v3.5.1
+    Checking ruma-events v0.28.1
+   Compiling quinn-udp v0.5.14
+   Compiling bytemuck_derive v1.10.2
+   Compiling sqlx-core v0.8.6
+    Checking siphasher v1.0.2
+    Checking hyper v1.8.1
+    Checking fastbloom v0.14.1
+    Checking chrono v0.4.43
+    Checking tokio-rustls v0.24.1
+    Checking objc2 v0.5.2
+    Checking bytemuck v1.25.0
+    Checking tokio-native-tls v0.3.1
+    Checking ed25519-dalek v2.2.0
+    Checking rustix v0.38.44
+    Checking hashlink v0.9.1
+    Checking aes v0.8.4
+    Checking ctr v0.9.2
+    Checking chacha20 v0.9.1
+   Compiling quinn v0.11.9
+    Checking lru-slab v0.1.2
+   Compiling crc32fast v1.5.0
+    Checking simd-adler32 v0.3.8
+    Checking rustls-platform-verifier v0.6.2
+    Checking rustc-hash v2.1.1
+    Checking attohttpc v0.16.3
+    Checking rusqlite v0.32.1
+    Checking quinn-proto v0.11.13
+    Checking which v6.0.3
+    Checking aes-gcm v0.10.3
+    Checking chacha20poly1305 v0.10.1
+    Checking block2 v0.5.1
+    Checking axum-core v0.4.5
+    Checking ruma-signatures v0.15.0
+    Checking git2 v0.18.3
+    Checking webrtc-util v0.8.1
+    Checking hyper-util v0.1.19
+    Checking sqlx-sqlite v0.8.6
+    Checking objc2-core-foundation v0.3.2
+    Checking hyper v0.14.32
+    Checking tower v0.5.3
+    Checking tungstenite v0.21.0
+    Checking matchers v0.2.0
+    Checking yasna v0.5.2
+    Checking uuid v1.20.0
+    Checking adler2 v2.0.1
+    Checking dispatch v0.2.0
+    Checking arrayvec v0.7.6
+    Checking objc2-foundation v0.2.2
+    Checking tracing-subscriber v0.3.22
+    Checking miniz_oxide v0.8.9
+    Checking stun v0.5.1
+    Checking axum v0.7.9
+    Checking rcgen v0.12.1
+    Checking tokio-tungstenite v0.21.0
+    Checking snow v0.9.6
+    Checking igd v0.12.1
+    Checking rustls-native-certs v0.6.3
+    Checking tower-http v0.5.2
+    Checking dashmap v5.5.3
+    Checking ipnetwork v0.20.0
+   Compiling sqlx-macros-core v0.8.6
+   Compiling foreign-types-macros v0.2.3
+    Checking accesskit v0.17.1
+    Checking ttf-parser v0.25.1
+    Checking utf8parse v0.2.2
+    Checking foreign-types-shared v0.3.1
+   Compiling signal-hook v0.3.18
+    Checking hyper-rustls v0.24.2
+    Checking hyper-tls v0.5.0
+    Checking cursor-icon v1.2.0
+    Checking foreign-types v0.5.0
+    Checking reqwest v0.11.27
+    Checking anstyle-parse v0.2.7
+    Checking flate2 v1.1.9
+    Checking objc2-core-graphics v0.3.2
+    Checking ruma-federation-api v0.9.0
+    Checking ruma-client-api v0.18.0
+    Checking objc2-foundation v0.3.2
+   Compiling sqlx-macros v0.8.6
+    Checking emath v0.31.1
+   Compiling winit v0.30.12
+    Checking core-graphics-types v0.1.3
+   Compiling fax_derive v0.2.0
+    Checking zune-core v0.4.12
+    Checking raw-window-handle v0.6.2
+    Checking anstyle-query v1.1.5
+    Checking is_terminal_polyfill v1.70.2
+    Checking sqlx v0.8.6
+    Checking colorchoice v1.0.4
+    Checking ab_glyph_rasterizer v0.1.10
+    Checking anstyle v1.0.13
+    Checking fax v0.2.6
+    Checking zune-jpeg v0.4.21
+    Checking owned_ttf_parser v0.25.1
+    Checking objc2-app-kit v0.2.2
+    Checking anstream v0.6.21
+    Checking ab_glyph v0.2.32
+    Checking core-graphics v0.23.2
+    Checking ecolor v0.31.1
+    Checking immutable-chunkmap v2.1.2
+    Checking fdeflate v0.3.7
+    Checking half v2.7.1
+    Checking pxfm v0.1.27
+    Checking strsim v0.11.1
+    Checking unicode-width v0.2.2
+    Checking smol_str v0.2.2
+    Checking dpi v0.1.2
+    Checking epaint_default_fonts v0.31.1
+    Checking nohash-hasher v0.2.0
+    Checking clap_lex v0.7.7
+    Checking weezl v0.1.12
+    Checking quick-error v2.0.1
+    Checking profiling v1.0.17
+    Checking accesskit_consumer v0.26.0
+    Checking png v0.18.0
+    Checking clap_builder v4.5.56
+   Compiling clap_derive v4.5.55
+    Checking epaint v0.31.1
+    Checking tiff v0.10.3
+   Compiling glutin v0.32.3
+   Compiling memoffset v0.9.1
+   Compiling portable-atomic v1.13.1
+    Checking objc2-app-kit v0.3.2
+    Checking byteorder-lite v0.1.0
+    Checking egui v0.31.1
+    Checking dispatch2 v0.3.0
+    Checking tungstenite v0.24.0
+   Compiling glutin-winit v0.5.0
+   Compiling serde_derive_internals v0.29.1
+   Compiling cis-skill-sdk-derive v1.1.0 (/Users/jiangxiaolong/work/project/CIS/cis-skill-sdk/cis-skill-sdk-derive)
+    Checking mio v0.8.11
+    Checking moxcms v0.7.11
+    Checking cgl v0.3.2
+    Checking clap v4.5.56
+warning: docs for function which may panic missing `# Panics` section
+  --> cis-skill-sdk/cis-skill-sdk-derive/src/lib.rs:54:1
+   |
+54 | pub fn derive_skill(input: TokenStream) -> TokenStream {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: first possible panic found here
+  --> cis-skill-sdk/cis-skill-sdk-derive/src/lib.rs:55:15
+   |
+55 |     let ast = syn::parse(input).unwrap();
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_panics_doc
+   = note: `-W clippy::missing-panics-doc` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_panics_doc)]`
+
+    Checking libloading v0.8.9
+    Checking same-file v1.0.6
+warning: `cis-skill-sdk-derive` (lib) generated 1 warning
+    Checking unicode-ident v1.0.22
+   Compiling schemars v0.8.22
+    Checking cis-skill-sdk v1.1.0 (/Users/jiangxiaolong/work/project/CIS/cis-skill-sdk)
+    Checking walkdir v2.5.0
+   Compiling schemars_derive v0.8.22
+    Checking proc-macro2 v1.0.106
+    Checking signal-hook-mio v0.2.5
+    Checking tokio-tungstenite v0.24.0
+    Checking accesskit_macos v0.18.1
+    Checking console v0.15.11
+    Checking webbrowser v1.0.6
+    Checking crossbeam-channel v0.5.15
+    Checking fsevent-sys v4.1.0
+    Checking filetime v0.2.27
+    Checking unsafe-libyaml v0.2.11
+    Checking glow v0.16.0
+   Compiling litrs v1.0.0
+    Checking number_prefix v0.4.0
+    Checking dyn-clone v1.0.20
+    Checking indicatif v0.17.11
+    Checking serde_yaml v0.9.34+deprecated
+   Compiling document-features v0.2.12
+    Checking notify v6.1.1
+    Checking quote v1.0.44
+    Checking crossterm v0.27.0
+    Checking clap_complete v4.5.65
+    Checking vte v0.15.0
+    Checking polling v3.11.0
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/ai.rs:109:5
+    |
+109 |     pub fn chat(prompt: &str) -> crate::error::Result<String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+    = note: `-W clippy::missing-errors-doc` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_errors_doc)]`
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/ai.rs:114:5
+    |
+114 | /     pub fn generate_json(
+115 | |         prompt: &str,
+116 | |         schema: &str,
+117 | |     ) -> crate::error::Result<serde_json::Value> {
+    | |________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/ai.rs:122:5
+    |
+122 |     pub fn summarize(text: &str, max_length: usize) -> crate::error::Result<String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: variables can be used directly in the `format!` string
+   --> cis-skill-sdk/src/ai.rs:123:22
+    |
+123 |           let prompt = format!(
+    |  ______________________^
+124 | |             "请将以下文本总结为不超过 {} 个字的摘要:\n\n{}",
+125 | |             max_length, text
+126 | |         );
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+    = note: `-W clippy::uninlined-format-args` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::uninlined_format_args)]`
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/ai.rs:131:5
+    |
+131 |     pub fn extract_keywords(text: &str, count: usize) -> crate::error::Result<Vec<String>> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: variables can be used directly in the `format!` string
+   --> cis-skill-sdk/src/ai.rs:132:22
+    |
+132 |           let prompt = format!(
+    |  ______________________^
+133 | |             "请从以下文本中提取 {} 个关键词，用逗号分隔:\n\n{}",
+134 | |             count, text
+135 | |         );
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/ai.rs:145:5
+    |
+145 |     pub fn sentiment(text: &str) -> crate::error::Result<Sentiment> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: variables can be used directly in the `format!` string
+   --> cis-skill-sdk/src/ai.rs:146:22
+    |
+146 |           let prompt = format!(
+    |  ______________________^
+147 | |             r#"请分析以下文本的情感，返回 JSON: {{"sentiment": "positive|negative|neutral", "score": 0.0-1.0}}
+148 | |
+149 | | 文本: {}"#,
+150 | |             text
+151 | |         );
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+
+warning: casting `f64` to `f32` may truncate the value
+   --> cis-skill-sdk/src/ai.rs:171:20
+    |
+171 |             score: score as f32,
+    |                    ^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#cast_possible_truncation
+    = note: `-W clippy::cast-possible-truncation` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_truncation)]`
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/ai.rs:176:5
+    |
+176 |     pub fn classify(text: &str, categories: &[&str]) -> crate::error::Result<String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: variables can be used directly in the `format!` string
+   --> cis-skill-sdk/src/ai.rs:178:22
+    |
+178 |           let prompt = format!(
+    |  ______________________^
+179 | |             "请将以下文本分类到 [{}] 中的一个类别:\n\n{}",
+180 | |             categories_str, text
+181 | |         );
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+
+warning: this method could have a `#[must_use]` attribute
+   --> cis-skill-sdk/src/ai.rs:209:12
+    |
+209 |     pub fn is_positive(&self) -> bool {
+    |            ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+    = note: `-W clippy::must-use-candidate` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::must_use_candidate)]`
+help: add the attribute
+    |
+209 ~     #[must_use] 
+210 ~     pub fn is_positive(&self) -> bool {
+    |
+
+warning: this method could have a `#[must_use]` attribute
+   --> cis-skill-sdk/src/ai.rs:213:12
+    |
+213 |     pub fn is_negative(&self) -> bool {
+    |            ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+    |
+213 ~     #[must_use] 
+214 ~     pub fn is_negative(&self) -> bool {
+    |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:32:13
+   |
+32 |             Error::NotInitialized(msg) => write!(f, "Skill not initialized: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+   = note: `-W clippy::use-self` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::use_self)]`
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:32:43
+   |
+32 |             Error::NotInitialized(msg) => write!(f, "Skill not initialized: {}", msg),
+   |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+32 -             Error::NotInitialized(msg) => write!(f, "Skill not initialized: {}", msg),
+32 +             Error::NotInitialized(msg) => write!(f, "Skill not initialized: {msg}"),
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:33:13
+   |
+33 |             Error::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:33:41
+   |
+33 |             Error::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+33 -             Error::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
+33 +             Error::InvalidInput(msg) => write!(f, "Invalid input: {msg}"),
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:34:13
+   |
+34 |             Error::HostError(msg) => write!(f, "Host API error: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:34:38
+   |
+34 |             Error::HostError(msg) => write!(f, "Host API error: {}", msg),
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+34 -             Error::HostError(msg) => write!(f, "Host API error: {}", msg),
+34 +             Error::HostError(msg) => write!(f, "Host API error: {msg}"),
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:35:13
+   |
+35 |             Error::AiError(msg) => write!(f, "AI service error: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:35:36
+   |
+35 |             Error::AiError(msg) => write!(f, "AI service error: {}", msg),
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+35 -             Error::AiError(msg) => write!(f, "AI service error: {}", msg),
+35 +             Error::AiError(msg) => write!(f, "AI service error: {msg}"),
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:36:13
+   |
+36 |             Error::MemoryError(msg) => write!(f, "Memory operation failed: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:36:40
+   |
+36 |             Error::MemoryError(msg) => write!(f, "Memory operation failed: {}", msg),
+   |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+36 -             Error::MemoryError(msg) => write!(f, "Memory operation failed: {}", msg),
+36 +             Error::MemoryError(msg) => write!(f, "Memory operation failed: {msg}"),
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:37:13
+   |
+37 |             Error::NetworkError(msg) => write!(f, "Network error: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:37:41
+   |
+37 |             Error::NetworkError(msg) => write!(f, "Network error: {}", msg),
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+37 -             Error::NetworkError(msg) => write!(f, "Network error: {}", msg),
+37 +             Error::NetworkError(msg) => write!(f, "Network error: {msg}"),
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:38:13
+   |
+38 |             Error::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:38:47
+   |
+38 |             Error::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
+   |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+38 -             Error::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
+38 +             Error::SerializationError(msg) => write!(f, "Serialization error: {msg}"),
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:39:13
+   |
+39 |             Error::PermissionDenied(msg) => write!(f, "Permission denied: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:39:45
+   |
+39 |             Error::PermissionDenied(msg) => write!(f, "Permission denied: {}", msg),
+   |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+39 -             Error::PermissionDenied(msg) => write!(f, "Permission denied: {}", msg),
+39 +             Error::PermissionDenied(msg) => write!(f, "Permission denied: {msg}"),
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:40:13
+   |
+40 |             Error::NotFound(msg) => write!(f, "Not found: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:40:37
+   |
+40 |             Error::NotFound(msg) => write!(f, "Not found: {}", msg),
+   |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+40 -             Error::NotFound(msg) => write!(f, "Not found: {}", msg),
+40 +             Error::NotFound(msg) => write!(f, "Not found: {msg}"),
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:41:13
+   |
+41 |             Error::Internal(msg) => write!(f, "Internal error: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:41:37
+   |
+41 |             Error::Internal(msg) => write!(f, "Internal error: {}", msg),
+   |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+41 -             Error::Internal(msg) => write!(f, "Internal error: {}", msg),
+41 +             Error::Internal(msg) => write!(f, "Internal error: {msg}"),
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:42:13
+   |
+42 |             Error::Other(msg) => write!(f, "Other: {}", msg),
+   |             ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: variables can be used directly in the `format!` string
+  --> cis-skill-sdk/src/error.rs:42:34
+   |
+42 |             Error::Other(msg) => write!(f, "Other: {}", msg),
+   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+42 -             Error::Other(msg) => write!(f, "Other: {}", msg),
+42 +             Error::Other(msg) => write!(f, "Other: {msg}"),
+   |
+
+warning: item in documentation is missing backticks
+  --> cis-skill-sdk/src/error.rs:70:12
+   |
+70 |     /// 创建 NotFound 错误
+   |              ^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+   = note: `-W clippy::doc-markdown` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::doc_markdown)]`
+help: try
+   |
+70 -     /// 创建 NotFound 错误
+70 +     /// 创建 `NotFound` 错误
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:72:9
+   |
+72 |         Error::NotFound(msg.into())
+   |         ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: item in documentation is missing backticks
+  --> cis-skill-sdk/src/error.rs:75:12
+   |
+75 |     /// 创建 InvalidInput 错误
+   |              ^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+help: try
+   |
+75 -     /// 创建 InvalidInput 错误
+75 +     /// 创建 `InvalidInput` 错误
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:77:9
+   |
+77 |         Error::InvalidInput(msg.into())
+   |         ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: item in documentation is missing backticks
+  --> cis-skill-sdk/src/error.rs:80:12
+   |
+80 |     /// 创建 HostError 错误
+   |              ^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+help: try
+   |
+80 -     /// 创建 HostError 错误
+80 +     /// 创建 `HostError` 错误
+   |
+
+warning: unnecessary structure name repetition
+  --> cis-skill-sdk/src/error.rs:82:9
+   |
+82 |         Error::HostError(msg.into())
+   |         ^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:115:41
+    |
+115 |             Error::NotInitialized(_) => ErrorCode::NotInitialized,
+    |                                         ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:116:39
+    |
+116 |             Error::InvalidInput(_) => ErrorCode::InvalidInput,
+    |                                       ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:117:36
+    |
+117 |             Error::HostError(_) => ErrorCode::HostError,
+    |                                    ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:118:34
+    |
+118 |             Error::AiError(_) => ErrorCode::AiError,
+    |                                  ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:119:38
+    |
+119 |             Error::MemoryError(_) => ErrorCode::MemoryError,
+    |                                      ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:120:39
+    |
+120 |             Error::NetworkError(_) => ErrorCode::NetworkError,
+    |                                       ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:121:45
+    |
+121 |             Error::SerializationError(_) => ErrorCode::SerializationError,
+    |                                             ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:122:43
+    |
+122 |             Error::PermissionDenied(_) => ErrorCode::PermissionDenied,
+    |                                           ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:123:35
+    |
+123 |             Error::NotFound(_) => ErrorCode::NotFound,
+    |                                   ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:124:35
+    |
+124 |             Error::Internal(_) => ErrorCode::Internal,
+    |                                   ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:125:32
+    |
+125 |             Error::Other(_) => ErrorCode::Other,
+    |                                ^^^^^^^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+   --> cis-skill-sdk/src/error.rs:132:17
+    |
+132 |         code as i32
+    |                 ^^^ help: use the applicable keyword: `Self`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: usage of wildcard import
+  --> cis-skill-sdk/src/host.rs:19:9
+   |
+19 |     use super::*;
+   |         ^^^^^^^^ help: try: `super::{LogLevel, Result, HttpRequest, HttpResponse}`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#wildcard_imports
+   = note: `-W clippy::wildcard-imports` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::wildcard_imports)]`
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/host.rs:33:9
+   |
+33 |         fn memory_set(&self, key: &str, value: &[u8]) -> Result<()>;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/host.rs:36:9
+   |
+36 |         fn memory_delete(&self, key: &str) -> Result<()>;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/host.rs:42:9
+   |
+42 |         fn ai_chat(&self, prompt: &str) -> Result<String>;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/host.rs:45:9
+   |
+45 |         fn ai_generate_json(&self, prompt: &str, schema: &str) -> Result<serde_json::Value>;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/host.rs:48:9
+   |
+48 |         fn http_request(&self, request: HttpRequest) -> Result<HttpResponse>;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/host.rs:60:9
+   |
+60 |         fn read_file(&self, path: &str) -> Result<Vec<u8>>;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/host.rs:63:9
+   |
+63 |         fn write_file(&self, path: &str, content: &[u8]) -> Result<()>;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/host.rs:66:9
+   |
+66 |         fn call_skill(&self, skill_name: &str, method: &str, params: &[u8]) -> Result<Vec<u8>>;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/host.rs:69:9
+   |
+69 |         fn emit_event(&self, target_skill: &str, event: &str, data: &[u8]) -> Result<()>;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: item in documentation is missing backticks
+  --> cis-skill-sdk/src/host.rs:86:13
+   |
+86 |     /// 必须在 init_host_api 之后调用
+   |                ^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+help: try
+   |
+86 -     /// 必须在 init_host_api 之后调用
+86 +     /// 必须在 `init_host_api` 之后调用
+   |
+
+warning: docs for function which may panic missing `# Panics` section
+  --> cis-skill-sdk/src/host.rs:87:5
+   |
+87 |     pub unsafe fn host_api() -> &'static dyn HostApi {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: first possible panic found here
+  --> cis-skill-sdk/src/host.rs:88:9
+   |
+88 |         HOST_API.expect("Host API not initialized")
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_panics_doc
+   = note: `-W clippy::missing-panics-doc` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_panics_doc)]`
+
+warning: this function could have a `#[must_use]` attribute
+  --> cis-skill-sdk/src/host.rs:87:19
+   |
+87 |     pub unsafe fn host_api() -> &'static dyn HostApi {
+   |                   ^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+   |
+87 ~     #[must_use] 
+88 ~     pub unsafe fn host_api() -> &'static dyn HostApi {
+   |
+
+warning: this method could have a `#[must_use]` attribute
+   --> cis-skill-sdk/src/host.rs:211:12
+    |
+211 |     pub fn memory_get(key: &str) -> Option<Vec<u8>> {
+    |            ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+    |
+211 ~     #[must_use] 
+212 ~     pub fn memory_get(key: &str) -> Option<Vec<u8>> {
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/host.rs:217:5
+    |
+217 |     pub fn memory_set(key: &str, value: &[u8]) -> Result<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/host.rs:223:5
+    |
+223 |     pub fn ai_chat(prompt: &str) -> crate::error::Result<String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/host.rs:229:5
+    |
+229 |     pub fn ai_generate_json(prompt: &str, schema: &str) -> crate::error::Result<serde_json::Value> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/host.rs:235:5
+    |
+235 |     pub fn http_request(request: HttpRequest) -> Result<HttpResponse> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+    Checking egui_glow v0.31.1
+    Checking rustix-openpty v0.2.0
+   Compiling rmcp-macros v0.1.5
+    Checking static_assertions v1.1.0
+    Checking accesskit_winit v0.23.1
+    Checking alacritty_terminal v0.25.1
+warning: missing `#[must_use]` attribute on a method returning `Self`
+   --> cis-skill-sdk/src/im.rs:216:5
+    |
+216 | /     pub fn to(mut self, to: impl Into<String>) -> Self {
+217 | |         self.msg.to = to.into();
+218 | |         self
+219 | |     }
+    | |_____^
+    |
+    = help: consider adding the `#[must_use]` attribute to the method or directly to the `Self` type
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#return_self_not_must_use
+    = note: `-W clippy::return-self-not-must-use` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::return_self_not_must_use)]`
+
+warning: missing `#[must_use]` attribute on a method returning `Self`
+   --> cis-skill-sdk/src/im.rs:222:5
+    |
+222 | /     pub fn from(mut self, from: impl Into<String>) -> Self {
+223 | |         self.msg.from = from.into();
+224 | |         self
+225 | |     }
+    | |_____^
+    |
+    = help: consider adding the `#[must_use]` attribute to the method or directly to the `Self` type
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#return_self_not_must_use
+
+warning: this method could have a `#[must_use]` attribute
+   --> cis-skill-sdk/src/im.rs:228:12
+    |
+228 |     pub fn in_private(mut self) -> Self {
+    |            ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+    |
+228 ~     #[must_use] 
+229 ~     pub fn in_private(mut self) -> Self {
+    |
+
+    Checking cis-capability v0.1.0 (/Users/jiangxiaolong/work/project/CIS/crates/cis-capability)
+warning: this could be a `const fn`
+   --> cis-skill-sdk/src/im.rs:228:5
+    |
+228 | /     pub fn in_private(mut self) -> Self {
+229 | |         self.msg.session_type = SessionType::Private;
+230 | |         self
+231 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+    = note: `-W clippy::missing-const-for-fn` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::missing_const_for_fn)]`
+help: make the function `const`
+    |
+228 |     pub const fn in_private(mut self) -> Self {
+    |         +++++
+
+warning: missing `#[must_use]` attribute on a method returning `Self`
+   --> cis-skill-sdk/src/im.rs:228:5
+    |
+228 | /     pub fn in_private(mut self) -> Self {
+229 | |         self.msg.session_type = SessionType::Private;
+230 | |         self
+231 | |     }
+    | |_____^
+    |
+    = help: consider adding the `#[must_use]` attribute to the method or directly to the `Self` type
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#return_self_not_must_use
+
+warning: this method could have a `#[must_use]` attribute
+   --> cis-skill-sdk/src/im.rs:234:12
+    |
+234 |     pub fn in_group(mut self) -> Self {
+    |            ^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+    |
+234 ~     #[must_use] 
+235 ~     pub fn in_group(mut self) -> Self {
+    |
+
+warning: this could be a `const fn`
+   --> cis-skill-sdk/src/im.rs:234:5
+    |
+234 | /     pub fn in_group(mut self) -> Self {
+235 | |         self.msg.session_type = SessionType::Group;
+236 | |         self
+237 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+    |
+234 |     pub const fn in_group(mut self) -> Self {
+    |         +++++
+
+warning: missing `#[must_use]` attribute on a method returning `Self`
+   --> cis-skill-sdk/src/im.rs:234:5
+    |
+234 | /     pub fn in_group(mut self) -> Self {
+235 | |         self.msg.session_type = SessionType::Group;
+236 | |         self
+237 | |     }
+    | |_____^
+    |
+    = help: consider adding the `#[must_use]` attribute to the method or directly to the `Self` type
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#return_self_not_must_use
+
+warning: this method could have a `#[must_use]` attribute
+   --> cis-skill-sdk/src/im.rs:240:12
+    |
+240 |     pub fn in_channel(mut self) -> Self {
+    |            ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+    |
+240 ~     #[must_use] 
+241 ~     pub fn in_channel(mut self) -> Self {
+    |
+
+warning: this could be a `const fn`
+   --> cis-skill-sdk/src/im.rs:240:5
+    |
+240 | /     pub fn in_channel(mut self) -> Self {
+241 | |         self.msg.session_type = SessionType::Channel;
+242 | |         self
+243 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+    |
+240 |     pub const fn in_channel(mut self) -> Self {
+    |         +++++
+
+warning: missing `#[must_use]` attribute on a method returning `Self`
+   --> cis-skill-sdk/src/im.rs:240:5
+    |
+240 | /     pub fn in_channel(mut self) -> Self {
+241 | |         self.msg.session_type = SessionType::Channel;
+242 | |         self
+243 | |     }
+    | |_____^
+    |
+    = help: consider adding the `#[must_use]` attribute to the method or directly to the `Self` type
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#return_self_not_must_use
+
+warning: missing `#[must_use]` attribute on a method returning `Self`
+   --> cis-skill-sdk/src/im.rs:246:5
+    |
+246 | /     pub fn reply_to(mut self, msg_id: impl Into<String>) -> Self {
+247 | |         self.msg.reply_to = Some(msg_id.into());
+248 | |         self
+249 | |     }
+    | |_____^
+    |
+    = help: consider adding the `#[must_use]` attribute to the method or directly to the `Self` type
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#return_self_not_must_use
+
+warning: missing `#[must_use]` attribute on a method returning `Self`
+   --> cis-skill-sdk/src/im.rs:252:5
+    |
+252 | /     pub fn mention(mut self, user: impl Into<String>) -> Self {
+253 | |         self.msg.mentions.push(user.into());
+254 | |         self
+255 | |     }
+    | |_____^
+    |
+    = help: consider adding the `#[must_use]` attribute to the method or directly to the `Self` type
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#return_self_not_must_use
+
+warning: this method could have a `#[must_use]` attribute
+   --> cis-skill-sdk/src/im.rs:258:12
+    |
+258 |     pub fn build(self) -> ImMessage {
+    |            ^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+    |
+258 ~     #[must_use] 
+259 ~     pub fn build(self) -> ImMessage {
+    |
+
+    Checking syn v2.0.114
+    Checking directories v5.0.1
+    Checking cis-skill-init-wizard v0.1.0 (/Users/jiangxiaolong/work/project/CIS/skills/init-wizard)
+    Checking cis-skill-ai-executor v0.1.0 (/Users/jiangxiaolong/work/project/CIS/skills/ai-executor)
+warning: this could be a `const fn`
+   --> cis-skill-sdk/src/im.rs:383:1
+    |
+383 | fn default_retry() -> u32 { 3 }
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+    |
+383 | const fn default_retry() -> u32 { 3 }
+    | +++++
+
+warning: this could be a `const fn`
+   --> cis-skill-sdk/src/im.rs:384:1
+    |
+384 | fn default_timeout() -> u64 { 30000 }
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+    |
+384 | const fn default_timeout() -> u64 { 30000 }
+    | +++++
+
+warning: this could be a `const fn`
+   --> cis-skill-sdk/src/im.rs:405:1
+    |
+405 | fn default_limit() -> u32 { 20 }
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+    |
+405 | const fn default_limit() -> u32 { 20 }
+    | +++++
+
+warning: item in documentation is missing backticks
+   --> cis-skill-sdk/src/im.rs:433:7
+    |
+433 | /// 为 SkillContext 添加 IM 相关便捷方法
+    |        ^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+help: try
+    |
+433 - /// 为 SkillContext 添加 IM 相关便捷方法
+433 + /// 为 `SkillContext` 添加 IM 相关便捷方法
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/im.rs:436:5
+    |
+436 |     fn im_send(&self, message: &ImMessage) -> crate::error::Result<SendMessageResponse>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/im.rs:439:5
+    |
+439 |     fn im_reply(&self, original: &ImMessage, content: MessageContent) -> crate::error::Result<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/im.rs:442:5
+    |
+442 |     fn im_get_sessions(&self) -> crate::error::Result<Vec<Session>>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/im.rs:445:5
+    |
+445 |     fn im_get_history(&self, req: &GetHistoryRequest) -> crate::error::Result<GetHistoryResponse>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/im.rs:448:5
+    |
+448 |     fn im_mark_read(&self, session_id: &str, msg_id: &str) -> crate::error::Result<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/im.rs:451:5
+    |
+451 |     fn im_recall(&self, msg_id: &str) -> crate::error::Result<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/im.rs:454:5
+    |
+454 |     fn im_get_user(&self, user_id: &str) -> crate::error::Result<Option<User>>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/im.rs:457:5
+    |
+457 |     fn im_get_group(&self, group_id: &str) -> crate::error::Result<Option<Group>>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: returning a `str` unnecessarily tied to the lifetime of arguments
+  --> cis-skill-sdk/src/skill.rs:51:26
+   |
+51 |     fn version(&self) -> &str {
+   |                          ^^^^ help: try: `&'static str`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unnecessary_literal_bound
+   = note: `-W clippy::unnecessary-literal-bound` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::unnecessary_literal_bound)]`
+
+warning: returning a `str` unnecessarily tied to the lifetime of arguments
+  --> cis-skill-sdk/src/skill.rs:56:30
+   |
+56 |     fn description(&self) -> &str {
+   |                              ^^^^ help: try: `&'static str`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unnecessary_literal_bound
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/skill.rs:76:5
+   |
+76 |     fn init(&mut self, _config: SkillConfig) -> Result<()> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/skill.rs:83:5
+   |
+83 |     fn handle_event(&self, ctx: &dyn SkillContext, event: Event) -> Result<()>;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> cis-skill-sdk/src/skill.rs:88:5
+   |
+88 |     fn shutdown(&self) -> Result<()> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/skill.rs:130:5
+    |
+130 |     fn memory_set(&self, key: &str, value: &[u8]) -> Result<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/skill.rs:133:5
+    |
+133 |     fn memory_delete(&self, key: &str) -> Result<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/skill.rs:139:5
+    |
+139 |     fn ai_chat(&self, prompt: &str) -> Result<String>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/skill.rs:142:5
+    |
+142 |     fn ai_generate_json(&self, prompt: &str, schema: &str) -> Result<serde_json::Value>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> cis-skill-sdk/src/skill.rs:145:5
+    |
+145 |     fn http_request(&self, request: crate::types::HttpRequest) -> Result<crate::types::HttpResponse>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+
+warning: returning a `str` unnecessarily tied to the lifetime of arguments
+   --> cis-skill-sdk/src/skill.rs:164:26
+    |
+164 |     fn version(&self) -> &str {
+    |                          ^^^^ help: try: `&'static str`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unnecessary_literal_bound
+
+warning: returning a `str` unnecessarily tied to the lifetime of arguments
+   --> cis-skill-sdk/src/skill.rs:169:30
+    |
+169 |     fn description(&self) -> &str {
+    |                              ^^^^ help: try: `&'static str`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unnecessary_literal_bound
+
+    Checking cis-skill-push-client v0.1.0 (/Users/jiangxiaolong/work/project/CIS/skills/push-client)
+    Checking rmcp v0.1.5
+warning: this method could have a `#[must_use]` attribute
+  --> skills/ai-executor/src/lib.rs:20:12
+   |
+20 |     pub fn command(&self) -> &str {
+   |            ^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+   = note: `-W clippy::must-use-candidate` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::must_use_candidate)]`
+help: add the attribute
+   |
+20 ~     #[must_use] 
+21 ~     pub fn command(&self) -> &str {
+   |
+
+warning: this could be a `const fn`
+  --> skills/ai-executor/src/lib.rs:20:5
+   |
+20 | /     pub fn command(&self) -> &str {
+21 | |         match self {
+22 | |             AgentType::ClaudeCode => "claude",
+23 | |             AgentType::ClaudeCli => "claude-cli",
+...  |
+29 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+   = note: `-W clippy::missing-const-for-fn` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::missing_const_for_fn)]`
+help: make the function `const`
+   |
+20 |     pub const fn command(&self) -> &str {
+   |         +++++
+
+warning: unnecessary structure name repetition
+  --> skills/ai-executor/src/lib.rs:22:13
+   |
+22 |             AgentType::ClaudeCode => "claude",
+   |             ^^^^^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+   = note: `-W clippy::use-self` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::use_self)]`
+
+warning: unnecessary structure name repetition
+  --> skills/ai-executor/src/lib.rs:23:13
+   |
+23 |             AgentType::ClaudeCli => "claude-cli",
+   |             ^^^^^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+  --> skills/ai-executor/src/lib.rs:24:13
+   |
+24 |             AgentType::KimiCode => "kimi",
+   |             ^^^^^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+  --> skills/ai-executor/src/lib.rs:25:13
+   |
+25 |             AgentType::KimiCli => "kimi-cli",
+   |             ^^^^^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+  --> skills/ai-executor/src/lib.rs:26:13
+   |
+26 |             AgentType::Aider => "aider",
+   |             ^^^^^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: unnecessary structure name repetition
+  --> skills/ai-executor/src/lib.rs:27:13
+   |
+27 |             AgentType::Codex => "codex",
+   |             ^^^^^^^^^ help: use the applicable keyword: `Self`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#use_self
+
+warning: this method could have a `#[must_use]` attribute
+  --> skills/ai-executor/src/lib.rs:47:12
+   |
+47 |     pub fn new() -> Self { Self }
+   |            ^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+   |
+47 ~     #[must_use] 
+48 ~     pub fn new() -> Self { Self }
+   |
+
+warning: this could be a `const fn`
+  --> skills/ai-executor/src/lib.rs:47:5
+   |
+47 |     pub fn new() -> Self { Self }
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+   |
+47 |     pub const fn new() -> Self { Self }
+   |         +++++
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> skills/ai-executor/src/lib.rs:49:5
+   |
+49 |     pub fn execute(&self, req: ExecuteRequest) -> Result<ExecuteResponse, String> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_errors_doc
+   = note: `-W clippy::missing-errors-doc` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_errors_doc)]`
+
+warning: this argument is passed by value, but not consumed in the function body
+  --> skills/ai-executor/src/lib.rs:49:32
+   |
+49 |     pub fn execute(&self, req: ExecuteRequest) -> Result<ExecuteResponse, String> {
+   |                                ^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_pass_by_value
+   = note: `-W clippy::needless-pass-by-value` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_pass_by_value)]`
+help: consider taking a reference instead
+   |
+49 |     pub fn execute(&self, req: &ExecuteRequest) -> Result<ExecuteResponse, String> {
+   |                                +
+
+warning: variables can be used directly in the `format!` string
+  --> skills/ai-executor/src/lib.rs:62:26
+   |
+62 |             .map_err(|e| format!("Execute failed: {}", e))?;
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+   = note: `-W clippy::uninlined-format-args` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::uninlined_format_args)]`
+help: change this to
+   |
+62 -             .map_err(|e| format!("Execute failed: {}", e))?;
+62 +             .map_err(|e| format!("Execute failed: {e}"))?;
+   |
+
+warning: this could be a `const fn`
+  --> skills/ai-executor/src/lib.rs:78:1
+   |
+78 | pub extern "C" fn skill_init() -> i32 { 0 }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+   |
+78 | pub const extern "C" fn skill_init() -> i32 { 0 }
+   |     +++++
+
+warning: this could be a `const fn`
+  --> skills/ai-executor/src/lib.rs:81:1
+   |
+81 | / pub extern "C" fn skill_execute(_input_ptr: *const u8, _input_len: usize) -> i32 {
+82 | |     0
+83 | | }
+   | |_^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+   |
+81 | pub const extern "C" fn skill_execute(_input_ptr: *const u8, _input_len: usize) -> i32 {
+   |     +++++
+
+warning: `cis-skill-ai-executor` (lib) generated 15 warnings (run `cargo clippy --fix --lib -p cis-skill-ai-executor` to apply 13 suggestions)
+    Checking cis-skill-memory-organizer v0.1.0 (/Users/jiangxiaolong/work/project/CIS/skills/memory-organizer)
+warning: this method could have a `#[must_use]` attribute
+  --> skills/init-wizard/src/lib.rs:21:12
+   |
+21 |     pub fn new() -> Self { Self }
+   |            ^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+   = note: `-W clippy::must-use-candidate` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::must_use_candidate)]`
+help: add the attribute
+   |
+21 ~     #[must_use] 
+22 ~     pub fn new() -> Self { Self }
+   |
+
+warning: this could be a `const fn`
+  --> skills/init-wizard/src/lib.rs:21:5
+   |
+21 |     pub fn new() -> Self { Self }
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+   = note: `-W clippy::missing-const-for-fn` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::missing_const_for_fn)]`
+help: make the function `const`
+   |
+21 |     pub const fn new() -> Self { Self }
+   |         +++++
+
+warning: this method could have a `#[must_use]` attribute
+   --> cis-skill-sdk/src/types.rs:112:12
+    |
+112 |     pub fn get<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Option<T> {
+    |            ^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+    |
+112 ~     #[must_use] 
+113 ~     pub fn get<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Option<T> {
+    |
+
+warning: this method could have a `#[must_use]` attribute
+  --> skills/init-wizard/src/lib.rs:24:12
+   |
+24 |     pub fn run_check(&self) -> InitReport {
+   |            ^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+   |
+24 ~     #[must_use] 
+25 ~     pub fn run_check(&self) -> InitReport {
+   |
+
+warning: unused `self` argument
+   --> skills/init-wizard/src/lib.rs:107:23
+    |
+107 |     fn command_exists(&self, cmd: &str) -> bool {
+    |                       ^^^^^
+    |
+    = help: consider refactoring to an associated function
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unused_self
+    = note: `-W clippy::unused-self` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::unused_self)]`
+
+warning: called `map(<f>).unwrap_or(false)` on a `Result` value
+   --> skills/init-wizard/src/lib.rs:108:9
+    |
+108 | /         Command::new("which")
+109 | |             .arg(cmd)
+110 | |             .output()
+111 | |             .map(|o| o.status.success())
+112 | |             .unwrap_or(false)
+    | |_____________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#map_unwrap_or
+    = note: `-W clippy::map-unwrap-or` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::map_unwrap_or)]`
+help: use `is_ok_and(<f>)` instead
+    |
+111 -             .map(|o| o.status.success())
+112 -             .unwrap_or(false)
+111 +             .is_ok_and(|o| o.status.success())
+    |
+
+warning: this method could have a `#[must_use]` attribute
+   --> skills/init-wizard/src/lib.rs:116:12
+    |
+116 |     pub fn generate_config(&self, report: &InitReport) -> String {
+    |            ^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+    |
+116 ~     #[must_use] 
+117 ~     pub fn generate_config(&self, report: &InitReport) -> String {
+    |
+
+warning: `format!(..)` appended to existing `String`
+   --> skills/init-wizard/src/lib.rs:126:9
+    |
+126 |         config.push_str(&format!("default_provider = \"{}\"\n\n", default_agent));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: you may need to import the `std::fmt::Write` trait
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#format_push_string
+    = note: `-W clippy::format-push-string` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::format_push_string)]`
+help: consider using `write!` to avoid the extra allocation
+    |
+126 -         config.push_str(&format!("default_provider = \"{}\"\n\n", default_agent));
+126 +         let _ = write!(config, "default_provider = \"{}\"\n\n", default_agent);
+    |
+
+warning: variables can be used directly in the `format!` string
+   --> skills/init-wizard/src/lib.rs:126:26
+    |
+126 |         config.push_str(&format!("default_provider = \"{}\"\n\n", default_agent));
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+    = note: `-W clippy::uninlined-format-args` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::uninlined_format_args)]`
+help: change this to
+    |
+126 -         config.push_str(&format!("default_provider = \"{}\"\n\n", default_agent));
+126 +         config.push_str(&format!("default_provider = \"{default_agent}\"\n\n"));
+    |
+
+warning: `format!(..)` appended to existing `String`
+   --> skills/init-wizard/src/lib.rs:131:17
+    |
+131 | /                 config.push_str(&format!(
+132 | |                     "# {} - 可用\n# {}\n\n",
+133 | |                     check.tool.name,
+134 | |                     check.tool.description
+135 | |                 ));
+    | |__________________^
+    |
+    = note: you may need to import the `std::fmt::Write` trait
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#format_push_string
+help: consider using `write!` to avoid the extra allocation
+    |
+131 ~                 let _ = write!(config, "# {} - 可用\n# {}\n\n",
+132 +                     check.tool.name,
+133 ~                     check.tool.description);
+    |
+
+warning: `format!(..)` appended to existing `String`
+   --> skills/init-wizard/src/lib.rs:143:17
+    |
+143 | /                 config.push_str(&format!(
+144 | |                     "# {}: {}\n#   安装: {}\n",
+145 | |                     check.tool.name,
+146 | |                     check.tool.description,
+147 | |                     check.suggestion
+148 | |                 ));
+    | |__________________^
+    |
+    = note: you may need to import the `std::fmt::Write` trait
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#format_push_string
+help: consider using `write!` to avoid the extra allocation
+    |
+143 ~                 let _ = write!(config, "# {}: {}\n#   安装: {}\n",
+144 +                     check.tool.name,
+145 +                     check.tool.description,
+146 ~                     check.suggestion);
+    |
+
+warning: variables can be used directly in the `format!` string
+   --> skills/init-wizard/src/lib.rs:184:5
+    |
+184 |     eprintln!("{}", config);
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+184 -     eprintln!("{}", config);
+184 +     eprintln!("{config}");
+    |
+
+warning: `cis-skill-init-wizard` (lib) generated 11 warnings (run `cargo clippy --fix --lib -p cis-skill-init-wizard` to apply 7 suggestions)
+warning: item in documentation is missing backticks
+ --> skills/push-client/src/lib.rs:3:7
+  |
+3 | //! 从 AgentFlow push 系统迁移
+  |        ^^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+  = note: `-W clippy::doc-markdown` implied by `-W clippy::pedantic`
+  = help: to override `-W clippy::pedantic` add `#[allow(clippy::doc_markdown)]`
+help: try
+  |
+3 - //! 从 AgentFlow push 系统迁移
+3 + //! 从 `AgentFlow` push 系统迁移
+  |
+
+warning: this method could have a `#[must_use]` attribute
+  --> skills/push-client/src/lib.rs:46:12
+   |
+46 |     pub fn new() -> Self {
+   |            ^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+   = note: `-W clippy::must-use-candidate` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::must_use_candidate)]`
+help: add the attribute
+   |
+46 ~     #[must_use] 
+47 ~     pub fn new() -> Self {
+   |
+
+warning: this could be a `const fn`
+  --> skills/push-client/src/lib.rs:46:5
+   |
+46 | /     pub fn new() -> Self {
+47 | |         Self { targets: vec![] }
+48 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+   = note: `-W clippy::missing-const-for-fn` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::missing_const_for_fn)]`
+help: make the function `const`
+   |
+46 |     pub const fn new() -> Self {
+   |         +++++
+
+warning: this method could have a `#[must_use]` attribute
+  --> skills/push-client/src/lib.rs:55:12
+   |
+55 |     pub fn push(&self, msg: &PushMessage) -> PushResult {
+   |            ^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+   |
+55 ~     #[must_use] 
+56 ~     pub fn push(&self, msg: &PushMessage) -> PushResult {
+   |
+
+warning: this could be rewritten as `let...else`
+  --> skills/push-client/src/lib.rs:56:9
+   |
+56 | /         let target = match self.targets.iter().find(|t| t.id == msg.target_id) {
+57 | |             Some(t) => t,
+58 | |             None => {
+59 | |                 return PushResult {
+...  |
+65 | |         };
+   | |__________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#manual_let_else
+   = note: `-W clippy::manual-let-else` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::manual_let_else)]`
+help: consider writing
+   |
+56 ~         let Some(target) = self.targets.iter().find(|t| t.id == msg.target_id) else {
+57 +                 return PushResult {
+58 +                     success: false,
+59 +                     target_id: msg.target_id.clone(),
+60 +                     error: Some("Target not found".to_string()),
+61 +                 };
+62 +             };
+   |
+
+warning: unused `self` argument
+  --> skills/push-client/src/lib.rs:75:21
+   |
+75 |     fn push_webhook(&self, target: &PushTarget, msg: &PushMessage) -> PushResult {
+   |                     ^^^^^
+   |
+   = help: consider refactoring to an associated function
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unused_self
+   = note: `-W clippy::unused-self` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::unused_self)]`
+
+warning: unused `self` argument
+  --> skills/push-client/src/lib.rs:85:17
+   |
+85 |     fn push_p2p(&self, target: &PushTarget, msg: &PushMessage) -> PushResult {
+   |                 ^^^^^
+   |
+   = help: consider refactoring to an associated function
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unused_self
+
+warning: unused `self` argument
+   --> skills/push-client/src/lib.rs:112:17
+    |
+112 |     fn host_log(&self, msg: &str) {
+    |                 ^^^^^
+    |
+    = help: consider refactoring to an associated function
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unused_self
+
+warning: variables can be used directly in the `format!` string
+   --> skills/push-client/src/lib.rs:113:9
+    |
+113 |         eprintln!("{}", msg);
+    |         ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+    = note: `-W clippy::uninlined-format-args` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::uninlined_format_args)]`
+help: change this to
+    |
+113 -         eprintln!("{}", msg);
+113 +         eprintln!("{msg}");
+    |
+
+warning: item in documentation is missing backticks
+   --> skills/push-client/src/lib.rs:123:7
+    |
+123 | /// 从 AgentFlow push/client.rs 迁移的收据系统
+    |        ^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+help: try
+    |
+123 - /// 从 AgentFlow push/client.rs 迁移的收据系统
+123 + /// 从 `AgentFlow` push/client.rs 迁移的收据系统
+    |
+
+warning: this method could have a `#[must_use]` attribute
+   --> skills/push-client/src/lib.rs:144:16
+    |
+144 |         pub fn new(target: &str) -> Self {
+    |                ^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+help: add the attribute
+    |
+144 ~         #[must_use] 
+145 ~         pub fn new(target: &str) -> Self {
+    |
+
+warning: item in documentation is missing backticks
+   --> skills/push-client/src/lib.rs:157:7
+    |
+157 | /// 从 AgentFlow push/mod.rs 迁移的类型定义
+    |        ^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+help: try
+    |
+157 - /// 从 AgentFlow push/mod.rs 迁移的类型定义
+157 + /// 从 `AgentFlow` push/mod.rs 迁移的类型定义
+    |
+
+warning: this could be a `const fn`
+   --> skills/push-client/src/lib.rs:177:1
+    |
+177 | / pub extern "C" fn skill_init() -> i32 {
+178 | |     0
+179 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+    |
+177 | pub const extern "C" fn skill_init() -> i32 {
+    |     +++++
+
+warning: this could be a `const fn`
+   --> skills/push-client/src/lib.rs:183:1
+    |
+183 | / pub extern "C" fn skill_add_target(_json_ptr: *const u8, _len: usize) -> i32 {
+184 | |     0
+185 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+    |
+183 | pub const extern "C" fn skill_add_target(_json_ptr: *const u8, _len: usize) -> i32 {
+    |     +++++
+
+warning: this could be a `const fn`
+   --> skills/push-client/src/lib.rs:189:1
+    |
+189 | / pub extern "C" fn skill_push(_json_ptr: *const u8, _len: usize) -> i32 {
+190 | |     0
+191 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+help: make the function `const`
+    |
+189 | pub const extern "C" fn skill_push(_json_ptr: *const u8, _len: usize) -> i32 {
+    |     +++++
+
+warning: `cis-skill-push-client` (lib) generated 15 warnings (run `cargo clippy --fix --lib -p cis-skill-push-client` to apply 11 suggestions)
+warning: `cis-skill-sdk` (lib) generated 110 warnings (run `cargo clippy --fix --lib -p cis-skill-sdk` to apply 66 suggestions)
+warning: item in documentation is missing backticks
+ --> skills/memory-organizer/src/lib.rs:3:7
+  |
+3 | //! 从 AgentFlow 迁移的记忆整理功能
+  |        ^^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+  = note: `-W clippy::doc-markdown` implied by `-W clippy::pedantic`
+  = help: to override `-W clippy::pedantic` add `#[allow(clippy::doc_markdown)]`
+help: try
+  |
+3 - //! 从 AgentFlow 迁移的记忆整理功能
+3 + //! 从 `AgentFlow` 迁移的记忆整理功能
+  |
+
+warning: this method could have a `#[must_use]` attribute
+  --> skills/memory-organizer/src/lib.rs:29:12
+   |
+29 |     pub fn new() -> Self { Self {} }
+   |            ^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate
+   = note: `-W clippy::must-use-candidate` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::must_use_candidate)]`
+help: add the attribute
+   |
+29 ~     #[must_use] 
+30 ~     pub fn new() -> Self { Self {} }
+   |
+
+warning: this could be a `const fn`
+  --> skills/memory-organizer/src/lib.rs:29:5
+   |
+29 |     pub fn new() -> Self { Self {} }
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#missing_const_for_fn
+   = note: `-W clippy::missing-const-for-fn` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::missing_const_for_fn)]`
+help: make the function `const`
+   |
+29 |     pub const fn new() -> Self { Self {} }
+   |         +++++
+
+warning: variables can be used directly in the `format!` string
+  --> skills/memory-organizer/src/lib.rs:36:30
+   |
+36 |           let keyword_prompt = format!(
+   |  ______________________________^
+37 | |             "从以下文本中提取3-5个关键词，用逗号分隔:\n{}",
+38 | |             content
+39 | |         );
+   | |_________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+   = note: `-W clippy::uninlined-format-args` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::uninlined_format_args)]`
+
+warning: variables can be used directly in the `format!` string
+  --> skills/memory-organizer/src/lib.rs:42:30
+   |
+42 |           let summary_prompt = format!(
+   |  ______________________________^
+43 | |             "用一句话总结以下文本:\n{}",
+44 | |             content
+45 | |         );
+   | |_________^
+   |

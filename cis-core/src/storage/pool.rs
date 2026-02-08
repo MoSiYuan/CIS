@@ -52,6 +52,7 @@ impl Default for PoolConfig {
 struct PooledConnection {
     conn: MultiDbConnection,
     checked_out_at: Option<std::time::Instant>,
+    #[allow(dead_code)]
     created_at: std::time::Instant,
 }
 
@@ -60,7 +61,10 @@ struct PooledConnection {
 /// 管理多个 MultiDbConnection 实例，支持并发访问。
 ///
 /// # Example
-/// ```
+/// ```no_run
+/// use std::path::PathBuf;
+/// use cis_core::storage::pool::{ConnectionPool, PoolConfig};
+///
 /// let pool = ConnectionPool::new(
 ///     PathBuf::from("core.db"),
 ///     PoolConfig::default()
@@ -70,6 +74,7 @@ struct PooledConnection {
 /// let conn = pool.get_connection()?;
 /// // 使用连接...
 /// // 连接自动归还到池中
+/// # Ok::<(), cis_core::error::CisError>(())
 /// ```
 pub struct ConnectionPool {
     /// 主数据库路径
@@ -281,7 +286,7 @@ impl ConnectionPool {
     }
 
     /// 创建新连接
-    fn create_connection(primary_path: &PathBuf) -> Result<MultiDbConnection> {
+    fn create_connection(primary_path: &std::path::Path) -> Result<MultiDbConnection> {
         MultiDbConnection::open(primary_path)
     }
 

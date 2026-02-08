@@ -196,10 +196,8 @@ impl ConversationDb {
         })?;
 
         let mut conversations = Vec::new();
-        for row in rows {
-            if let Ok(conv) = row {
-                conversations.push(conv);
-            }
+        for conv in rows.flatten() {
+            conversations.push(conv);
         }
         Ok(conversations)
     }
@@ -242,10 +240,8 @@ impl ConversationDb {
         })?;
 
         let mut messages = Vec::new();
-        for row in rows {
-            if let Ok(msg) = row {
-                messages.push(msg);
-            }
+        for msg in rows.flatten() {
+            messages.push(msg);
         }
         Ok(messages)
     }

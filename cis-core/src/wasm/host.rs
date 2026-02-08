@@ -1,6 +1,6 @@
 //! # WASM Host API
 //!
-//! 提供 WASM Skill 访问 Host 能力的接口。
+//! 提供 WASM Skill 访问 Host 能力的接口，包含安全控制和资源限制。
 //!
 //! ## Host Functions
 //! - `host_memory_get`: 读取记忆
@@ -16,12 +16,83 @@
 //! - `host_config_set`: 设置配置
 
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use wasmer::{FunctionEnv, FunctionEnvMut, Memory, Store, WasmPtr};
 
-use crate::memory::{MemorySearchItem, MemoryService, MemoryServiceTrait};
+use crate::memory::MemoryServiceTrait;
 use crate::ai::AiProvider;
 use crate::error::CisError;
 use crate::storage::DbManager;
+
+/// 执行统计和限制
+#[derive(Debug, Clone)]
+pub struct ExecutionLimits {
+    /// 执行超时
+    pub timeout: Duration,
+    /// 最大执行步数
+    pub max_steps: u64,
+    /// 已执行步数
+    pub current_steps: u64,
+    /// 开始时间
+    pub start_time: Instant,
+}
+
+impl ExecutionLimits {
+    /// 创建新的执行限制
+    pub fn new(timeout: Duration, max_steps: u64) -> Self {
+        Self {
+            timeout,
+            max_steps,
+            current_steps: 0,
+            start_time: Instant::now(),
+        }
+    }
+
+    /// 检查是否超时
+    pub fn is_timeout(&self) -> bool {
+        self.start_time.elapsed() > self.timeout
+    }
+
+    /// 检查是否超过步数限制
+    pub fn is_step_limit_reached(&self) -> bool {
+        self.current_steps >= self.max_steps
+    }
+
+    /// 增加步数计数
+    pub fn increment_step(&mut self) {
+        self.current_steps += 1;
+    }
+
+    /// 重置计时器和计数器
+    pub fn reset(&mut self) {
+        self.current_steps = 0;
+        self.start_time = Instant::now();
+    }
+
+    /// 获取剩余时间
+    pub fn remaining_time(&self) -> Duration {
+        let elapsed = self.start_time.elapsed();
+        if elapsed < self.timeout {
+            self.timeout - elapsed
+        } else {
+            Duration::ZERO
+        }
+    }
+
+    /// 获取已运行时间
+    pub fn elapsed(&self) -> Duration {
+        self.start_time.elapsed()
+    }
+}
+
+impl Default for ExecutionLimits {
+    fn default() -> Self {
+        Self::new(
+            Duration::from_secs(30), // 默认 30 秒超时
+            1_000_000,               // 默认 100 万步
+        )
+    }
+}
 
 /// Host 上下文
 #[derive(Clone)]
@@ -35,7 +106,14 @@ pub struct HostContext {
     /// WASM 内存
     pub memory_ref: Option<Memory>,
     /// 日志回调
+    #[allow(clippy::type_complexity)]
     pub log_callback: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+    /// 执行限制
+    pub execution_limits: Option<ExecutionLimits>,
+    /// 是否允许网络访问
+    pub allow_network: bool,
+    /// 允许的主机列表
+    pub allowed_hosts: Vec<String>,
 }
 
 impl HostContext {
@@ -50,6 +128,9 @@ impl HostContext {
             db_manager: None,
             memory_ref: None,
             log_callback: None,
+            execution_limits: None,
+            allow_network: false,
+            allowed_hosts: vec![],
         }
     }
 
@@ -65,6 +146,9 @@ impl HostContext {
             db_manager: Some(db_manager),
             memory_ref: None,
             log_callback: None,
+            execution_limits: None,
+            allow_network: false,
+            allowed_hosts: vec![],
         }
     }
 
@@ -84,6 +168,45 @@ impl HostContext {
         F: Fn(&str) + Send + Sync + 'static,
     {
         self.log_callback = Some(Arc::new(callback));
+    }
+
+    /// 设置执行限制
+    pub fn set_execution_limits(&mut self, timeout: Duration, max_steps: u64) {
+        self.execution_limits = Some(ExecutionLimits::new(timeout, max_steps));
+    }
+
+    /// 设置网络权限
+    pub fn set_network_permissions(&mut self, allow: bool, allowed_hosts: Vec<String>) {
+        self.allow_network = allow;
+        self.allowed_hosts = allowed_hosts;
+    }
+
+    /// 检查是否允许访问指定主机
+    pub fn is_host_allowed(&self, host: &str) -> bool {
+        if !self.allow_network {
+            return false;
+        }
+        if self.allowed_hosts.is_empty() {
+            return true; // 允许所有主机
+        }
+        self.allowed_hosts.iter().any(|allowed| host.contains(allowed))
+    }
+
+    /// 检查执行限制
+    fn check_limits(&self) -> Result<(), CisError> {
+        if let Some(ref limits) = self.execution_limits {
+            if limits.is_timeout() {
+                return Err(CisError::wasm(
+                    format!("Execution timeout: exceeded {:?}", limits.timeout)
+                ));
+            }
+            if limits.is_step_limit_reached() {
+                return Err(CisError::wasm(
+                    format!("Step limit exceeded: {} steps", limits.max_steps)
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -170,6 +293,13 @@ impl HostFunctions {
         out_len: i32,
     ) -> i32 {
         let ctx = env.data();
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
         let memory = match &ctx.memory_ref {
             Some(m) => m.clone(),
             None => {
@@ -177,6 +307,17 @@ impl HostFunctions {
                 return -1;
             }
         };
+        
+        // 验证输入参数
+        if !(0..=1024).contains(&key_len) {
+            tracing::error!("[WASM Host] Invalid key length: {}", key_len);
+            return -2;
+        }
+        
+        if !(0..=1024 * 1024).contains(&out_len) { // 最大 1MB 输出
+            tracing::error!("[WASM Host] Invalid output length: {}", out_len);
+            return -2;
+        }
         
         // 使用 MemoryView 读取 key
         let view = memory.view(&env);
@@ -200,12 +341,27 @@ impl HostFunctions {
             }
         };
         
-        // 写入 WASM 内存
-        match Self::write_bytes_to_view(&view, out_ptr, out_len, &value) {
-            Ok(written) => written as i32,
-            Err(e) => {
-                tracing::error!("[WASM Host] Failed to write value: {}", e);
-                -3
+        // 检查输出缓冲区大小
+        if value.len() > out_len as usize {
+            tracing::warn!("[WASM Host] Value too large for output buffer: {} > {}", 
+                value.len(), out_len);
+            // 截断写入
+            let truncated = &value[..out_len as usize];
+            match Self::write_bytes_to_view(&view, out_ptr, out_len, truncated) {
+                Ok(written) => -(written as i32), // 返回负数表示截断
+                Err(e) => {
+                    tracing::error!("[WASM Host] Failed to write truncated value: {}", e);
+                    -3
+                }
+            }
+        } else {
+            // 写入 WASM 内存
+            match Self::write_bytes_to_view(&view, out_ptr, out_len, &value) {
+                Ok(written) => written as i32,
+                Err(e) => {
+                    tracing::error!("[WASM Host] Failed to write value: {}", e);
+                    -3
+                }
             }
         }
     }
@@ -219,6 +375,13 @@ impl HostFunctions {
         value_len: i32,
     ) -> i32 {
         let ctx = env.data();
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
         let memory = match &ctx.memory_ref {
             Some(m) => m.clone(),
             None => {
@@ -226,6 +389,17 @@ impl HostFunctions {
                 return -1;
             }
         };
+        
+        // 验证输入参数
+        if !(0..=1024).contains(&key_len) {
+            tracing::error!("[WASM Host] Invalid key length: {}", key_len);
+            return -2;
+        }
+        
+        if !(0..=10 * 1024 * 1024).contains(&value_len) { // 最大 10MB 值
+            tracing::error!("[WASM Host] Invalid value length: {}", value_len);
+            return -3;
+        }
         
         // 使用 MemoryView 读取 key 和 value
         let view = memory.view(&env);
@@ -268,6 +442,13 @@ impl HostFunctions {
         key_len: i32,
     ) -> i32 {
         let ctx = env.data();
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
         let memory = match &ctx.memory_ref {
             Some(m) => m.clone(),
             None => {
@@ -275,6 +456,12 @@ impl HostFunctions {
                 return -1;
             }
         };
+        
+        // 验证输入参数
+        if !(0..=1024).contains(&key_len) {
+            tracing::error!("[WASM Host] Invalid key length: {}", key_len);
+            return -2;
+        }
         
         // 使用 MemoryView 读取 key
         let view = memory.view(&env);
@@ -311,6 +498,13 @@ impl HostFunctions {
         out_len: i32,
     ) -> i32 {
         let ctx = env.data();
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
         let memory = match &ctx.memory_ref {
             Some(m) => m.clone(),
             None => {
@@ -318,6 +512,17 @@ impl HostFunctions {
                 return -1;
             }
         };
+        
+        // 验证输入参数
+        if !(0..=4096).contains(&query_len) {
+            tracing::error!("[WASM Host] Invalid query length: {}", query_len);
+            return -2;
+        }
+        
+        if !(0..=1024 * 1024).contains(&out_len) { // 最大 1MB 输出
+            tracing::error!("[WASM Host] Invalid output length: {}", out_len);
+            return -2;
+        }
         
         // 读取查询关键词
         let view = memory.view(&env);
@@ -387,6 +592,13 @@ impl HostFunctions {
         out_len: i32,
     ) -> i32 {
         let ctx = env.data();
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
         let memory = match &ctx.memory_ref {
             Some(m) => m.clone(),
             None => {
@@ -394,6 +606,17 @@ impl HostFunctions {
                 return -1;
             }
         };
+        
+        // 验证输入参数
+        if !(0..=100 * 1024).contains(&prompt_len) { // 最大 100KB prompt
+            tracing::error!("[WASM Host] Invalid prompt length: {}", prompt_len);
+            return -2;
+        }
+        
+        if !(0..=1024 * 1024).contains(&out_len) { // 最大 1MB 输出
+            tracing::error!("[WASM Host] Invalid output length: {}", out_len);
+            return -2;
+        }
         
         // 使用 MemoryView 读取 prompt
         let view = memory.view(&env);
@@ -405,7 +628,12 @@ impl HostFunctions {
             }
         };
         
-        // 调用 AI（同步阻塞方式）
+        // 获取剩余超时时间
+        let timeout = ctx.execution_limits.as_ref()
+            .map(|l| l.remaining_time())
+            .unwrap_or_else(|| Duration::from_secs(30));
+        
+        // 调用 AI（同步阻塞方式，带超时）
         let response = match ctx.ai.lock() {
             Ok(ai) => {
                 // 创建运行时来执行异步调用
@@ -417,11 +645,18 @@ impl HostFunctions {
                     }
                 };
                 
-                match rt.block_on(async { ai.chat(&prompt).await }) {
-                    Ok(r) => r,
-                    Err(e) => {
+                // 使用 timeout 包装 AI 调用
+                match rt.block_on(async {
+                    tokio::time::timeout(timeout, ai.chat(&prompt)).await
+                }) {
+                    Ok(Ok(r)) => r,
+                    Ok(Err(e)) => {
                         tracing::error!("[WASM Host] AI chat failed: {}", e);
                         return -3;
+                    }
+                    Err(_) => {
+                        tracing::error!("[WASM Host] AI chat timed out after {:?}", timeout);
+                        return -4;
                     }
                 }
             }
@@ -436,7 +671,7 @@ impl HostFunctions {
             Ok(written) => written as i32,
             Err(e) => {
                 tracing::error!("[WASM Host] Failed to write response: {}", e);
-                -4
+                -5
             }
         }
     }
@@ -451,6 +686,12 @@ impl HostFunctions {
         msg_len: i32,
     ) {
         let ctx = env.data();
+        
+        // 检查执行限制（但不阻止日志记录）
+        if ctx.check_limits().is_err() {
+            // 即使超时，也允许记录最后一条日志
+        }
+        
         let memory = match &ctx.memory_ref {
             Some(m) => m.clone(),
             None => {
@@ -458,6 +699,12 @@ impl HostFunctions {
                 return;
             }
         };
+        
+        // 验证输入参数
+        if !(0..=10 * 1024).contains(&msg_len) { // 最大 10KB 消息
+            tracing::error!("[WASM Host] Invalid message length: {}", msg_len);
+            return;
+        }
         
         // 使用 MemoryView 读取消息
         let view = memory.view(&env);
@@ -505,6 +752,13 @@ impl HostFunctions {
         out_len: i32,
     ) -> i32 {
         let ctx = env.data();
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
         let memory = match &ctx.memory_ref {
             Some(m) => m.clone(),
             None => {
@@ -512,6 +766,12 @@ impl HostFunctions {
                 return -1;
             }
         };
+        
+        // 验证输入参数
+        if !(0..=1024).contains(&key_len) {
+            tracing::error!("[WASM Host] Invalid key length: {}", key_len);
+            return -2;
+        }
         
         let view = memory.view(&env);
         let key = match Self::read_string_from_view(&view, key_ptr, key_len) {
@@ -570,6 +830,13 @@ impl HostFunctions {
         value_len: i32,
     ) -> i32 {
         let ctx = env.data();
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
         let memory = match &ctx.memory_ref {
             Some(m) => m.clone(),
             None => {
@@ -577,6 +844,17 @@ impl HostFunctions {
                 return -1;
             }
         };
+        
+        // 验证输入参数
+        if !(0..=1024).contains(&key_len) {
+            tracing::error!("[WASM Host] Invalid key length: {}", key_len);
+            return -2;
+        }
+        
+        if !(0..=100 * 1024).contains(&value_len) { // 最大 100KB 配置值
+            tracing::error!("[WASM Host] Invalid value length: {}", value_len);
+            return -3;
+        }
         
         let view = memory.view(&env);
         let key = match Self::read_string_from_view(&view, key_ptr, key_len) {
@@ -641,6 +919,15 @@ impl HostFunctions {
         let offset = ptr.offset() as u64;
         let length = len as usize;
         
+        // 验证内存边界
+        let memory_size = view.data_size();
+        if offset + length as u64 > memory_size {
+            return Err(CisError::wasm(
+                format!("Read out of bounds: offset {} + len {} > size {}",
+                    offset, length, memory_size)
+            ));
+        }
+        
         let mut buffer = vec![0u8; length];
         view.read(offset, &mut buffer)
             .map_err(|e| CisError::wasm(format!("Memory read error: {}", e)))?;
@@ -661,6 +948,15 @@ impl HostFunctions {
         
         let offset = ptr.offset() as u64;
         let length = len as usize;
+        
+        // 验证内存边界
+        let memory_size = view.data_size();
+        if offset + length as u64 > memory_size {
+            return Err(CisError::wasm(
+                format!("Read out of bounds: offset {} + len {} > size {}",
+                    offset, length, memory_size)
+            ));
+        }
         
         let mut buffer = vec![0u8; length];
         view.read(offset, &mut buffer)
@@ -683,6 +979,15 @@ impl HostFunctions {
         let offset = ptr.offset() as u64;
         let len = data.len().min(max_len as usize);
         
+        // 验证内存边界
+        let memory_size = view.data_size();
+        if offset + len as u64 > memory_size {
+            return Err(CisError::wasm(
+                format!("Write out of bounds: offset {} + len {} > size {}",
+                    offset, len, memory_size)
+            ));
+        }
+        
         view.write(offset, &data[..len])
             .map_err(|e| CisError::wasm(format!("Memory write error: {}", e)))?;
         
@@ -693,17 +998,22 @@ impl HostFunctions {
 // ==================== Legacy API Compatibility ====================
 
 /// Host 环境（旧版 API 兼容）
+///
+/// 表示一个已加载并实例化的 WASM Skill 实例。
+/// 这个结构体现在使用新的运行时实现，但保持旧的 API。
 pub struct HostEnv {
     /// WASM 线性内存
     pub memory: Option<Memory>,
     /// 记忆服务
     pub memory_service: Arc<Mutex<dyn MemoryServiceTrait>>,
     /// AI 服务回调
+    #[allow(clippy::type_complexity)]
     pub ai_callback: Arc<Mutex<dyn Fn(&str) -> String + Send + 'static>>,
 }
 
 impl HostEnv {
     /// 创建新的 Host 环境
+    #[allow(clippy::type_complexity)]
     pub fn new(
         memory_service: Arc<Mutex<dyn MemoryServiceTrait>>,
         ai_callback: Arc<Mutex<dyn Fn(&str) -> String + Send + 'static>>,
@@ -874,6 +1184,7 @@ pub fn legacy_host_http_post(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::MemorySearchItem;
 
     #[test]
     fn test_host_context_creation() {
@@ -898,4 +1209,120 @@ mod tests {
         assert_eq!(LogLevel::from_i32(3), Some(LogLevel::Error));
         assert_eq!(LogLevel::from_i32(99), None);
     }
+
+    #[test]
+    fn test_execution_limits() {
+        let limits = ExecutionLimits::new(
+            Duration::from_secs(30),
+            1_000_000
+        );
+        
+        assert!(!limits.is_timeout());
+        assert!(!limits.is_step_limit_reached());
+        assert!(limits.remaining_time() > Duration::ZERO);
+        
+        std::thread::sleep(Duration::from_millis(10));
+        assert!(limits.elapsed() >= Duration::from_millis(10));
+    }
+
+    #[test]
+    fn test_host_context_network_permissions() {
+        // 使用简化的测试，避免复杂的依赖
+        // 创建一个没有实际服务的 HostContext 进行测试
+        struct DummyMemoryService;
+        impl MemoryServiceTrait for DummyMemoryService {
+            fn get(&self, _key: &str) -> Option<Vec<u8>> {
+                None
+            }
+            fn set(&self, _key: &str, _value: &[u8]) -> Result<(), CisError> {
+                Ok(())
+            }
+            fn delete(&self, _key: &str) -> Result<(), CisError> {
+                Ok(())
+            }
+            fn search(&self, _query: &str, _limit: usize) -> Result<Vec<MemorySearchItem>, CisError> {
+                Ok(vec![])
+            }
+        }
+
+        let memory_service: Arc<Mutex<dyn MemoryServiceTrait>> = 
+            Arc::new(Mutex::new(DummyMemoryService));
+        let ai_provider: Arc<Mutex<dyn AiProvider>> = 
+            Arc::new(Mutex::new(mock_ai::MockAiProvider::new()));
+        
+        let mut ctx = HostContext::new(memory_service, ai_provider);
+        
+        // 默认不允许网络
+        assert!(!ctx.allow_network);
+        assert!(!ctx.is_host_allowed("api.example.com"));
+        
+        // 启用网络但不限制主机
+        ctx.set_network_permissions(true, vec![]);
+        assert!(ctx.allow_network);
+        assert!(ctx.is_host_allowed("api.example.com"));
+        
+        // 限制特定主机
+        ctx.set_network_permissions(true, vec!["api.example.com".to_string()]);
+        assert!(ctx.is_host_allowed("api.example.com"));
+        assert!(!ctx.is_host_allowed("other.com"));
+    }
 }
+
+/// 用于测试的 Mock AI Provider
+#[cfg(test)]
+mod mock_ai {
+    use async_trait::async_trait;
+    use crate::ai::{AiProvider, Message, Result};
+    use crate::conversation::ConversationContext;
+
+    pub struct MockAiProvider;
+
+    impl MockAiProvider {
+        pub fn new() -> Self {
+            Self
+        }
+    }
+
+    #[async_trait]
+    impl AiProvider for MockAiProvider {
+        fn name(&self) -> &str {
+            "mock"
+        }
+
+        async fn available(&self) -> bool {
+            true
+        }
+
+        async fn chat(&self, prompt: &str) -> Result<String> {
+            Ok(format!("Mock response to: {}", prompt))
+        }
+
+        async fn chat_with_context(
+            &self,
+            _system: &str,
+            _messages: &[Message],
+        ) -> Result<String> {
+            Ok("Mock context response".to_string())
+        }
+
+        async fn chat_with_rag(
+            &self,
+            prompt: &str,
+            _ctx: Option<&ConversationContext>,
+        ) -> Result<String> {
+            Ok(format!("Mock RAG response to: {}", prompt))
+        }
+
+        async fn generate_json(
+            &self,
+            _prompt: &str,
+            _schema: &str,
+        ) -> Result<serde_json::Value> {
+            Ok(serde_json::json!({"mock": true}))
+        }
+    }
+}
+
+// 导出 mock_ai 模块供测试使用
+#[cfg(test)]
+pub use mock_ai::MockAiProvider;

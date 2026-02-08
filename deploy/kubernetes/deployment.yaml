@@ -1,0 +1,342 @@
+# CIS v1.1.0 Kubernetes Deployment
+# 协调器和 Worker 的 Deployment 配置
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cis-coordinator
+  namespace: default
+  labels:
+    app: cis
+    component: coordinator
+    version: "1.1.0"
+spec:
+  replicas: 1  # 协调器通常为单实例
+  selector:
+    matchLabels:
+      app: cis
+      component: coordinator
+  template:
+    metadata:
+      labels:
+        app: cis
+        component: coordinator
+        version: "1.1.0"
+      annotations:
+        # 配置变更时触发滚动更新
+        checksum/config: "${CONFIG_CHECKSUM}"
+    spec:
+      serviceAccountName: cis-coordinator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      containers:
+        - name: cis-coordinator
+          image: cis:v1.1.0
+          imagePullPolicy: IfNotPresent
+          
+          command:
+            - cis-node
+            - daemon
+            - --config
+            - /etc/cis/config.toml
+          
+          ports:
+            - name: federation
+              containerPort: 7676
+              protocol: TCP
+            - name: p2p
+              containerPort: 7677
+              protocol: UDP
+            - name: matrix
+              containerPort: 6767
+              protocol: TCP
+          
+          env:
+            # 基础配置
+            - name: RUST_LOG
+              value: "info"
+            - name: CIS_VERSION
+              value: "1.1.0"
+            - name: CIS_NODE_ID
+              value: "coordinator"
+            
+            # v1.1.0 新增：Kubernetes 环境标识
+            - name: CIS_K8S_ENABLED
+              value: "true"
+            - name: CIS_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CIS_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            
+            # v1.1.0 新增：网络配置
+            - name: CIS_NETWORK_MODE
+              value: "whitelist"
+            - name: CIS_P2P_ENABLED
+              value: "true"
+            - name: CIS_FEDERATION_ENABLED
+              value: "true"
+            
+            # v1.1.0 新增：安全配置
+            - name: CIS_ENABLE_TLS
+              value: "true"
+            - name: CIS_AUTO_GENERATE_CERTS
+              value: "true"
+            
+            # v1.1.0 新增：资源限制
+            - name: CIS_MAX_MEMORY_MB
+              value: "4096"
+            - name: CIS_MAX_CONNECTIONS
+              value: "1000"
+          
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cis/config.toml
+              subPath: config.toml
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/cis/data
+            - name: logs
+              mountPath: /var/log/cis
+          
+          livenessProbe:
+            exec:
+              command:
+                - cis-node
+                - status
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          
+          readinessProbe:
+            exec:
+              command:
+                - cis-node
+                - status
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      
+      volumes:
+        - name: config
+          configMap:
+            name: cis-coordinator-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: cis-coordinator-data
+        - name: logs
+          emptyDir:
+            sizeLimit: 1Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cis-worker
+  namespace: default
+  labels:
+    app: cis
+    component: worker
+    version: "1.1.0"
+spec:
+  replicas: 2  # Worker 可以运行多个副本
+  selector:
+    matchLabels:
+      app: cis
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: cis
+        component: worker
+        version: "1.1.0"
+    spec:
+      serviceAccountName: cis-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      containers:
+        - name: cis-worker
+          image: cis:v1.1.0
+          imagePullPolicy: IfNotPresent
+          
+          command:
+            - cis-node
+            - daemon
+            - --config
+            - /etc/cis/config.toml
+          
+          ports:
+            - name: p2p
+              containerPort: 7677
+              protocol: UDP
+            - name: matrix
+              containerPort: 6767
+              protocol: TCP
+          
+          env:
+            # 基础配置
+            - name: RUST_LOG
+              value: "info"
+            - name: CIS_VERSION
+              value: "1.1.0"
+            
+            # Kubernetes 环境标识
+            - name: CIS_K8S_ENABLED
+              value: "true"
+            - name: CIS_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CIS_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            
+            # Worker 配置
+            - name: CIS_NODE_ID
+              value: "$(CIS_POD_NAME)"
+            - name: CIS_WORKER_TYPE
+              value: "cpu"
+            - name: CIS_MAX_CONCURRENT_TASKS
+              value: "4"
+            - name: CIS_TASK_TIMEOUT_SEC
+              value: "3600"
+            - name: CIS_HEARTBEAT_INTERVAL_SEC
+              value: "30"
+            
+            # 协调器连接配置（通过 Service 名称）
+            - name: CIS_COORDINATOR
+              value: "cis-coordinator:7676"
+            - name: CIS_COORDINATOR_P2P
+              value: "cis-coordinator:7677"
+            
+            # v1.1.0 新增：网络配置
+            - name: CIS_NETWORK_MODE
+              value: "whitelist"
+            - name: CIS_P2P_ENABLED
+              value: "true"
+            
+            # v1.1.0 新增：遥测
+            - name: CIS_TELEMETRY_ENABLED
+              value: "true"
+          
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "2000m"
+            limits:
+              memory: "8Gi"
+              cpu: "4000m"
+          
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cis/config.toml
+              subPath: config.toml
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/cis/data
+            - name: logs
+              mountPath: /var/log/cis
+          
+          livenessProbe:
+            exec:
+              command:
+                - cis-node
+                - status
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          
+          readinessProbe:
+            exec:
+              command:
+                - cis-node
+                - status
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      
+      volumes:
+        - name: config
+          configMap:
+            name: cis-worker-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: cis-worker-data
+        - name: logs
+          emptyDir:
+            sizeLimit: 1Gi
+
+---
+# GPU Worker 部署示例（需要 GPU 节点）
+# 如需使用 GPU Worker，取消下面注释并应用
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: cis-worker-gpu
+#   namespace: default
+#   labels:
+#     app: cis
+#     component: worker-gpu
+#     version: "1.1.0"
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: cis
+#       component: worker-gpu
+#   template:
+#     metadata:
+#       labels:
+#         app: cis
+#         component: worker-gpu
+#         version: "1.1.0"
+#     spec:
+#       nodeSelector:
+#         nvidia.com/gpu.present: "true"
+#       containers:
+#         - name: cis-worker-gpu
+#           image: cis:v1.1.0-gpu
+#           resources:
+#             limits:
+#               nvidia.com/gpu: 1
+#           env:
+#             - name: CIS_WORKER_TYPE
+#               value: "cuda"
+#             - name: CIS_CUDA_ENABLED
+#               value: "true"

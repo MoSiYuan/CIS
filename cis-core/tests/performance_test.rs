@@ -12,6 +12,8 @@ use tempfile::TempDir;
 
 use cis_core::skill::router::SkillVectorRouter;
 use cis_core::skill::semantics::{SkillIoSignature, SkillScope, SkillSemanticsExt};
+use cis_core::skill::SkillManager;
+use cis_core::storage::db::DbManager;
 use cis_core::vector::storage::{SkillSemantics as StorageSkillSemantics, VectorStorage};
 
 use async_trait::async_trait;
@@ -156,11 +158,15 @@ async fn test_end_to_end_latency() {
         skill_name: "Data Analyzer".to_string(),
         intent_description: "analyze sales data".to_string(),
         capability_description: "can analyze sales data".to_string(),
-        project: None,
+        project: Some("default".to_string()),
     };
     storage.register_skill(&skill).await.unwrap();
     
-    let router = SkillVectorRouter::new(storage.clone(), embedding.clone());
+    // 创建 SkillManager 和 DbManager
+    let db_manager = Arc::new(DbManager::new().expect("Failed to create DbManager"));
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).expect("Failed to create SkillManager"));
+    
+    let router = SkillVectorRouter::new(storage.clone(), embedding.clone(), skill_manager, db_manager);
     
     // 测试端到端延迟
     let start = Instant::now();

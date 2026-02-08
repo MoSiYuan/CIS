@@ -219,6 +219,7 @@ impl AuditLogger {
     }
     
     /// Create with default config
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Self::new(AuditConfig::default())
     }
@@ -409,7 +410,7 @@ impl AuditLogger {
     
     /// Write entry to file
     async fn write_to_file(&self, entry: &AuditEntry) -> crate::Result<()> {
-        let line = format!("{}", serde_json::to_string(entry)?);
+        let line = serde_json::to_string(entry)?.to_string();
         
         let mut file = OpenOptions::new()
             .create(true)

@@ -229,21 +229,30 @@ pub trait SkillInstance: Send + Sync {
 mod tests {
     use super::*;
     use super::super::types::{SkillMeta, SkillType};
+    use std::sync::Mutex;
 
-    fn setup_test_env() {
-        let temp_dir = std::env::temp_dir().join("cis_test_registry");
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn setup_test_env() -> std::path::PathBuf {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let pid = std::process::id();
+        let uuid = uuid::Uuid::new_v4().to_string();
+        let temp_dir = std::env::temp_dir().join(format!("cis_test_registry_{}_{}", pid, uuid));
         let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
         std::env::set_var("CIS_DATA_DIR", &temp_dir);
         crate::storage::paths::Paths::ensure_dirs().unwrap();
+        temp_dir
     }
 
-    fn cleanup_test_env() {
+    fn cleanup_test_env(temp_dir: &std::path::PathBuf) {
+        let _ = std::fs::remove_dir_all(temp_dir);
         std::env::remove_var("CIS_DATA_DIR");
     }
 
     #[test]
     fn test_register_and_unregister() {
-        setup_test_env();
+        let temp_dir = setup_test_env();
 
         let mut registry = SkillRegistry::load().unwrap();
 
@@ -275,6 +284,6 @@ mod tests {
         registry.unregister("test-skill").unwrap();
         assert!(!registry.contains("test-skill"));
 
-        cleanup_test_env();
+        cleanup_test_env(&temp_dir);
     }
 }

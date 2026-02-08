@@ -161,6 +161,7 @@ pub struct AgentSession {
     /// Last activity timestamp
     last_activity: Arc<RwLock<DateTime<Utc>>>,
     /// Max buffer lines
+    #[allow(dead_code)]
     max_buffer_lines: usize,
     /// Event broadcaster
     event_broadcaster: EventBroadcaster,

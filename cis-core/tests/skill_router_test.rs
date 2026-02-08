@@ -76,7 +76,7 @@ async fn register_test_skills(storage: &Arc<VectorStorage>) {
         skill_name: "Test Skill 1".to_string(),
         intent_description: "Analyze data and generate reports".to_string(),
         capability_description: "Can analyze data".to_string(),
-        project: None,
+        project: Some("test-project".to_string()),
     };
     
     let skill2 = cis_core::vector::SkillSemantics {
@@ -84,7 +84,7 @@ async fn register_test_skills(storage: &Arc<VectorStorage>) {
         skill_name: "Test Skill 2".to_string(),
         intent_description: "Generate detailed reports".to_string(),
         capability_description: "Can generate reports".to_string(),
-        project: None,
+        project: Some("test-project".to_string()),
     };
     
     let _ = storage.register_skill(&skill1).await;

@@ -348,7 +348,7 @@ pub fn list_skills() -> Result<()> {
     }
     
     println!("Registered Skills:");
-    println!("{:<20} {:<12} {:<10} {}", "Name", "Version", "State", "Description");
+    println!("{:<20} {:<12} {:<10} Description", "Name", "Version", "State");
     println!("{}", "-".repeat(80));
     
     for skill in skills {
@@ -551,7 +551,7 @@ pub fn install_skill(path: &str) -> Result<()> {
     println!("Installing skill from '{}'...", path.display());
     
     // 检查是否是 DAG 文件（.toml 或 .json）
-    let is_dag_file = path.extension().map_or(false, |ext| {
+    let is_dag_file = path.extension().is_some_and(|ext| {
         ext == "toml" || ext == "json"
     });
     
@@ -588,7 +588,7 @@ pub fn install_skill(path: &str) -> Result<()> {
     let manager = SkillManager::new(db_manager)?;
     
     // Detect skill type from path
-    let skill_type = if path.extension().map_or(false, |ext| ext == "wasm") {
+    let skill_type = if path.extension().is_some_and(|ext| ext == "wasm") {
         cis_core::skill::types::SkillType::Wasm
     } else {
         cis_core::skill::types::SkillType::Native

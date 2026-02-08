@@ -21,6 +21,7 @@ pub struct InitWizard {
 
 /// 初始化选项
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct InitOptions {
     /// 是否初始化项目（而非全局）
     pub project_mode: bool,
@@ -34,17 +35,6 @@ pub struct InitOptions {
     pub preferred_provider: Option<String>,
 }
 
-impl Default for InitOptions {
-    fn default() -> Self {
-        Self {
-            project_mode: false,
-            project_dir: None,
-            skip_checks: false,
-            force: false,
-            preferred_provider: None,
-        }
-    }
-}
 
 /// 向导结果
 #[derive(Debug, Clone)]

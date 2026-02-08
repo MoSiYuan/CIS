@@ -30,26 +30,43 @@
 //! ```
 
 pub mod acl;
+pub mod acl_rules;
 pub mod agent_session;
-pub mod did_verify;
-pub mod sync;
-pub mod websocket_integration;
-pub mod websocket_auth;
 pub mod audit;
+pub mod did_verify;
+pub mod session_manager;
+pub mod sync;
+pub mod websocket;
+pub mod websocket_auth;
+pub mod websocket_integration;
+
+#[cfg(test)]
+mod acl_tests;
 
 pub use acl::{NetworkAcl, NetworkMode, AclEntry, AclResult};
+pub use acl_rules::{
+    AclRule, AclRulesEngine, AclAction, Condition, RuleContext, RulesSummary
+};
 pub use agent_session::{
     AgentSession,
     AgentSessionServer,
     SessionControlMessage,
     SessionInfo,
-    SessionManager,
+    SessionManager as AgentSessionManager,
     SessionState,
     SessionId,
     AGENT_SESSION_PORT,
 };
+pub use session_manager::{
+    EnhancedSessionManager,
+    ManagedSession,
+    PersistentSession,
+    SessionCheckpoint,
+    SessionStats,
+    AgentSwitchEvent,
+};
 pub use did_verify::{DidChallenge, DidResponse, DidVerifier, VerificationResult};
-pub use sync::{AclSync, AclUpdateEvent, AclAction};
+pub use sync::{AclSync, AclUpdateEvent, AclAction as SyncAction};
 pub use websocket_integration::{
     WebSocketAuthenticator, 
     AuthIntegration, 
@@ -65,6 +82,19 @@ pub use websocket_auth::{
     WsAuthMessage,
     WebSocketAuthMiddleware,
     check_acl_for_peer,
+};
+pub use websocket::{
+    WsClient,
+    WsServer,
+    WsConnection,
+    WsConnectionConfig,
+    WsNetworkMessage,
+    ErrorCode,
+    ConnectionState,
+    DEFAULT_WS_PORT,
+    DEFAULT_CONNECTION_TIMEOUT,
+    DEFAULT_HEARTBEAT_INTERVAL,
+    MAX_RECONNECT_ATTEMPTS,
 };
 pub use audit::{AuditLogger, AuditEntry, AuditEventType, Severity};
 

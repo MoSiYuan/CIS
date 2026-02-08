@@ -1,0 +1,167 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  schedule:
+    # Run E2E tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: [stable]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-e2e
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            ${{ runner.os }}-cargo-
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Build cis-node binary
+        run: cargo build --release --bin cis-node --target ${{ matrix.target }}
+
+      - name: Run E2E tests
+        run: cargo test --test e2e --all-features -- --test-threads=1
+        env:
+          RUST_BACKTRACE: 1
+          CARGO_TERM_COLOR: always
+        timeout-minutes: 30
+
+      - name: Run E2E tests (with output on failure)
+        if: failure()
+        run: cargo test --test e2e --all-features -- --test-threads=1 --nocapture
+        env:
+          RUST_BACKTRACE: full
+          CARGO_TERM_COLOR: always
+        timeout-minutes: 30
+
+  e2e-tests-windows:
+    name: E2E Tests (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-${{ hashFiles('**/Cargo.lock') }}-e2e
+
+      - name: Build cis-node binary
+        run: cargo build --release --bin cis-node
+
+      - name: Run E2E tests
+        run: cargo test --test e2e --all-features -- --test-threads=1
+        env:
+          RUST_BACKTRACE: 1
+        timeout-minutes: 30
+
+  e2e-tests-coverage:
+    name: E2E Tests with Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: coverage-cargo-${{ hashFiles('**/Cargo.lock') }}-e2e
+
+      - name: Run E2E tests with coverage
+        run: cargo tarpaulin --test e2e --all-features --out Xml --timeout 300
+        continue-on-error: true
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./cobertura.xml
+          fail_ci_if_error: false
+          verbose: true
+
+  e2e-tests-nightly:
+    name: E2E Tests (Nightly Rust)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: nightly
+
+      - name: Run E2E tests
+        run: cargo test --test e2e --all-features
+        env:
+          RUST_BACKTRACE: 1
+        timeout-minutes: 30

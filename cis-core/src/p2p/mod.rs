@@ -17,8 +17,8 @@ pub use gossip::GossipProtocol;
 pub use peer::{PeerManager, PeerInfo};
 pub use sync::{MemorySyncManager, SyncMemoryEntry, SyncRequest, SyncResponse};
 pub use transport::{QuicTransport, Connection};
-pub use dht::{DhtService, DhtConfig};
-pub use nat::{NatTraversal, NatType};
+pub use dht::{DhtService, DhtConfig, DhtStats, RoutingTableEntry};
+pub use nat::{NatTraversal, NatType, HolePunchCoordinator, HolePunchResult, TraversalMethod, TraversalResult, DEFAULT_STUN_SERVERS, DEFAULT_TURN_SERVERS};
 
 use crate::error::{CisError, Result};
 use std::sync::Arc;

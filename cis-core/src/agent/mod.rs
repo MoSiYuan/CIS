@@ -280,6 +280,7 @@ impl AgentType {
     }
 
     /// 从字符串解析（用于配置文件）
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "claude" => Some(AgentType::Claude),

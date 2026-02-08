@@ -762,7 +762,7 @@ async fn load_dag_from_file(path: &str) -> anyhow::Result<cis_core::scheduler::T
         .map_err(|e| anyhow::anyhow!("Failed to read DAG file: {}", e))?;
     
     // Try to parse as different formats
-    if path.extension().map_or(false, |e| e == "toml") {
+    if path.extension().is_some_and(|e| e == "toml") {
         // Try to parse skill manifest first
         if let Ok(manifest) = cis_core::skill::manifest::SkillManifest::from_dag_file(path) {
             if let Some(dag_def) = manifest.dag {

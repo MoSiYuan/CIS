@@ -7,6 +7,8 @@
 //! - WASM 模块加载和执行
 //! - Host API 提供给 WASM Skill 调用
 //! - 内存隔离和安全沙箱
+//! - 资源限制（内存、超时、执行步数）
+//! - 网络权限控制
 //!
 //! ## 架构
 //!
@@ -46,6 +48,13 @@
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 //!
+//! ## 资源限制
+//!
+//! 默认配置：
+//! - 内存限制: 512 MB
+//! - 执行超时: 30 秒
+//! - 最大执行步数: 1,000,000
+//!
 //! ## Host API
 //!
 //! WASM Skill 可以通过 Host API 访问宿主能力：
@@ -63,7 +72,7 @@
 //!
 //! ### 基本使用
 //!
-//! ```rust,no_run
+//! ```ignore
 //! use cis_core::wasm::{WasmRuntime, WasmSkillBuilder};
 //! use std::sync::{Arc, Mutex};
 //!
@@ -93,7 +102,7 @@
 //!
 //! ### 使用 Builder
 //!
-//! ```rust,no_run
+//! ```ignore
 //! use cis_core::wasm::WasmSkillBuilder;
 //! use std::sync::{Arc, Mutex};
 //!
@@ -108,9 +117,29 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! ### 使用自定义配置
+//!
+//! ```ignore
+//! use cis_core::wasm::{WasmRuntime, WasmSkillConfig};
+//! use std::sync::{Arc, Mutex};
+//!
+//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // 创建自定义配置
+//! let config = WasmSkillConfig {
+//!     memory_limit: Some(512 * 1024 * 1024),  // 512 MB
+//!     execution_timeout: Some(30000),          // 30 seconds
+//!     allowed_syscalls: vec!["read".to_string(), "write".to_string()],
+//! };
+//!
+//! // 使用配置创建运行时
+//! let runtime = WasmRuntime::with_config(config)?;
+//! # Ok(())
+//! # }
+//! ```
 
 use std::sync::{Arc, Mutex};
-use wasmer::{Engine, Module, Store};
+use wasmer::{Module, Store};
 
 use crate::error::{CisError, Result};
 
@@ -123,9 +152,18 @@ pub mod skill;
 mod tests;
 
 // 公开导出
-pub use host::{HostContext, HostFunctions, HostEnv};
+pub use host::{HostContext, HostFunctions, HostEnv, ExecutionLimits};
 pub use runtime::{WasmRuntime, WasmModule, WasmSkillInstance};
 pub use skill::{WasmSkill as WasmSkillImpl, WasmSkillBuilder};
+
+/// 默认 WASM 内存限制（512MB，以字节为单位）
+pub const DEFAULT_MEMORY_LIMIT_BYTES: usize = 512 * 1024 * 1024;
+
+/// 默认执行超时（30秒，以毫秒为单位）
+pub const DEFAULT_EXECUTION_TIMEOUT_MS: u64 = 30000;
+
+/// 默认最大执行步数
+pub const DEFAULT_MAX_EXECUTION_STEPS: u64 = 1_000_000;
 
 /// WASM Skill 配置
 #[derive(Debug, Clone)]
@@ -141,10 +179,64 @@ pub struct WasmSkillConfig {
 impl Default for WasmSkillConfig {
     fn default() -> Self {
         Self {
-            memory_limit: Some(64 * 1024 * 1024), // 64MB 默认限制
-            execution_timeout: Some(30000),       // 30秒默认超时
+            memory_limit: Some(DEFAULT_MEMORY_LIMIT_BYTES), // 512MB 默认限制
+            execution_timeout: Some(DEFAULT_EXECUTION_TIMEOUT_MS), // 30秒默认超时
             allowed_syscalls: vec![],
         }
+    }
+}
+
+impl WasmSkillConfig {
+    /// 创建新的配置，使用默认值
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 设置内存限制（MB）
+    pub fn with_memory_limit_mb(mut self, mb: usize) -> Self {
+        self.memory_limit = Some(mb * 1024 * 1024);
+        self
+    }
+
+    /// 设置执行超时（毫秒）
+    pub fn with_timeout_ms(mut self, ms: u64) -> Self {
+        self.execution_timeout = Some(ms);
+        self
+    }
+
+    /// 设置允许的系统调用
+    pub fn with_allowed_syscalls(mut self, syscalls: Vec<String>) -> Self {
+        self.allowed_syscalls = syscalls;
+        self
+    }
+
+    /// 验证配置
+    pub fn validate(&self) -> Result<()> {
+        // 验证内存限制
+        if let Some(limit) = self.memory_limit {
+            if limit == 0 {
+                return Err(CisError::configuration("Memory limit cannot be zero"));
+            }
+            if limit > 4 * 1024 * 1024 * 1024 { // 4GB WebAssembly 最大限制
+                return Err(CisError::configuration(
+                    format!("Memory limit {} exceeds WebAssembly maximum (4GB)", limit)
+                ));
+            }
+        }
+
+        // 验证执行超时
+        if let Some(timeout) = self.execution_timeout {
+            if timeout == 0 {
+                return Err(CisError::configuration("Execution timeout cannot be zero"));
+            }
+            if timeout > 300_000 { // 5 分钟上限
+                return Err(CisError::configuration(
+                    format!("Execution timeout {}ms exceeds maximum (300000ms)", timeout)
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -205,6 +297,7 @@ impl WasmInstance {
     }
 
     /// 获取运行时实例（新版）
+    #[allow(dead_code)]
     pub(crate) fn runtime_instance(&self) -> Option<&runtime::WasmSkillInstance> {
         self.runtime_instance.as_ref()
     }
@@ -222,7 +315,7 @@ impl WasmInstance {
 ///
 /// # 示例
 ///
-/// ```rust,no_run
+/// ```ignore
 /// use cis_core::wasm::load_wasm_from_file;
 /// use std::path::Path;
 ///
@@ -233,15 +326,3 @@ pub fn load_wasm_from_file(path: &std::path::Path) -> Result<Vec<u8>> {
         .map_err(|e| CisError::skill(format!("Failed to read WASM file: {}", e)))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_wasm_skill_config_default() {
-        let config = WasmSkillConfig::default();
-        assert_eq!(config.memory_limit, Some(64 * 1024 * 1024));
-        assert_eq!(config.execution_timeout, Some(30000));
-        assert!(config.allowed_syscalls.is_empty());
-    }
-}

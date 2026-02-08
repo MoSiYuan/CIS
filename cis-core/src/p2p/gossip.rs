@@ -13,6 +13,7 @@ use serde::{Serialize, Deserialize};
 pub struct GossipProtocol {
     peer_manager: Arc<PeerManager>,
     transport: Arc<QuicTransport>,
+    #[allow(clippy::type_complexity)]
     topics: Arc<RwLock<HashMap<String, Vec<mpsc::Sender<Vec<u8>>>>>>,
     message_cache: Arc<RwLock<HashMap<String, bool>>>, // 防重复
     active_connections: Arc<RwLock<HashMap<String, StdArc<Connection>>>>,

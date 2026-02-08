@@ -901,8 +901,8 @@ impl MatrixNucleus {
     ) -> MatrixResult<()> {
         // Check if room is federated
         if let Some(opts) = self.room_manager.get_room_options(room_id).await {
-            if opts.federate {
-                if self.federation.is_some() {
+            if opts.federate
+                && self.federation.is_some() {
                     let fed_event = event.to_federation_event();
 
                     // Get federated nodes for this room
@@ -931,7 +931,6 @@ impl MatrixNucleus {
                         }
                     }
                 }
-            }
         }
 
         Ok(())
@@ -1190,6 +1189,7 @@ impl MatrixNucleus {
         }
         
         // 使用 std::any::type_name 获取类型名称作为后备方案
+        #[allow(clippy::incompatible_msrv)]
         let type_name = std::any::type_name_of_val(content);
         if type_name.contains("RoomMessage") {
             "m.room.message"

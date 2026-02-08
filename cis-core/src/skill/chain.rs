@@ -421,8 +421,7 @@ impl SkillChain {
         }
         
         // 处理取反
-        if condition.starts_with('!') {
-            let inner = &condition[1..];
+        if let Some(inner) = condition.strip_prefix('!') {
             return !self.evaluate_condition(inner);
         }
         
@@ -433,9 +432,9 @@ impl SkillChain {
     /// 查找顶层操作符（不在括号内）
     fn find_operator_at_top_level(&self, expr: &str, op: &str) -> Option<usize> {
         let mut depth = 0;
-        let mut chars = expr.char_indices().peekable();
+        let chars = expr.char_indices().peekable();
         
-        while let Some((idx, ch)) = chars.next() {
+        for (idx, ch) in chars {
             match ch {
                 '(' => depth += 1,
                 ')' => depth -= 1,
@@ -783,6 +782,7 @@ pub struct ChainOrchestrator {
     /// 已注册的链模板
     templates: HashMap<String, ChainTemplate>,
     /// 兼容性缓存
+    #[allow(dead_code)]
     compatibility_cache: HashMap<(String, String), f32>,
     /// 模板向量缓存: 模板名称 -> 嵌入向量
     template_embeddings: HashMap<String, Vec<f32>>,
@@ -1056,10 +1056,8 @@ impl ChainOrchestrator {
             // 计算兼容性得分
             let score = self.calculate_compatibility_score(current_io, candidate_io);
             
-            if score > 0.5 {
-                if best_match.as_ref().map_or(true, |(_, s)| score > *s) {
-                    best_match = Some((candidate.clone(), score));
-                }
+            if score > 0.5 && best_match.as_ref().map_or(true, |(_, s)| score > *s) {
+                best_match = Some((candidate.clone(), score));
             }
         }
         
@@ -1231,6 +1229,7 @@ impl ChainTemplates {
     }
 
     /// 获取所有模板
+    #[allow(clippy::type_complexity)]
     pub fn all_templates() -> Vec<(String, fn(Value) -> SkillChain)> {
         vec![
             ("analyze_and_commit".to_string(), Self::analyze_and_commit as fn(Value) -> SkillChain),

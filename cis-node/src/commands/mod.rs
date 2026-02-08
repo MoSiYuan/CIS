@@ -5,6 +5,7 @@
 pub mod agent;
 pub mod dag;
 pub mod debt;
+pub mod decision;
 pub mod doctor;
 pub mod glm;
 pub mod im;
@@ -16,6 +17,7 @@ pub mod node;
 pub mod peer;
 pub mod p2p;
 pub mod schema;
+pub mod session;
 pub mod skill;
 pub mod system;
 pub mod task;

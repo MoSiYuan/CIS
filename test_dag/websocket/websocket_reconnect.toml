@@ -1,0 +1,93 @@
+# WebSocket Reconnection Test DAG
+#
+# This DAG tests WebSocket reconnection behavior including:
+# - Automatic reconnection on connection loss
+# - Exponential backoff
+# - Connection state recovery
+#
+dag_id = "websocket_reconnect_test"
+version = "1.0.0"
+description = "WebSocket reconnection mechanism test suite"
+
+[[nodes]]
+id = "ws_config"
+name = "Configure WebSocket Client"
+type = "websocket_config"
+action = "setup"
+config = {
+    auto_reconnect = true,
+    max_reconnect_attempts = 5,
+    reconnect_interval = 1,
+    connection_timeout = 10,
+    heartbeat_interval = 5
+}
+
+[[nodes]]
+id = "ws_initial_connect"
+name = "Initial Connection"
+type = "websocket_client"
+action = "connect"
+dependencies = ["ws_config"]
+config = { url = "ws://localhost:6768", expected_state = "connected" }
+
+[[nodes]]
+id = "ws_verify_connected"
+name = "Verify Connected State"
+type = "websocket_assert"
+action = "assert_state"
+dependencies = ["ws_initial_connect"]
+config = { expected_state = "connected" }
+
+[[nodes]]
+id = "ws_simulate_disconnect"
+name = "Simulate Disconnection"
+type = "websocket_simulate"
+action = "disconnect"
+dependencies = ["ws_verify_connected"]
+config = { method = "network_error", duration = 3 }
+
+[[nodes]]
+id = "ws_wait_reconnect"
+name = "Wait for Reconnection"
+type = "websocket_wait"
+action = "wait_for_state"
+dependencies = ["ws_simulate_disconnect"]
+config = { target_state = "connected", timeout = 30, poll_interval = 1 }
+
+[[nodes]]
+id = "ws_verify_reconnected"
+name = "Verify Reconnected"
+type = "websocket_assert"
+action = "assert_state"
+dependencies = ["ws_wait_reconnect"]
+config = { expected_state = "connected" }
+
+[[nodes]]
+id = "ws_send_after_reconnect"
+name = "Send Message After Reconnect"
+type = "websocket_message"
+action = "send"
+dependencies = ["ws_verify_reconnected"]
+config = { message_type = "data", payload = "After reconnect", sequence = 1 }
+
+[[nodes]]
+id = "ws_verify_message_sent"
+name = "Verify Message Sent"
+type = "websocket_assert"
+action = "assert_sent"
+dependencies = ["ws_send_after_reconnect"]
+config = { message_count = 1 }
+
+[[nodes]]
+id = "ws_final_close"
+name = "Final Close"
+type = "websocket_client"
+action = "close"
+dependencies = ["ws_verify_message_sent"]
+config = { graceful = true }
+
+[metadata]
+test_suite = "websocket_reconnect"
+priority = "P0"
+created_at = "2026-02-07"
+author = "CIS Test Framework"

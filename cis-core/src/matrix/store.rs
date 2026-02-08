@@ -449,7 +449,7 @@ impl MatrixStore {
     }
 
     /// Register a new user
-    pub fn register_user(&self, user_id: &str, access_token: &str, device_id: &str) -> MatrixResult<()> {
+    pub fn register_user(&self, user_id: &str, _access_token: &str, device_id: &str) -> MatrixResult<()> {
         let db = self.db.lock()
             .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
 
@@ -494,7 +494,7 @@ impl MatrixStore {
             .map_err(|e| MatrixError::Store(format!("Failed to query rooms: {}", e)))?
             .collect();
 
-        Ok(room_ids.map_err(|e| MatrixError::Store(format!("Failed to collect rooms: {}", e)))?)
+        room_ids.map_err(|e| MatrixError::Store(format!("Failed to collect rooms: {}", e)))
     }
 
     /// Get messages for a room since a given timestamp
@@ -544,6 +544,7 @@ impl MatrixStore {
     }
 
     /// Save a Matrix event (flexible version for Phase 1)
+    #[allow(clippy::too_many_arguments)]
     pub fn save_event(
         &self,
         room_id: &str,
@@ -857,7 +858,7 @@ impl MatrixStore {
 
         // Get events after this timestamp
         let mut stmt = db.prepare(
-            "SELECT id, room_id, event_id, sender, event_type, content, 
+            "SELECT id, room_id, event_id, sender, event_type, content_json, 
                     origin_server_ts, unsigned, state_key
              FROM matrix_events 
              WHERE room_id = ?1 AND origin_server_ts > ?2

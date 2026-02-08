@@ -1,0 +1,147 @@
+# CIS Docker Compose 配置
+# 用于开发和测试环境
+# 生产环境建议使用 Kubernetes 或独立部署
+
+version: '3.8'
+
+services:
+  # CIS 主节点
+  cis-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: cis-node:latest
+    container_name: cis-node
+    restart: unless-stopped
+    
+    # 端口映射
+    ports:
+      - "7676:7676"  # Federation API (HTTP)
+      - "7677:7677/udp"  # P2P QUIC 传输
+      - "6767:6767"  # Matrix Federation + Agent Session
+    
+    # 数据卷
+    volumes:
+      # 数据目录
+      - cis-data:/var/lib/cis/data
+      # 日志目录
+      - cis-logs:/var/log/cis
+      # 配置目录（可选：挂载自定义配置）
+      - ./.cis/config.toml:/etc/cis/config.toml:ro
+    
+    # 环境变量
+    environment:
+      - RUST_LOG=info
+      - CIS_VERSION=1.1.0
+      - CIS_DATA_DIR=/var/lib/cis/data
+      - CIS_LOG_DIR=/var/log/cis
+      - CIS_CONFIG_DIR=/etc/cis
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:7676/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+    
+    # 网络
+    networks:
+      - cis-network
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # CIS GUI（可选）
+  cis-gui:
+    build:
+      context: .
+      dockerfile: cis-gui/Dockerfile
+    image: cis-gui:latest
+    container_name: cis-gui
+    restart: unless-stopped
+    
+    ports:
+      - "3000:3000"  # GUI 端口
+    
+    environment:
+      - CIS_NODE_URL=http://cis-node:7676
+      - PORT=3000
+    
+    depends_on:
+      cis-node:
+        condition: service_healthy
+    
+    networks:
+      - cis-network
+
+  # Matrix Bridge（可选）
+  cis-matrix-bridge:
+    build:
+      context: .
+      dockerfile: packaging/matrix-appservice/Dockerfile
+    image: cis-matrix-bridge:latest
+    container_name: cis-matrix-bridge
+    restart: unless-stopped
+    
+    ports:
+      - "8080:8080"  # Bridge HTTP 端口
+    
+    volumes:
+      - ./packaging/matrix-appservice/config.yaml:/app/config.yaml:ro
+      - ./packaging/matrix-appservice/registration.yaml:/app/registration.yaml:ro
+      - cis-bridge-data:/data
+    
+    environment:
+      - RUST_LOG=info
+      - CONFIG_PATH=/app/config.yaml
+    
+    depends_on:
+      - cis-node
+    
+    networks:
+      - cis-network
+      - matrix-network
+
+  # 可选：Matrix Synapse（用于测试）
+  # synapse:
+  #   image: matrixdotorg/synapse:latest
+  #   container_name: synapse
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8008:8008"
+  #   volumes:
+  #     - synapse-data:/data
+  #   environment:
+  #     - SYNAPSE_SERVER_NAME=localhost
+  #     - SYNAPSE_REPORT_STATS=no
+  #   networks:
+  #     - matrix-network
+
+# 数据卷
+volumes:
+  cis-data:
+    driver: local
+  cis-logs:
+    driver: local
+  cis-bridge-data:
+    driver: local
+  # synapse-data:
+  #   driver: local
+
+# 网络
+networks:
+  cis-network:
+    driver: bridge
+    internal: false
+  matrix-network:
+    driver: bridge
+    internal: false

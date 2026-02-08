@@ -2,43 +2,69 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::string::String;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::vec::Vec;
+
 /// Skill 错误类型
-#[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "message")]
 pub enum Error {
-    #[error("Skill not initialized: {0}")]
     NotInitialized(String),
-    
-    #[error("Invalid input: {0}")]
     InvalidInput(String),
-    
-    #[error("Host API error: {0}")]
     HostError(String),
-    
-    #[error("AI service error: {0}")]
     AiError(String),
-    
-    #[error("Memory operation failed: {0}")]
     MemoryError(String),
-    
-    #[error("Network error: {0}")]
     NetworkError(String),
-    
-    #[error("Serialization error: {0}")]
     SerializationError(String),
-    
-    #[error("Permission denied: {0}")]
     PermissionDenied(String),
-    
-    #[error("Not found: {0}")]
     NotFound(String),
-    
-    #[error("Internal error: {0}")]
     Internal(String),
-    
-    #[error("Other: {0}")]
     Other(String),
 }
+
+#[cfg(feature = "native")]
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::NotInitialized(msg) => write!(f, "Skill not initialized: {}", msg),
+            Error::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
+            Error::HostError(msg) => write!(f, "Host API error: {}", msg),
+            Error::AiError(msg) => write!(f, "AI service error: {}", msg),
+            Error::MemoryError(msg) => write!(f, "Memory operation failed: {}", msg),
+            Error::NetworkError(msg) => write!(f, "Network error: {}", msg),
+            Error::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
+            Error::PermissionDenied(msg) => write!(f, "Permission denied: {}", msg),
+            Error::NotFound(msg) => write!(f, "Not found: {}", msg),
+            Error::Internal(msg) => write!(f, "Internal error: {}", msg),
+            Error::Other(msg) => write!(f, "Other: {}", msg),
+        }
+    }
+}
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Error::NotInitialized(msg) => write!(f, "Skill not initialized: {}", msg),
+            Error::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
+            Error::HostError(msg) => write!(f, "Host API error: {}", msg),
+            Error::AiError(msg) => write!(f, "AI service error: {}", msg),
+            Error::MemoryError(msg) => write!(f, "Memory operation failed: {}", msg),
+            Error::NetworkError(msg) => write!(f, "Network error: {}", msg),
+            Error::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
+            Error::PermissionDenied(msg) => write!(f, "Permission denied: {}", msg),
+            Error::NotFound(msg) => write!(f, "Not found: {}", msg),
+            Error::Internal(msg) => write!(f, "Internal error: {}", msg),
+            Error::Other(msg) => write!(f, "Other: {}", msg),
+        }
+    }
+}
+
+#[cfg(feature = "native")]
+impl std::error::Error for Error {}
 
 impl Error {
     /// 创建 NotFound 错误
@@ -58,7 +84,12 @@ impl Error {
 }
 
 /// Result 类型别名
+#[cfg(feature = "native")]
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Result 类型别名 (WASM)
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+pub type Result<T> = core::result::Result<T, Error>;
 
 /// 错误码映射（WASM 边界使用）
 #[repr(i32)]

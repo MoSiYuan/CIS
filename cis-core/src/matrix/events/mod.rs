@@ -12,7 +12,7 @@
 //!
 //! ## 使用示例
 //!
-//! ```rust
+//! ```ignore
 //! use cis_core::matrix::events::{TaskInvokeEventContent, SkillEventRegistry, SkillEvent};
 //!
 //! // 创建任务调用事件
@@ -25,7 +25,7 @@
 //! };
 //!
 //! // 从 JSON 解析事件
-//! let content = serde_json::json!({...});
+//! let content = serde_json::json!({"task_id": "task-123"});
 //! let event = SkillEventRegistry::parse_event("io.cis.task.invoke", &content);
 //! ```
 

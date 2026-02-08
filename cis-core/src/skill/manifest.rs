@@ -381,6 +381,7 @@ impl SkillManifest {
     }
 
     /// 从字符串解析
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(content: &str) -> Result<Self> {
         toml::from_str(content)
             .map_err(|e| CisError::configuration(format!("Failed to parse manifest: {}", e)))

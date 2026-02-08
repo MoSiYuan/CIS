@@ -10,6 +10,8 @@ use cis_core::ai::embedding::{EmbeddingService, DEFAULT_EMBEDDING_DIM};
 use cis_core::intent::{IntentParser, ActionType};
 use cis_core::skill::router::SkillVectorRouter;
 use cis_core::skill::cis_admin::register_cis_local_skills;
+use cis_core::skill::SkillManager;
+use cis_core::storage::db::DbManager;
 use cis_core::conversation::ConversationContext;
 use cis_core::skill::chain::ChainBuilder;
 use async_trait::async_trait;
@@ -62,6 +64,13 @@ fn create_mock_embedding() -> Arc<dyn EmbeddingService> {
     Arc::new(MockEmbeddingService)
 }
 
+/// 创建测试用的 SkillManager 和 DbManager
+fn create_test_managers() -> (Arc<SkillManager>, Arc<DbManager>) {
+    let db_manager = Arc::new(DbManager::new().expect("Failed to create DbManager"));
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).expect("Failed to create SkillManager"));
+    (skill_manager, db_manager)
+}
+
 /// 测试: Embedding → VectorStorage 基础流程
 #[tokio::test]
 async fn test_embedding_to_vector_storage() {
@@ -109,7 +118,7 @@ async fn test_intent_to_skill_routing() {
         skill_name: "代码分析".to_string(),
         intent_description: "分析代码质量和结构".to_string(),
         capability_description: "可以分析代码复杂度、检查潜在问题".to_string(),
-        project: None,
+        project: Some("test-project".to_string()),
     };
     
     storage.register_skill(&skill_semantics)
@@ -125,8 +134,11 @@ async fn test_intent_to_skill_routing() {
     assert_eq!(intent.action_type, ActionType::Analyze, "Action type should be Analyze");
     assert!(intent.confidence > 0.0, "Confidence should be positive");
     
+    // 创建 SkillManager 和 DbManager
+    let (skill_manager, db_manager) = create_test_managers();
+    
     // 创建路由器
-    let router = SkillVectorRouter::new(storage, embedding);
+    let router = SkillVectorRouter::new(storage, embedding, skill_manager, db_manager);
     
     // 测试路由（不依赖全局技能，只测试存储中的技能）
     let candidates = router.route(&intent, None).await
@@ -220,7 +232,8 @@ async fn test_end_to_end_skill_invocation() {
     assert_eq!(intent.action_type, ActionType::Analyze, "Should detect Analyze action");
     
     // 2. 创建路由器并注册本地技能
-    let mut router = SkillVectorRouter::new(Arc::clone(&storage), Arc::clone(&embedding));
+    let (skill_manager, db_manager) = create_test_managers();
+    let mut router = SkillVectorRouter::new(Arc::clone(&storage), Arc::clone(&embedding), skill_manager, db_manager);
     
     // 3. 路由到技能
     let candidates = router.route(&intent, None).await
@@ -233,7 +246,7 @@ async fn test_end_to_end_skill_invocation() {
         skill_name: "Analyze Code".to_string(),
         intent_description: "分析代码质量和结构，检查潜在问题".to_string(),
         capability_description: "可以执行代码静态分析、复杂度检查、潜在问题识别".to_string(),
-        project: None,
+        project: Some("test-project".to_string()),
     };
     storage.register_skill(&analyze_semantics).await
         .expect("Failed to register analyze skill");

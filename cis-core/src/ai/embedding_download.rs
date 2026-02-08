@@ -20,6 +20,7 @@ pub struct ModelFile {
 }
 
 /// Nomic Embed Text v1.5 模型
+#[allow(clippy::incompatible_msrv)]
 pub const NOMIC_EMBED_MODEL: ModelFile = ModelFile {
     name: "nomic-embed-text-v1.5",
     url: "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/onnx/model.onnx",
@@ -28,6 +29,7 @@ pub const NOMIC_EMBED_MODEL: ModelFile = ModelFile {
 };
 
 /// Tokenizer 文件
+#[allow(clippy::incompatible_msrv)]
 pub const NOMIC_TOKENIZER: ModelFile = ModelFile {
     name: "tokenizer",
     url: "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/tokenizer.json",

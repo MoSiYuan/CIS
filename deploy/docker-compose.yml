@@ -1,4 +1,4 @@
-# CIS 多机部署 Docker Compose
+# CIS v1.1.0 多机部署 Docker Compose
 # 用于在单机上部署，多机部署请使用 configs/ 目录下的配置
 
 version: '3.8'
@@ -6,7 +6,7 @@ version: '3.8'
 services:
   # 协调器节点
   coordinator:
-    image: cis:production
+    image: cis:v1.1.0
     container_name: cis-coordinator
     hostname: coordinator
     restart: unless-stopped
@@ -16,8 +16,9 @@ services:
       --config /etc/cis/config.toml
     
     ports:
-      - "7676:7676"  # Federation API
+      - "7676:7676"      # Federation API
       - "7677:7677/udp"  # P2P QUIC
+      - "6767:6767"      # Matrix Federation + Agent Session (WebSocket)
     
     volumes:
       - ./configs/coordinator.toml:/etc/cis/config.toml:ro
@@ -26,8 +27,27 @@ services:
       # - /etc/cis/certs:/etc/cis/certs:ro  # TLS 证书
     
     environment:
+      # 基础配置
       - RUST_LOG=info
       - CIS_NODE_ID=coordinator
+      - CIS_VERSION=1.1.0
+      
+      # v1.1.0 新增：网络模式配置
+      - CIS_NETWORK_MODE=whitelist
+      - CIS_P2P_ENABLED=true
+      - CIS_FEDERATION_ENABLED=true
+      
+      # v1.1.0 新增：安全设置
+      - CIS_ENABLE_TLS=true
+      - CIS_AUTO_GENERATE_CERTS=true
+      
+      # v1.1.0 新增：遥测配置
+      - CIS_TELEMETRY_ENABLED=true
+      - CIS_LOG_RETENTION_DAYS=30
+      
+      # v1.1.0 新增：资源限制
+      - CIS_MAX_MEMORY_MB=4096
+      - CIS_MAX_CONNECTIONS=1000
     
     healthcheck:
       test: ["CMD", "cis-node", "status"]
@@ -38,10 +58,20 @@ services:
     
     networks:
       - cis-network
+    
+    # v1.1.0 新增：资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
 
   # Worker 节点（可根据需要启动多个）
   worker:
-    image: cis:production
+    image: cis:v1.1.0
     container_name: cis-worker
     hostname: worker
     restart: unless-stopped
@@ -52,6 +82,7 @@ services:
     
     ports:
       - "7678:7677/udp"  # P2P QUIC（映射到不同端口避免冲突）
+      - "6768:6767"      # Matrix Federation (WebSocket)
     
     volumes:
       - ./configs/worker.toml:/etc/cis/config.toml:ro
@@ -59,9 +90,28 @@ services:
       - worker-logs:/var/log/cis
     
     environment:
+      # 基础配置
       - RUST_LOG=info
       - CIS_NODE_ID=worker-1
+      - CIS_VERSION=1.1.0
+      
+      # Worker 连接配置
       - CIS_COORDINATOR=coordinator:7676
+      - CIS_COORDINATOR_P2P=coordinator:7677
+      
+      # v1.1.0 新增：网络模式
+      - CIS_NETWORK_MODE=whitelist
+      - CIS_P2P_ENABLED=true
+      
+      # v1.1.0 新增：Worker 类型
+      - CIS_WORKER_TYPE=cpu
+      - CIS_MAX_CONCURRENT_TASKS=4
+      - CIS_TASK_TIMEOUT_SEC=3600
+      - CIS_HEARTBEAT_INTERVAL_SEC=30
+      
+      # v1.1.0 新增：遥测
+      - CIS_TELEMETRY_ENABLED=true
+      - CIS_LOG_RETENTION_DAYS=30
     
     depends_on:
       coordinator:
@@ -70,6 +120,7 @@ services:
     networks:
       - cis-network
     
+    # v1.1.0 新增：资源限制
     deploy:
       resources:
         limits:
@@ -78,6 +129,18 @@ services:
         reservations:
           cpus: '2'
           memory: 4G
+
+  # v1.1.0 新增：可选的监控服务
+  # 如需启用，取消下面的注释
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: cis-prometheus
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #   ports:
+  #     - "9090:9090"
+  #   networks:
+  #     - cis-network
 
 volumes:
   coordinator-data:

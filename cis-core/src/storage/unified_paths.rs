@@ -4,7 +4,7 @@
 //!
 //! ## 目录结构
 //!
-//! ```
+//! ```text
 //! ~/.local/share/cis/          # XDG_DATA_HOME
 //! ├── bin/                     # 二进制文件（可选）
 //! ├── config/                  # 配置文件

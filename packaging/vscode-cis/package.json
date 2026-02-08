@@ -1,0 +1,264 @@
+{
+  "name": "vscode-cis",
+  "displayName": "CIS - Cluster of Independent Systems",
+  "description": "VS Code extension for CIS - Local LLM Agent memory enhancement framework",
+  "version": "0.1.0",
+  "publisher": "mosiyuan",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Visualization",
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "cis",
+    "llm",
+    "agent",
+    "dag",
+    "workflow",
+    "ai",
+    "local"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MoSiYuan/CIS"
+  },
+  "bugs": {
+    "url": "https://github.com/MoSiYuan/CIS/issues"
+  },
+  "homepage": "https://github.com/MoSiYuan/CIS/tree/main/packaging/vscode-cis",
+  "activationEvents": [
+    "onCommand:cis.connect",
+    "onView:cisExplorer",
+    "workspaceContains:**/*.dag.toml",
+    "workspaceContains:.cis/config.toml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cis-explorer",
+          "title": "CIS",
+          "icon": "resources/cis-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "cis-explorer": [
+        {
+          "id": "cisNodes",
+          "name": "节点",
+          "when": "cis.connected"
+        },
+        {
+          "id": "cisDags",
+          "name": "DAG",
+          "when": "cis.connected"
+        },
+        {
+          "id": "cisTasks",
+          "name": "任务"
+        },
+        {
+          "id": "cisDebts",
+          "name": "技术债务"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "cis.connect",
+        "title": "连接节点",
+        "category": "CIS",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "cis.disconnect",
+        "title": "断开连接",
+        "category": "CIS",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "cis.refresh",
+        "title": "刷新",
+        "category": "CIS",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "cis.runDag",
+        "title": "运行 DAG",
+        "category": "CIS",
+        "icon": "$(play)"
+      },
+      {
+        "command": "cis.runDagWithArgs",
+        "title": "运行 DAG (带参数)",
+        "category": "CIS",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "cis.showDagStatus",
+        "title": "查看状态",
+        "category": "CIS",
+        "icon": "$(info)"
+      },
+      {
+        "command": "cis.showTaskLogs",
+        "title": "查看日志",
+        "category": "CIS",
+        "icon": "$(output)"
+      },
+      {
+        "command": "cis.searchMemory",
+        "title": "搜索记忆",
+        "category": "CIS",
+        "icon": "$(search)"
+      },
+      {
+        "command": "cis.initProject",
+        "title": "初始化 CIS 项目",
+        "category": "CIS",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "cis.openSettings",
+        "title": "打开设置",
+        "category": "CIS",
+        "icon": "$(gear)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "cis.connect",
+          "when": "view == cisNodes && !cis.connected",
+          "group": "navigation@1"
+        },
+        {
+          "command": "cis.disconnect",
+          "when": "view == cisNodes && cis.connected",
+          "group": "navigation@1"
+        },
+        {
+          "command": "cis.refresh",
+          "when": "view == cisDags || view == cisTasks",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "cis.runDag",
+          "when": "view == cisDags && viewItem == dag",
+          "group": "inline@1"
+        },
+        {
+          "command": "cis.showDagStatus",
+          "when": "view == cisDags && viewItem == dag"
+        },
+        {
+          "command": "cis.showTaskLogs",
+          "when": "view == cisTasks && viewItem == task"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "cis.runDag",
+          "when": "resourceExtname == .toml && cis.isDagFile",
+          "group": "2_cis@1"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "cis-dag",
+        "aliases": ["CIS DAG", "cis-dag"],
+        "extensions": [".dag.toml"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cis-dag",
+        "scopeName": "source.cis.dag",
+        "path": "./syntaxes/cis-dag.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "CIS",
+      "properties": {
+        "cis.nodeAddress": {
+          "type": "string",
+          "default": "http://localhost:7676",
+          "description": "CIS 节点地址"
+        },
+        "cis.wsAddress": {
+          "type": "string",
+          "default": "ws://localhost:6767",
+          "description": "CIS WebSocket 地址"
+        },
+        "cis.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "CIS API Key（如果需要）"
+        },
+        "cis.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "启动时自动连接"
+        },
+        "cis.showNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "显示 DAG 完成通知"
+        },
+        "cis.refreshInterval": {
+          "type": "number",
+          "default": 5000,
+          "description": "刷新间隔（毫秒）"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "cis.runDag",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "editorTextFocus && resourceExtname == .toml"
+      },
+      {
+        "command": "cis.searchMemory",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "18.x",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "@types/ws": "^8.5.10"
+  }
+}

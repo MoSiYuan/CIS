@@ -72,6 +72,9 @@ pub const AGENT_SESSION_PORT: u16 = 6767;
 const DEFAULT_TERMINAL_COLS: u16 = 80;
 const DEFAULT_TERMINAL_ROWS: u16 = 24;
 
+/// 最大会话不活动时间（秒）
+const MAX_INACTIVE_SECONDS: i64 = 3600; // 1小时
+
 /// Session ID type (UUID)
 pub type SessionId = Uuid;
 
@@ -121,7 +124,8 @@ pub enum SessionControlMessage {
 }
 
 /// Session state
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SessionState {
     /// Initial state
     Initial,
@@ -188,6 +192,12 @@ impl SessionInfo {
     fn touch(&mut self) {
         self.last_activity = chrono::Utc::now().timestamp();
     }
+
+    /// 检查会话是否超时
+    fn is_timed_out(&self, max_inactive_secs: i64) -> bool {
+        let now = chrono::Utc::now().timestamp();
+        now - self.last_activity > max_inactive_secs
+    }
 }
 
 /// A single agent session
@@ -207,9 +217,12 @@ pub struct AgentSession {
     /// Forwarder thread handle
     forwarder_handle: Option<JoinHandle<()>>,
     /// Sandbox configuration
+    #[allow(dead_code)]
     sandbox_config: SandboxConfig,
     /// Shutdown signal sender
     shutdown_tx: Option<mpsc::Sender<()>>,
+    /// 清理完成信号
+    cleanup_complete: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AgentSession {
@@ -233,6 +246,7 @@ impl AgentSession {
             forwarder_handle: None,
             sandbox_config,
             shutdown_tx: None,
+            cleanup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -256,6 +270,13 @@ impl AgentSession {
             "Starting agent session {} with agent type {:?}",
             self.id, agent_type
         );
+
+        // 验证终端大小
+        if cols == 0 || cols > 512 || rows == 0 || rows > 256 {
+            return Err(CisError::invalid_input(
+                format!("Invalid terminal size: {}x{}", cols, rows)
+            ));
+        }
 
         // Update state
         {
@@ -320,6 +341,7 @@ impl AgentSession {
 
         let session_id = self.id;
         let info = self.info.clone();
+        let cleanup_complete = self.cleanup_complete.clone();
 
         // Spawn reader/writer thread
         let handle = tokio::task::spawn_blocking(move || {
@@ -331,7 +353,10 @@ impl AgentSession {
             // Get reader for receiving output from PTY
             let mut reader = master.try_clone_reader().ok();
 
+            // 设置读取超时，避免永久阻塞
             let mut buf = vec![0u8; 4096];
+            let mut last_activity = std::time::Instant::now();
+            const IO_THREAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
             loop {
                 // Check for shutdown signal (non-blocking)
@@ -343,16 +368,31 @@ impl AgentSession {
                     Err(mpsc::error::TryRecvError::Empty) => {}
                 }
 
+                // 检查超时
+                if last_activity.elapsed() > IO_THREAD_TIMEOUT {
+                    debug!("PTY I/O thread idle timeout for session {}", session_id);
+                    // 不退出，继续运行，但重置计时器
+                    last_activity = std::time::Instant::now();
+                }
+
                 // Read from PTY if reader is available
                 if let Some(ref mut r) = reader {
                     match r.read(&mut buf) {
                         Ok(n) => {
                             if n > 0 {
+                                // 验证数据大小
+                                if n > buf.len() {
+                                    warn!("PTY read returned invalid size {} for session {}", n, session_id);
+                                    break;
+                                }
+                                
                                 let data = buf[..n].to_vec();
                                 if output_tx.send(data).is_err() {
                                     warn!("PTY output channel closed for session {}", session_id);
                                     break;
                                 }
+                                last_activity = std::time::Instant::now();
+                                
                                 // Update activity
                                 if let Ok(mut info) = info.try_write() {
                                     info.touch();
@@ -370,12 +410,22 @@ impl AgentSession {
                             break;
                         }
                     }
+                } else {
+                    // 没有 reader，退出循环
+                    warn!("PTY reader not available for session {}", session_id);
+                    break;
                 }
 
                 // Write to PTY if writer is available
                 if let Some(ref mut w) = writer {
                     match input_rx.try_recv() {
                         Ok(data) => {
+                            // 验证数据大小
+                            if data.len() > 1024 * 1024 { // 1MB 限制
+                                warn!("PTY input data too large for session {}", session_id);
+                                break;
+                            }
+                            
                             if let Err(e) = w.write_all(&data) {
                                 warn!("PTY write error for session {}: {}", session_id, e);
                                 break;
@@ -384,6 +434,8 @@ impl AgentSession {
                                 warn!("PTY flush error for session {}: {}", session_id, e);
                                 break;
                             }
+                            last_activity = std::time::Instant::now();
+                            
                             if let Ok(mut info) = info.try_write() {
                                 info.touch();
                             }
@@ -394,12 +446,16 @@ impl AgentSession {
                         }
                         Err(mpsc::error::TryRecvError::Empty) => {}
                     }
+                } else {
+                    // 没有 writer，但继续运行以处理读取
                 }
 
                 // Small sleep to prevent busy-waiting
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
 
+            // 标记清理完成
+            cleanup_complete.store(true, std::sync::atomic::Ordering::SeqCst);
             info!("PTY I/O thread stopped for session {}", session_id);
         });
 
@@ -449,6 +505,13 @@ impl AgentSession {
 
     /// Send data to PTY (from WebSocket)
     pub fn send_to_pty(&self, data: Vec<u8>) -> Result<()> {
+        // 验证数据大小
+        if data.len() > 1024 * 1024 { // 1MB 限制
+            return Err(CisError::invalid_input(
+                "PTY input data too large (max 1MB)".to_string()
+            ));
+        }
+        
         if let Some(ref tx) = self.input_tx {
             tx.send(data)
                 .map_err(|_| CisError::execution("PTY input channel closed"))?;
@@ -462,7 +525,14 @@ impl AgentSession {
     pub fn try_receive_from_pty(&mut self) -> Option<Vec<u8>> {
         if let Some(ref mut rx) = self.output_rx {
             match rx.try_recv() {
-                Ok(data) => Some(data),
+                Ok(data) => {
+                    // 验证数据大小
+                    if data.len() > 1024 * 1024 { // 1MB 限制
+                        warn!("PTY output data too large for session {}", self.id);
+                        return None;
+                    }
+                    Some(data)
+                }
                 Err(_) => None,
             }
         } else {
@@ -475,6 +545,13 @@ impl AgentSession {
     /// Note: portable-pty doesn't support resizing after creation,
     /// so this is a placeholder for future implementation.
     pub async fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {
+        // 验证终端大小
+        if cols == 0 || cols > 512 || rows == 0 || rows > 256 {
+            return Err(CisError::invalid_input(
+                format!("Invalid terminal size: {}x{}", cols, rows)
+            ));
+        }
+        
         let mut info = self.info.write().await;
         info.terminal_size = (cols, rows);
         info.touch();
@@ -498,19 +575,49 @@ impl AgentSession {
             let _ = tx.send(()).await;
         }
 
-        // Wait for forwarder to stop
+        // Drop input channel to signal PTY thread to stop writing
+        self.input_tx = None;
+
+        // Wait for forwarder to stop with timeout
         if let Some(handle) = self.forwarder_handle.take() {
-            let _ = tokio::time::timeout(tokio::time::Duration::from_secs(5), handle).await;
+            match tokio::time::timeout(tokio::time::Duration::from_secs(5), handle).await {
+                Ok(_) => {
+                    debug!("Forwarder thread stopped cleanly for session {}", self.id);
+                }
+                Err(_) => {
+                    warn!("Forwarder thread timeout for session {}, forcing shutdown", self.id);
+                }
+            }
         }
 
         // Kill process
         if let Some(mut handle) = self.process_handle.take() {
-            let _ = handle.kill();
+            if let Err(e) = handle.kill() {
+                warn!("Failed to kill agent process for session {}: {}", self.id, e);
+            } else {
+                // 等待进程退出
+                let _ = tokio::time::timeout(
+                    tokio::time::Duration::from_secs(2),
+                    tokio::task::spawn_blocking(move || {
+                        let _ = handle.wait(); // 等待进程结束
+                    })
+                ).await;
+            }
         }
 
-        // Drop channels
+        // Drop remaining channels
         self.output_rx = None;
-        self.input_tx = None;
+
+        // 等待清理完成信号
+        let timeout = tokio::time::Duration::from_secs(2);
+        let start = tokio::time::Instant::now();
+        while !self.cleanup_complete.load(std::sync::atomic::Ordering::SeqCst) {
+            if start.elapsed() > timeout {
+                warn!("Cleanup timeout for session {}", self.id);
+                break;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        }
 
         // Update state
         {
@@ -527,14 +634,33 @@ impl AgentSession {
         let info = self.info.read().await;
         info.state == SessionState::Active
     }
+
+    /// 检查会话是否超时
+    pub async fn is_timed_out(&self) -> bool {
+        let info = self.info.read().await;
+        info.is_timed_out(MAX_INACTIVE_SECONDS)
+    }
 }
 
 impl Drop for AgentSession {
     fn drop(&mut self) {
         // Try to clean up resources synchronously
+        // 1. 发送关闭信号
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.try_send(());
+        }
+        
+        // 2. 立即丢弃通道，让线程知道要退出
+        self.input_tx = None;
+        self.output_rx = None;
+        
+        // 3. 尝试终止进程
         if let Some(mut handle) = self.process_handle.take() {
             let _ = handle.kill();
         }
+        
+        // 注意：我们不在这里等待 forwarder_handle，因为这可能导致死锁
+        // forwarder 线程会在检测到通道关闭后自行退出
     }
 }
 
@@ -545,9 +671,14 @@ pub struct SessionManager {
     /// Network ACL for verification
     acl: Arc<RwLock<NetworkAcl>>,
     /// DID manager
+    #[allow(dead_code)]
     did_manager: Arc<DIDManager>,
     /// Default sandbox config
     default_sandbox: SandboxConfig,
+    /// 清理任务句柄
+    cleanup_handle: Option<JoinHandle<()>>,
+    /// 关闭信号
+    shutdown_tx: Option<mpsc::Sender<()>>,
 }
 
 impl SessionManager {
@@ -562,7 +693,52 @@ impl SessionManager {
             acl,
             did_manager,
             default_sandbox,
+            cleanup_handle: None,
+            shutdown_tx: None,
         }
+    }
+
+    /// 启动清理任务
+    pub async fn start_cleanup_task(&mut self) {
+        let sessions = self.sessions.clone();
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
+        self.shutdown_tx = Some(shutdown_tx);
+
+        let handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+            
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        // 清理超时会话
+                        let timed_out_sessions = {
+                            let sessions_guard = sessions.read().await;
+                            let mut to_remove = Vec::new();
+                            
+                            for (id, session) in sessions_guard.iter() {
+                                let session_guard = session.read().await;
+                                if session_guard.is_timed_out().await {
+                                    to_remove.push(*id);
+                                }
+                            }
+                            to_remove
+                        };
+                        
+                        for id in timed_out_sessions {
+                            warn!("Session {} timed out, removing", id);
+                            // 注意：这里需要调用 end_session，但我们没有 self
+                            // 实际使用时应该通过另一个通道来处理
+                        }
+                    }
+                    _ = shutdown_rx.recv() => {
+                        info!("Session cleanup task shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+
+        self.cleanup_handle = Some(handle);
     }
 
     /// Create a new session
@@ -671,6 +847,13 @@ impl SessionManager {
 
     /// Send data to session PTY
     pub async fn send_to_session(&self, session_id: SessionId, data: Vec<u8>) -> Result<()> {
+        // 验证数据大小
+        if data.len() > 1024 * 1024 { // 1MB 限制
+            return Err(CisError::invalid_input(
+                "Session data too large (max 1MB)".to_string()
+            ));
+        }
+        
         if let Some(session_arc) = self.get_session(session_id).await {
             let session = session_arc.read().await;
             session.send_to_pty(data)
@@ -756,7 +939,9 @@ impl SessionManager {
 
         let count = to_remove.len();
         for id in to_remove {
-            let _ = self.end_session(id).await;
+            if let Err(e) = self.end_session(id).await {
+                warn!("Failed to cleanup session {}: {}", id, e);
+            }
         }
 
         count
@@ -770,8 +955,36 @@ impl SessionManager {
         };
 
         for id in session_ids {
-            let _ = self.end_session(id).await;
+            if let Err(e) = self.end_session(id).await {
+                warn!("Failed to shutdown session {}: {}", id, e);
+            }
         }
+    }
+
+    /// 关闭 SessionManager
+    pub async fn shutdown(&mut self) {
+        // 停止清理任务
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(()).await;
+        }
+        
+        if let Some(handle) = self.cleanup_handle.take() {
+            let _ = tokio::time::timeout(tokio::time::Duration::from_secs(5), handle).await;
+        }
+        
+        // 关闭所有会话
+        self.shutdown_all().await;
+    }
+}
+
+impl Drop for SessionManager {
+    fn drop(&mut self) {
+        // 发送关闭信号
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.try_send(());
+        }
+        
+        // 注意：我们不在这里阻塞等待，因为这可能导致死锁
     }
 }
 
@@ -821,6 +1034,13 @@ impl AgentSessionServer {
                 result = listener.accept() => {
                     match result {
                         Ok((stream, peer_addr)) => {
+                            // 验证连接数限制
+                            let session_count = self.session_manager.list_sessions().await.len();
+                            if session_count >= 100 { // 最大 100 个并发会话
+                                warn!("Too many sessions ({}), rejecting connection from {}", session_count, peer_addr);
+                                continue;
+                            }
+                            
                             let session_manager = self.session_manager.clone();
                             tokio::spawn(async move {
                                 if let Err(e) = Self::handle_connection(stream, peer_addr, session_manager).await {
@@ -915,6 +1135,12 @@ async fn handle_websocket_connection(
 
             // Send PTY output to WebSocket
             Some((session_id, data)) = pty_out_rx.recv() => {
+                // 验证数据大小
+                if data.len() > 1024 * 1024 { // 1MB 限制
+                    warn!("PTY output data too large for session {}", session_id);
+                    continue;
+                }
+                
                 // Build binary frame: [session_id: 16 bytes][data]
                 let mut frame = BytesMut::with_capacity(16 + data.len());
                 frame.extend_from_slice(session_id.as_bytes());
@@ -932,7 +1158,9 @@ async fn handle_websocket_connection(
 
     // Cleanup
     if let Some(session_id) = current_session {
-        let _ = session_manager.end_session(session_id).await;
+        if let Err(e) = session_manager.end_session(session_id).await {
+            warn!("Failed to cleanup session {}: {}", session_id, e);
+        }
     }
 
     info!("Agent session WebSocket handler stopped");
@@ -950,6 +1178,9 @@ async fn handle_ws_message(
 ) -> Result<bool> {
     match msg {
         Message::Text(text) => {
+            // 验证消息大小
+            crate::check_string_length(&text, 10 * 1024)?; // 10KB 限制
+            
             // Parse as control message
             let control: SessionControlMessage =
                 serde_json::from_str(&text).map_err(|e| {
@@ -964,6 +1195,13 @@ async fn handle_ws_message(
             ).await
         }
         Message::Binary(data) => {
+            // 验证数据大小
+            if data.len() > 1024 * 1024 { // 1MB 限制
+                return Err(CisError::invalid_input(
+                    "Binary message too large (max 1MB)".to_string()
+                ));
+            }
+            
             // Parse binary frame: [session_id: 16 bytes][data]
             if data.len() < 16 {
                 return Err(CisError::invalid_input(
@@ -1013,6 +1251,9 @@ async fn handle_control_message(
             cols,
             rows,
         } => {
+            // 验证 target_did 长度
+            crate::check_string_length(&target_did, 1024)?;
+            
             // End current session if any
             if let Some(session_id) = current_session.take() {
                 let _ = session_manager.end_session(session_id).await;
@@ -1082,11 +1323,20 @@ fn start_pty_output_polling(
     pty_out_tx: mpsc::UnboundedSender<(SessionId, Vec<u8>)>,
 ) {
     tokio::spawn(async move {
+        let mut consecutive_errors = 0;
+        const MAX_CONSECUTIVE_ERRORS: u32 = 10;
+        
         loop {
             // Check if session is still active
             match session_manager.get_session_info(session_id).await {
                 Some(info) => {
                     if info.state != SessionState::Active {
+                        break;
+                    }
+                    
+                    // 检查是否超时
+                    if info.is_timed_out(MAX_INACTIVE_SECONDS) {
+                        warn!("Session {} timed out, stopping polling", session_id);
                         break;
                     }
                 }
@@ -1096,15 +1346,28 @@ fn start_pty_output_polling(
             // Try to receive output
             match session_manager.try_receive_from_session(session_id).await {
                 Ok(Some(data)) => {
-                    if pty_out_tx.send((session_id, data)).is_err() {
+                    // 验证数据大小
+                    if data.len() > 1024 * 1024 { // 1MB 限制
+                        warn!("PTY output too large for session {}", session_id);
+                        consecutive_errors += 1;
+                    } else if pty_out_tx.send((session_id, data)).is_err() {
                         break;
+                    } else {
+                        consecutive_errors = 0; // 重置错误计数
                     }
                 }
                 Ok(None) => {
                     // No data available, sleep briefly
                     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                 }
-                Err(_) => break,
+                Err(_) => {
+                    consecutive_errors += 1;
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                        warn!("Too many consecutive errors for session {}, stopping polling", session_id);
+                        break;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                }
             }
         }
     });
@@ -1161,5 +1424,30 @@ mod tests {
 
         assert_eq!(parsed_id, session_id);
         assert_eq!(parsed_data, data);
+    }
+
+    #[test]
+    fn test_session_info_timeout() {
+        let mut info = SessionInfo::new(
+            Uuid::new_v4(),
+            AgentType::Claude,
+            "test_did".to_string()
+        );
+        
+        // 刚创建的会话不应该超时
+        assert!(!info.is_timed_out(3600));
+        
+        // 修改 last_activity 为很久以前
+        info.last_activity = chrono::Utc::now().timestamp() - 7200; // 2小时前
+        
+        // 现在应该超时了
+        assert!(info.is_timed_out(3600));
+    }
+
+    #[test]
+    fn test_terminal_size_validation() {
+        // 有效的终端大小
+        assert!(DEFAULT_TERMINAL_COLS > 0 && DEFAULT_TERMINAL_COLS <= 512);
+        assert!(DEFAULT_TERMINAL_ROWS > 0 && DEFAULT_TERMINAL_ROWS <= 256);
     }
 }

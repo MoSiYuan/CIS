@@ -4,7 +4,7 @@
 //!
 //! # 使用示例
 //!
-//! ```rust
+//! ```ignore
 //! use cis_skill_sdk::im::*;
 //! use cis_skill_sdk::{Skill, SkillContext, Event, Result};
 //!
@@ -34,7 +34,21 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "native")]
 use std::collections::HashMap;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use hashbrown::HashMap;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::string::String;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::vec::Vec;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::vec;
 
 // ==================== 消息类型 ====================
 

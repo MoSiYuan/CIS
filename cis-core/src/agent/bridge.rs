@@ -90,64 +90,61 @@ impl Skill for AgentBridgeSkill {
     }
 
     async fn handle_event(&self, ctx: &dyn SkillContext, event: Event) -> Result<()> {
-        match event {
-            Event::Custom { name, data } => {
-                match name.as_str() {
-                    "agent:execute" => {
-                        // 解析 prompt
-                        let prompt = data.get("prompt")
-                            .and_then(|v| v.as_str())
-                            .ok_or_else(|| CisError::invalid_input("Missing prompt"))?;
+        if let Event::Custom { name, data } = event {
+            match name.as_str() {
+                "agent:execute" => {
+                    // 解析 prompt
+                    let prompt = data.get("prompt")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| CisError::invalid_input("Missing prompt"))?;
 
-                        // 调用 Agent
-                        let response = self.call_agent(prompt).await?;
+                    // 调用 Agent
+                    let response = self.call_agent(prompt).await?;
 
-                        // 记录结果到记忆
-                        ctx.memory_set(
-                            &format!("agent/{}/last_response", self.name),
-                            response.content.as_bytes()
-                        )?;
+                    // 记录结果到记忆
+                    ctx.memory_set(
+                        &format!("agent/{}/last_response", self.name),
+                        response.content.as_bytes()
+                    )?;
 
-                        ctx.log_info(&format!("Agent executed, response length: {}", 
-                            response.content.len()));
-                    }
-                    "agent:execute_with_context" => {
-                        // 带 CIS 上下文的执行
-                        let prompt = data.get("prompt")
-                            .and_then(|v| v.as_str())
-                            .ok_or_else(|| CisError::invalid_input("Missing prompt"))?;
-
-                        // 获取相关记忆作为上下文
-                        let context_keys: Vec<String> = data.get("context_keys")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| arr.iter()
-                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                .collect())
-                            .unwrap_or_default();
-
-                        let mut full_prompt = String::new();
-                        full_prompt.push_str("=== CIS Context ===\n");
-                        for key in context_keys {
-                            if let Some(value) = ctx.memory_get(&key) {
-                                full_prompt.push_str(&format!("{}: {}\n", key, 
-                                    String::from_utf8_lossy(&value)));
-                            }
-                        }
-                        full_prompt.push_str("\n=== User Request ===\n");
-                        full_prompt.push_str(prompt);
-
-                        // 执行
-                        let response = self.call_agent(full_prompt).await?;
-
-                        // 存储结果
-                        if let Some(output_key) = data.get("output_key").and_then(|v| v.as_str()) {
-                            ctx.memory_set(output_key, response.content.as_bytes())?;
-                        }
-                    }
-                    _ => {}
+                    ctx.log_info(&format!("Agent executed, response length: {}", 
+                        response.content.len()));
                 }
+                "agent:execute_with_context" => {
+                    // 带 CIS 上下文的执行
+                    let prompt = data.get("prompt")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| CisError::invalid_input("Missing prompt"))?;
+
+                    // 获取相关记忆作为上下文
+                    let context_keys: Vec<String> = data.get("context_keys")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect())
+                        .unwrap_or_default();
+
+                    let mut full_prompt = String::new();
+                    full_prompt.push_str("=== CIS Context ===\n");
+                    for key in context_keys {
+                        if let Some(value) = ctx.memory_get(&key) {
+                            full_prompt.push_str(&format!("{}: {}\n", key, 
+                                String::from_utf8_lossy(&value)));
+                        }
+                    }
+                    full_prompt.push_str("\n=== User Request ===\n");
+                    full_prompt.push_str(prompt);
+
+                    // 执行
+                    let response = self.call_agent(full_prompt).await?;
+
+                    // 存储结果
+                    if let Some(output_key) = data.get("output_key").and_then(|v| v.as_str()) {
+                        ctx.memory_set(output_key, response.content.as_bytes())?;
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
         Ok(())
     }

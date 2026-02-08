@@ -152,14 +152,6 @@ impl cis_skill_sdk::Skill for ImMatrixAdapter {
         crate::SKILL_VERSION
     }
 
-    fn room_id(&self) -> Option<String> {
-        Some(crate::SKILL_ROOM_ID.to_string())
-    }
-
-    fn federate(&self) -> bool {
-        crate::SKILL_FEDERATE
-    }
-
     fn handle_event(
         &self,
         _ctx: &dyn cis_skill_sdk::SkillContext,

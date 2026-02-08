@@ -3,11 +3,20 @@
 use crate::error::Result;
 use crate::types::{Event, InvokeContext, LogLevel, SkillConfig, SkillMeta};
 
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::string::String;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::vec::Vec;
+
+#[cfg(all(feature = "wasm", not(feature = "native")))]
+use alloc::vec;
+
 /// Skill 统一接口
 ///
 /// # 示例
 ///
-/// ```rust
+/// ```ignore
 /// use cis_skill_sdk::{Skill, SkillContext, Event, Result};
 ///
 /// pub struct MySkill {

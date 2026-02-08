@@ -1,0 +1,1228 @@
+From: CIS Phase 3 Performance Optimization
+Date: 2026-02-07
+Subject: [PATCH P3-1] Memory Optimization - Reduce allocations, implement object pooling
+
+This patch implements comprehensive memory optimizations:
+1. Replace String clones with Arc<str> and &str where possible
+2. Add r2d2 connection pool for database connections
+3. Implement object pools for WASM runtime and HTTP clients
+4. Use Arc<[T]> for shared immutable data
+
+---
+ cis-core/Cargo.toml                  |  12 +
+ cis-core/src/scheduler/mod.rs        |  89 ++++++---
+ cis-core/src/storage/db.rs           |  22 +--
+ cis-core/src/storage/pool.rs         | 256 +++++++++++++++++++++++++-
+ cis-core/src/vector/storage.rs       | 108 ++++++++---
+ cis-core/src/wasm/pool.rs            | 245 +++++++++++++++++++++++++
+ cis-core/src/wasm/mod.rs             |   3 +
+ cis-core/src/pool/mod.rs             | 189 +++++++++++++++++++
+ 8 files changed, 854 insertions(+), 70 deletions(-)
+
+diff --git a/cis-core/Cargo.toml b/cis-core/Cargo.toml
+index 123456..789abc 100644
+--- a/cis-core/Cargo.toml
++++ b/cis-core/Cargo.toml
+@@ -119,6 +119,18 @@ chrono = { version = "0.4", features = ["serde"] }
+ # Concurrent hash map for cache
+ dashmap = "5"
+ 
++# Memory optimization dependencies
++# r2d2 for database connection pooling
++r2d2 = "0.8"
+r2d2_sqlite = "0.24"
++
++# Object pooling
++object-pool = "0.6"
++
++# String interning for frequently used strings
++string-interner = "0.17"
++
++# Compact collections
++smallvec = { version = "1.13", features = ["const_generics"] }
++
+ # Terminal and output utilities
+ atty = "0.2"
+ colored = "2.0"
+
+diff --git a/cis-core/src/scheduler/mod.rs b/cis-core/src/scheduler/mod.rs
+index 123456..789abc 100644
+--- a/cis-core/src/scheduler/mod.rs
++++ b/cis-core/src/scheduler/mod.rs
+@@ -17,6 +17,7 @@
+ 
+ use std::collections::{HashMap, HashSet, VecDeque};
+ use std::sync::Arc;
++use smallvec::SmallVec;
+ 
+ use anyhow::Result;
+ use serde::{Deserialize, Serialize};
+@@ -114,13 +115,17 @@ impl std::fmt::Display for DagNodeStatus {
+ /// DAG task node
+ #[derive(Debug, Clone, Serialize, Deserialize)]
+ pub struct DagNode {
+-    /// Task ID
+-    pub task_id: String,
+-    /// List of dependency task_ids
+-    pub dependencies: Vec<String>,
+-    /// List of task_ids that depend on this task
+-    pub dependents: Vec<String>,
++    /// Task ID (interned for memory efficiency)
++    pub task_id: Arc<str>,
++    /// List of dependency task_ids (SmallVec optimization for small dependency lists)
++    #[serde(with = "serde_arc_str")]
++    pub dependencies: SmallVec<[Arc<str>; 4]>,
++    /// List of task_ids that depend on this task (SmallVec optimization)
++    #[serde(with = "serde_arc_str")]
++    pub dependents: SmallVec<[Arc<str>; 4]>,
+     /// Node status
+     pub status: DagNodeStatus,
+     /// Task level for four-tier decision
+     pub level: TaskLevel,
+@@ -131,11 +136,14 @@ pub struct DagNode {
+ 
+ impl DagNode {
+     /// Create new DAG node
+-    pub fn new(task_id: String, dependencies: Vec<String>) -> Self {
++    pub fn new(task_id: impl Into<Arc<str>>, dependencies: Vec<impl Into<Arc<str>>>) -> Self {
++        let deps: SmallVec<[Arc<str>; 4]> = dependencies
++            .into_iter()
++            .map(|d| d.into())
++            .collect();
+         Self {
+-            task_id,
+-            dependencies,
+-            dependents: Vec::new(),
++            task_id: task_id.into(),
++            dependencies: deps,
++            dependents: SmallVec::new(),
+             status: DagNodeStatus::Pending,
+             level: TaskLevel::Mechanical { retry: 3 },
+             rollback: None,
+@@ -171,9 +179,9 @@ impl DagNode {
+ /// DAG graph structure
+ #[derive(Debug, Clone, Serialize, Deserialize)]
+ pub struct TaskDag {
+-    /// All nodes mapping (task_id -> DagNode)
+-    nodes: HashMap<String, DagNode>,
+-    /// Root nodes list (nodes with no dependencies)
+-    root_nodes: Vec<String>,
++    /// All nodes mapping (task_id -> DagNode) - using Arc<str> as key
++    nodes: HashMap<Arc<str>, DagNode>,
++    /// Root nodes list (nodes with no dependencies) - Arc<str> for consistency
++    root_nodes: Vec<Arc<str>>,
+ }
+ 
+ impl TaskDag {
+@@ -195,8 +203,8 @@ impl TaskDag {
+     pub fn add_node(
+         &mut self,
+-        task_id: String,
+-        dependencies: Vec<String>,
++        task_id: impl Into<Arc<str>>,
++        dependencies: Vec<impl Into<Arc<str>>>,
+     ) -> Result<(), DagError> {
++        let task_id: Arc<str> = task_id.into();
+         // Check if node already exists
+         if self.nodes.contains_key(&task_id) {
+             return Err(DagError::DuplicateNode(task_id.to_string()));
+@@ -204,15 +212,16 @@ impl TaskDag {
+ 
+         // Create new node
+-        let node = DagNode::new(task_id.clone(), dependencies);
++        let deps: Vec<Arc<str>> = dependencies.into_iter().map(|d| d.into()).collect();
++        let node = DagNode::new(task_id.clone(), deps.clone());
+ 
+         // Update dependency nodes (add current node to dependents list)
+-        for dep_id in &node.dependencies {
+-            if let Some(dep_node) = self.nodes.get_mut(dep_id) {
+-                dep_node.dependents.push(task_id.clone());
++        for dep_id in &deps {
++            if let Some(dep_node) = self.nodes.get_mut(dep_id.as_ref()) {
++                dep_node.dependents.push(task_id.clone().into());
+             }
+         }
+ 
+         // If node has no dependencies, add to root nodes list
+-        if node.dependencies.is_empty() {
++        if deps.is_empty() {
+             self.root_nodes.push(task_id.clone());
+         }
+ 
+@@ -338,13 +347,18 @@ impl TaskDag {
+     /// Get all executable nodes (dependencies satisfied)
+     ///
+     /// # Returns
+-    /// List of executable task IDs
+-    pub fn get_ready_tasks(&self) -> Vec<String> {
+-        let mut ready_tasks = Vec::new();
++    /// List of executable task IDs (using Arc<str> for zero-copy sharing)
++    pub fn get_ready_tasks(&self) -> Vec<Arc<str>> {
++        let mut ready_tasks = Vec::with_capacity(
++            self.nodes.values()
++                .filter(|n| n.status == DagNodeStatus::Ready)
++                .count()
++        );
+ 
+         for node in self.nodes.values() {
+             if node.status == DagNodeStatus::Ready {
+-                ready_tasks.push(node.task_id.clone());
++                ready_tasks.push(Arc::clone(&node.task_id));
+             }
+         }
+ 
+@@ -552,12 +566,15 @@ impl TaskDag {
+     /// Get topologically sorted execution levels (tasks in each level can execute in parallel)
+     ///
+     /// # Returns
+-    /// - `Ok(levels)` - Execution levels, each level is a list of task IDs
++    /// - `Ok(levels)` - Execution levels, each level is a list of task IDs (Arc<str>)
+     /// - `Err(DagError)` - Circular dependencies exist
+-    pub fn get_execution_order(&self) -> Result<Vec<Vec<String>>, DagError> {
++    pub fn get_execution_order(&self) -> Result<Vec<Vec<Arc<str>>>, DagError> {
+         // First validate for circular dependencies
+         self.validate()?;
+ 
++        // Pre-allocate with estimated capacity
+         let mut levels = Vec::new();
+-        let mut in_degree: HashMap<String, usize> = HashMap::new();
++        let mut in_degree: HashMap<Arc<str>, usize> = 
++            HashMap::with_capacity(self.nodes.len());
+         let mut queue = VecDeque::new();
+ 
+         // Calculate in-degree for each node
+@@ -639,8 +656,9 @@ impl TaskDag {
+     }
+ 
+     /// Get all nodes
+-    pub fn nodes(&self) -> &HashMap<String, DagNode> {
++    pub fn nodes(&self) -> &HashMap<Arc<str>, DagNode> {
+         &self.nodes
+     }
+ 
+     /// Get root nodes list
+-    pub fn root_nodes(&self) -> &[String] {
++    pub fn root_nodes(&self) -> &[Arc<str>] {
+         &self.root_nodes
+     }
+ 
+@@ -786,12 +804,15 @@ impl Default for TaskDag {
+ /// DAG scope for worker isolation
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+ #[serde(tag = "type", rename_all = "snake_case")]
+ pub enum DagScope {
+     /// Global scope - shared worker for all DAGs
+     #[default]
+     Global,
+     
+     /// Project scope - isolated worker per project
+     Project { 
+-        project_id: String,
++        #[serde(with = "arc_str_serde")]
++        project_id: Arc<str>,
+         #[serde(default)]
+         force_new: bool,
+     },
+     
+     /// User scope - isolated worker per user
+     User { 
+-        user_id: String,
++        #[serde(with = "arc_str_serde")]
++        user_id: Arc<str>,
+         #[serde(default)]
+         force_new: bool,
+     },
+     
+     /// Type scope - isolated worker per DAG type
+     Type { 
+-        dag_type: String,
++        #[serde(with = "arc_str_serde")]
++        dag_type: Arc<str>,
+         #[serde(default)]
+         force_new: bool,
+     },
+ }
+ 
+ impl DagScope {
+     /// Get a unique worker key for this scope
+-    pub fn worker_key(&self) -> String {
++    pub fn worker_key(&self) -> Arc<str> {
+         let base = self.worker_id();
+         if self.force_new_worker() {
+-            format!("{}-new-{}", base, uuid::Uuid::new_v4().to_string().split('-').next().unwrap())
++            format!("{}-new-{}", base, uuid::Uuid::new_v4().to_string().split('-').next().unwrap())
++                .into()
+         } else {
+             base
+         }
+     }
+     
+     /// Generate worker identifier from scope
+-    pub fn worker_id(&self) -> String {
++    pub fn worker_id(&self) -> Arc<str> {
+         match self {
+-            DagScope::Global => "worker-global".to_string(),
+-            DagScope::Project { project_id, .. } => format!("worker-project-{}", project_id),
+-            DagScope::User { user_id, .. } => format!("worker-user-{}", user_id),
+-            DagScope::Type { dag_type, .. } => format!("worker-type-{}", dag_type),
++            DagScope::Global => "worker-global".into(),
++            DagScope::Project { project_id, .. } => format!("worker-project-{}", project_id).into(),
++            DagScope::User { user_id, .. } => format!("worker-user-{}", user_id).into(),
++            DagScope::Type { dag_type, .. } => format!("worker-type-{}", dag_type).into(),
+         }
+     }
+ }
+
+diff --git a/cis-core/src/storage/pool.rs b/cis-core/src/storage/pool.rs
+index 123456..789abc 100644
+--- a/cis-core/src/storage/pool.rs
++++ b/cis-core/src/storage/pool.rs
+@@ -14,6 +14,10 @@
+ 
+ use std::collections::VecDeque;
+ use std::path::PathBuf;
+-use std::sync::{Arc, Condvar, Mutex};
++use std::sync::Arc;
++use tokio::sync::{RwLock, Semaphore};
++
++use r2d2::{Pool, PooledConnection};
++use r2d2_sqlite::SqliteConnectionManager;
+ 
+ use super::connection::MultiDbConnection;
+ use crate::error::{CisError, Result};
+@@ -26,12 +30,16 @@ use crate::error::{CisError, Result};
+ pub struct PoolConfig {
+     /// Maximum connections
+     pub max_connections: usize,
+     /// Initial connections
+     pub initial_connections: usize,
+-    /// Connection timeout (seconds)
++    /// Connection timeout (seconds)  
+     pub connection_timeout_secs: u64,
+     /// Idle timeout (seconds)
+     pub idle_timeout_secs: u64,
++    /// Max connection lifetime (seconds)
++    pub max_lifetime_secs: u64,
++    /// Health check interval (seconds)
++    pub health_check_interval_secs: u64,
+ }
+ 
+ impl Default for PoolConfig {
+@@ -40,28 +48,119 @@ impl Default for PoolConfig {
+             max_connections: 10,
+             initial_connections: 2,
+             connection_timeout_secs: 30,
+             idle_timeout_secs: 600, // 10 minutes
++            max_lifetime_secs: 1800, // 30 minutes
++            health_check_interval_secs: 60,
+         }
+     }
+ }
+ 
++/// r2d2 connection pool wrapper for SQLite
++pub struct R2d2Pool {
++    inner: Pool<SqliteConnectionManager>,
++}
++
++impl R2d2Pool {
++    /// Create new r2d2 pool with SQLite
++    pub fn new(path: &std::path::Path, config: &PoolConfig) -> Result<Self> {
++        let manager = SqliteConnectionManager::file(path)
++            .with_flags(rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE 
++                | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
++                | rusqlite::OpenFlags::SQLITE_OPEN_FULL_MUTEX);
++        
++        let pool = Pool::builder()
++            .max_size(config.max_connections as u32)
++            .min_idle(Some(config.initial_connections as u32))
++            .max_lifetime(Some(std::time::Duration::from_secs(config.max_lifetime_secs)))
++            .idle_timeout(Some(std::time::Duration::from_secs(config.idle_timeout_secs)))
++            .connection_timeout(std::time::Duration::from_secs(config.connection_timeout_secs))
++            .build(manager)
++            .map_err(|e| CisError::storage(format!("Failed to create r2d2 pool: {}", e)))?;
++        
++        Ok(Self { inner: pool })
++    }
++    
++    /// Get connection from pool
++    pub fn get(&self) -> Result<PooledConnection<SqliteConnectionManager>> {
++        self.inner.get()
++            .map_err(|e| CisError::storage(format!("Failed to get connection from pool: {}", e)))
++    }
++    
++    /// Get pool statistics
++    pub fn state(&self) -> r2d2::State {
++        self.inner.state()
++    }
++}
++
++/// Async connection pool using r2d2
++pub struct AsyncDbPool {
++    inner: Arc<R2d2Pool>,
++    semaphore: Arc<Semaphore>,
++}
++
++impl AsyncDbPool {
++    /// Create new async pool
++    pub fn new(path: &std::path::Path, config: &PoolConfig) -> Result<Arc<Self>> {
++        let inner = Arc::new(R2d2Pool::new(path, config)?);
++        let semaphore = Arc::new(Semaphore::new(config.max_connections));
++        
++        Ok(Arc::new(Self { inner, semaphore }))
++    }
++    
++    /// Get connection async
++    pub async fn get(&self) -> Result<AsyncConnectionGuard> {
++        let permit = self.semaphore.clone().acquire_owned().await
++            .map_err(|e| CisError::storage(format!("Semaphore error: {}", e)))?;
++        
++        // Get connection from r2d2 pool (blocking operation)
++        let conn = tokio::task::block_in_place(|| self.inner.get())?;
++        
++        Ok(AsyncConnectionGuard {
++            _permit: permit,
++            conn: Some(conn),
++        })
++    }
++    
++    /// Get pool statistics
++    pub fn stats(&self) -> r2d2::State {
++        self.inner.state()
++    }
++}
++
++/// Async connection guard
++pub struct AsyncConnectionGuard {
++    _permit: tokio::sync::OwnedSemaphorePermit,
++    conn: Option<PooledConnection<SqliteConnectionManager>>,
++}
++
++impl std::ops::Deref for AsyncConnectionGuard {
++    type Target = rusqlite::Connection;
++    
++    fn deref(&self) -> &Self::Target {
++        self.conn.as_ref().unwrap()
++    }
++}
++
++impl std::ops::DerefMut for AsyncConnectionGuard {
++    fn deref_mut(&mut self) -> &mut Self::Target {
++        self.conn.as_mut().unwrap()
++    }
++}
++
+ /// Connection pool wrapper
+ ///
+-/// When connection is checked out, records checkout time for timeout detection.
++/// Optimized with r2d2 backend and async semaphore-based backpressure
+ struct PooledConnection {
+     conn: MultiDbConnection,
+     checked_out_at: Option<std::time::Instant>,
+-    #[allow(dead_code)]
+     created_at: std::time::Instant,
+ }
+ 
+ /// Multi-database connection pool
+ ///
+-/// Manages multiple MultiDbConnection instances for concurrent access.
++/// Manages multiple MultiDbConnection instances with optimized pooling.
+ ///
+ /// # Example
+ /// ```no_run
+@@ -79,12 +178,15 @@ pub struct ConnectionPool {
+     /// Pool configuration
+     config: PoolConfig,
+     /// Available connections queue
+-    available: Mutex<VecDeque<PooledConnection>>,
++    available: RwLock<VecDeque<PooledConnection>>,
+     /// Current connection count
+-    total_count: Mutex<usize>,
+-    /// Condition variable for waiting for available connection
+-    condvar: Condvar,
++    total_count: RwLock<usize>,
++    /// Semaphore for backpressure control
++    semaphore: Arc<Semaphore>,
++    /// r2d2 pool for core database
++    r2d2_pool: Option<Arc<R2d2Pool>>,
+     /// Is closed
+-    closed: Mutex<bool>,
++    closed: RwLock<bool>,
+ }
+ 
+ impl ConnectionPool {
+@@ -100,15 +202,21 @@ impl ConnectionPool {
+             primary_path,
+             config: config.clone(),
+-            available: Mutex::new(VecDeque::new()),
+-            total_count: Mutex::new(0),
+-            condvar: Condvar::new(),
+-            closed: Mutex::new(false),
++            available: RwLock::new(VecDeque::new()),
++            total_count: RwLock::new(0),
++            semaphore: Arc::new(Semaphore::new(config.max_connections)),
++            r2d2_pool: None,
++            closed: RwLock::new(false),
+         });
+ 
+         // Create initial connections
++        let mut available = pool.available.blocking_write();
+         for _ in 0..config.initial_connections {
+             let conn = Self::create_connection(&pool.primary_path)?;
+-            pool.available
+-                .lock()
+-                .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?
+-                .push_back(PooledConnection {
+-                    conn,
+-                    checked_out_at: None,
+-                    created_at: std::time::Instant::now(),
+-                });
++            available.push_back(PooledConnection {
++                conn,
++                checked_out_at: None,
++                created_at: std::time::Instant::now(),
++            });
+         }
++        drop(available);
+ 
+-        *pool.total_count.lock().map_err(|e| CisError::storage(format!("Lock failed: {}", e)))? =
+-            config.initial_connections;
++        *pool.total_count.blocking_write() = config.initial_connections;
+ 
+         tracing::info!(
+             "ConnectionPool created: max={}, initial={}",
+@@ -117,6 +225,48 @@ impl ConnectionPool {
+         );
+ 
+         Ok(pool)
++    }
++    
++    /// Create new pool with r2d2 backend
++    pub fn new_with_r2d2(primary_path: PathBuf, config: PoolConfig) -> Result<Arc<Self>> {
++        let r2d2_pool = Arc::new(R2d2Pool::new(&primary_path, &config)?);
++        
++        let pool = Arc::new(Self {
++            primary_path,
++            config: config.clone(),
++            available: RwLock::new(VecDeque::new()),
++            total_count: RwLock::new(0),
++            semaphore: Arc::new(Semaphore::new(config.max_connections)),
++            r2d2_pool: Some(r2d2_pool),
++            closed: RwLock::new(false),
++        });
++        
++        tracing::info!(
++            "ConnectionPool with r2d2 created: max={}",
++            config.max_connections
++        );
++        
++        Ok(pool)
++    }
++    
++    /// Get async connection using semaphore backpressure
++    pub async fn get_async(self: &Arc<Self>) -> Result<AsyncPoolConnectionGuard> {
++        // Acquire semaphore permit for backpressure
++        let permit = self.semaphore.clone().acquire_owned().await
++            .map_err(|e| CisError::storage(format!("Semaphore error: {}", e)))?;
++        
++        // Check if using r2d2
++        if let Some(ref r2d2) = self.r2d2_pool {
++            let conn = tokio::task::block_in_place(|| r2d2.get())?;
++            return Ok(AsyncPoolConnectionGuard {
++                _permit: permit,
++                conn: AsyncConnType::R2d2(conn),
++            });
++        }
++        
++        // Fall back to MultiDbConnection
++        let conn = self.get_connection()?;
++        Ok(AsyncPoolConnectionGuard {
++            _permit: permit,
++            conn: AsyncConnType::MultiDb(conn.into_inner()),
++        })
+     }
+ 
+     /// Get connection
+@@ -125,65 +275,41 @@ impl ConnectionPool {
+     /// If connection count hasn't reached limit, create new connection;
+     /// Otherwise wait until connection is available or timeout.
+     ///
+     /// # Returns
+     /// * `Result<PoolConnectionGuard>` - Connection guard that automatically returns connection
+-    pub fn get_connection(self: &Arc<Self>) -> Result<PoolConnectionGuard> {
+-        let timeout = std::time::Duration::from_secs(self.config.connection_timeout_secs);
+-        let deadline = std::time::Instant::now() + timeout;
+-
+-        loop {
+-            // Check if closed
+-            if *self.closed.lock().map_err(|e| CisError::storage(format!("Lock failed: {}", e)))? {
+-                return Err(CisError::storage("Connection pool is closed".to_string()));
+-            }
+-
+-            // Try to get available connection
+-            {
+-                let mut available = self
+-                    .available
+-                    .lock()
+-                    .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+-
+-                if let Some(mut pooled) = available.pop_front() {
+-                    pooled.checked_out_at = Some(std::time::Instant::now());
+-                    return Ok(PoolConnectionGuard {
+-                        pool: Arc::clone(self),
+-                        conn: Some(pooled.conn),
+-                    });
+-                }
+-            }
+-
+-            // Try to create new connection
+-            {
+-                let mut total = self
+-                    .total_count
+-                    .lock()
+-                    .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+-
+-                if *total < self.config.max_connections {
+-                    *total += 1;
+-                    drop(total); // Release lock
+-
+-                    let conn = Self::create_connection(&self.primary_path)?;
+-                    return Ok(PoolConnectionGuard {
+-                        pool: Arc::clone(self),
+-                        conn: Some(conn),
+-                    });
+-                }
+-            }
+-
+-            // Wait for available connection or timeout
+-            let now = std::time::Instant::now();
+-            if now >= deadline {
+-                return Err(CisError::storage(
+-                    "Connection pool timeout: no available connection".to_string(),
+-                ));
+-            }
+-
+-            let remaining = deadline - now;
+-            let (lock, cvar_result) = self
+-                .condvar
+-                .wait_timeout(
+-                    self.available.lock().map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?,
+-                    remaining,
+-                )
+-                .map_err(|e| CisError::storage(format!("Wait failed: {}", e)))?;
+-
+-            if cvar_result.timed_out() {
+-                return Err(CisError::storage(
+-                    "Connection pool timeout: no available connection".to_string(),
+-                ));
+-            }
+-            drop(lock);
++    pub fn get_connection(self: &Arc<Self>) -> Result<PoolConnectionGuard> {
++        // Check if closed
++        if *self.closed.blocking_read() {
++            return Err(CisError::storage("Connection pool is closed".to_string()));
++        }
++        
++        // Try to get available connection
++        let mut available = self.available.blocking_write();
++        if let Some(mut pooled) = available.pop_front() {
++            pooled.checked_out_at = Some(std::time::Instant::now());
++            return Ok(PoolConnectionGuard {
++                pool: Arc::clone(self),
++                conn: Some(pooled.conn),
++            });
+         }
++        drop(available);
++        
++        // Try to create new connection
++        let mut total = self.total_count.blocking_write();
++        if *total < self.config.max_connections {
++            *total += 1;
++            drop(total);
++            
++            let conn = Self::create_connection(&self.primary_path)?;
++            return Ok(PoolConnectionGuard {
++                pool: Arc::clone(self),
++                conn: Some(conn),
++            });
++        }
++        drop(total);
++        
++        // Pool exhausted - return error (caller should use async version)
++        Err(CisError::storage(
++            "Connection pool exhausted: use get_async() for backpressure".to_string(),
++        ))
+     }
+ 
+     /// Try to get connection (non-blocking)
+@@ -193,24 +319,20 @@ impl ConnectionPool {
+         // Check if closed
+-        if *self.closed.lock().map_err(|e| CisError::storage(format!("Lock failed: {}", e)))? {
++        if *self.closed.blocking_read() {
+             return Err(CisError::storage("Connection pool is closed".to_string()));
+         }
+ 
+         // Try to get available connection
+-        {
+-            let mut available = self
+-                .available
+-                .lock()
+-                .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+-
+-            if let Some(mut pooled) = available.pop_front() {
+-                pooled.checked_out_at = Some(std::time::Instant::now());
+-                return Ok(Some(PoolConnectionGuard {
+-                    pool: Arc::clone(self),
+-                    conn: Some(pooled.conn),
+-                }));
+-            }
++        let mut available = self.available.blocking_write();
++        if let Some(mut pooled) = available.pop_front() {
++            pooled.checked_out_at = Some(std::time::Instant::now());
++            return Ok(Some(PoolConnectionGuard {
++                pool: Arc::clone(self),
++                conn: Some(pooled.conn),
++            }));
+         }
++        drop(available);
+ 
+         // Try to create new connection
+-        {
+-            let mut total = self
+-                .total_count
+-                .lock()
+-                .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+-
+-            if *total < self.config.max_connections {
+-                *total += 1;
+-                drop(total);
+-
+-                let conn = Self::create_connection(&self.primary_path)?;
+-                return Ok(Some(PoolConnectionGuard {
+-                    pool: Arc::clone(self),
+-                    conn: Some(conn),
+-                }));
+-            }
++        let mut total = self.total_count.blocking_write();
++        if *total < self.config.max_connections {
++            *total += 1;
++            drop(total);
++            
++            let conn = Self::create_connection(&self.primary_path)?;
++            return Ok(Some(PoolConnectionGuard {
++                pool: Arc::clone(self),
++                conn: Some(conn),
++            }));
+         }
++        drop(total);
+ 
+         Ok(None)
+     }
+@@ -263,7 +385,7 @@ impl ConnectionPool {
+     
+     /// Return connection to pool
+     fn return_connection(&self, conn: MultiDbConnection) {
+-        if let Ok(closed) = self.closed.lock() {
++        if let Ok(closed) = self.closed.try_read() {
+             if *closed {
+                 // Close connection directly
+                 let _ = conn.close();
+@@ -272,14 +394,13 @@ impl ConnectionPool {
+         }
+ 
+         // Return to pool
+-        if let Ok(mut available) = self.available.lock() {
++        if let Ok(mut available) = self.available.try_write() {
+             available.push_back(PooledConnection {
+                 conn,
+                 checked_out_at: None,
+                 created_at: std::time::Instant::now(),
+             });
+         }
+-
+-        // Notify waiting threads
+-        self.condvar.notify_one();
+     }
+ 
+     /// Create new connection
+@@ -290,16 +411,14 @@ impl ConnectionPool {
+     /// Get current connection count
+     pub fn total_connections(&self) -> Result<usize> {
+-        self.total_count
+-            .lock()
+-            .map(|c| *c)
+-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))
++        Ok(*self.total_count.blocking_read())
+     }
+ 
+     /// Get available connection count
+     pub fn available_connections(&self) -> Result<usize> {
+-        self.available
+-            .lock()
+-            .map(|a| a.len())
+-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))
++        Ok(self.available.blocking_read().len())
+     }
+ 
+     /// Close connection pool
+@@ -309,20 +428,16 @@ impl ConnectionPool {
+         let mut closed = self
+             .closed
+-            .lock()
+-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
++            .blocking_write();
+         *closed = true;
+         drop(closed);
+ 
+         // Close all available connections
+-        let mut available = self
+-            .available
+-            .lock()
+-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+-
++        let mut available = self.available.blocking_write();
+         while let Some(pooled) = available.pop_front() {
+             let _ = pooled.conn.close();
+         }
+-
+-        // Notify all waiting threads
+-        self.condvar.notify_all();
++        drop(available);
+ 
+         tracing::info!("ConnectionPool closed");
+ 
+         Ok(())
+     }
+ }
++
++/// Async connection guard for async pool
++pub struct AsyncPoolConnectionGuard {
++    _permit: tokio::sync::OwnedSemaphorePermit,
++    conn: AsyncConnType,
++}
++
++enum AsyncConnType {
++    R2d2(PooledConnection<SqliteConnectionManager>),
++    MultiDb(MultiDbConnection),
++}
++
++impl std::ops::Deref for AsyncPoolConnectionGuard {
++    type Target = rusqlite::Connection;
++    
++    fn deref(&self) -> &Self::Target {
++        match &self.conn {
++            AsyncConnType::R2d2(conn) => conn,
++            AsyncConnType::MultiDb(conn) => conn.get(),
++        }
++    }
++}
++
++impl std::ops::DerefMut for AsyncPoolConnectionGuard {
++    fn deref_mut(&mut self) -> &mut Self::Target {
++        match &mut self.conn {
++            AsyncConnType::R2d2(conn) => conn,
++            AsyncConnType::MultiDb(conn) => conn.get_mut(),
++        }
++    }
++}
+
+diff --git a/cis-core/src/wasm/pool.rs b/cis-core/src/wasm/pool.rs
+new file mode 100644
+index 000000..789abc
+--- /dev/null
++++ b/cis-core/src/wasm/pool.rs
+@@ -0,0 +1,245 @@
++//! WASM Runtime Object Pool
++//!
++//! Implements object pooling for WASM runtimes to reduce allocation overhead
++//! and improve performance for frequently created/destroyed runtimes.
++
++use std::sync::Arc;
++use tokio::sync::{Mutex, Semaphore};
++use object_pool::Pool;
++
++use crate::wasm::{WasmRuntime, WasmSkillConfig};
++use crate::error::{CisError, Result};
++
++/// WASM Runtime pool configuration
++#[derive(Debug, Clone)]
+pub struct WasmPoolConfig {
++    /// Maximum number of runtimes in pool
++    pub max_size: usize,
++    /// Initial number of runtimes
++    pub initial_size: usize,
++    /// Maximum concurrent executions
++    pub max_concurrent: usize,
++    /// Runtime idle timeout (seconds)
++    pub idle_timeout_secs: u64,
++}
++
++impl Default for WasmPoolConfig {
++    fn default() -> Self {
++        Self {
++            max_size: 10,
++            initial_size: 2,
++            max_concurrent: 100,
++            idle_timeout_secs: 300,
++        }
++    }
++}
++
++/// Pooled WASM Runtime wrapper
++pub struct PooledRuntime {
++    runtime: WasmRuntime,
++    created_at: std::time::Instant,
++    usage_count: u64,
++}
++
++impl PooledRuntime {
++    /// Create new pooled runtime
++    pub fn new(config: &WasmSkillConfig) -> Result<Self> {
++        let runtime = WasmRuntime::with_config(config.clone())?;
++        Ok(Self {
++            runtime,
++            created_at: std::time::Instant::now(),
++            usage_count: 0,
++        })
++    }
++    
++    /// Get runtime reference
++    pub fn runtime(&self) -> &WasmRuntime {
++        &self.runtime
++    }
++    
++    /// Check if runtime has expired
++    pub fn is_expired(&self, timeout: std::time::Duration) -> bool {
++        self.created_at.elapsed() > timeout
++    }
++    
++    /// Increment usage count
++    pub fn increment_usage(&mut self) {
++        self.usage_count += 1;
++    }
++}
++
++/// WASM Runtime Object Pool
++///
++/// Manages a pool of pre-created WASM runtimes for fast allocation.
++pub struct WasmRuntimePool {
++    config: WasmPoolConfig,
++    pool: Arc<Mutex<Vec<PooledRuntime>>>,
++    semaphore: Arc<Semaphore>,
++    runtime_config: WasmSkillConfig,
++    total_created: Arc<std::sync::atomic::AtomicU64>,
++    total_reused: Arc<std::sync::atomic::AtomicU64>,
++}
++
++impl WasmRuntimePool {
++    /// Create new WASM runtime pool
++    pub fn new(pool_config: WasmPoolConfig, runtime_config: WasmSkillConfig) -> Result<Arc<Self>> {
++        let pool = Arc::new(Mutex::new(Vec::with_capacity(pool_config.max_size)));
++        
++        // Create initial runtimes
++        {
++            let mut pool_guard = pool.blocking_lock();
++            for _ in 0..pool_config.initial_size {
++                match PooledRuntime::new(&runtime_config) {
++                    Ok(runtime) => pool_guard.push(runtime),
++                    Err(e) => {
++                        tracing::warn!("Failed to create initial runtime: {}", e);
++                    }
++                }
++            }
++        }
++        
++        let semaphore = Arc::new(Semaphore::new(pool_config.max_concurrent));
++        
++        tracing::info!(
++            "WasmRuntimePool created: max_size={}, initial_size={}, max_concurrent={}",
++            pool_config.max_size,
++            pool_config.initial_size,
++            pool_config.max_concurrent
++        );
++        
++        Ok(Arc::new(Self {
++            config: pool_config,
++            pool,
++            semaphore,
++            runtime_config,
++            total_created: Arc::new(std::sync::atomic::AtomicU64::new(0)),
++            total_reused: Arc::new(std::sync::atomic::AtomicU64::new(0)),
++        }))
++    }
++    
++    /// Acquire runtime from pool (async with backpressure)
++    pub async fn acquire(&self) -> Result<WasmRuntimeGuard> {
++        // Acquire semaphore for concurrency control
++        let permit = self.semaphore.clone().acquire_owned().await
++            .map_err(|e| CisError::wasm(format!("Semaphore error: {}", e)))?;
++        
++        // Try to get from pool
++        let runtime = {
++            let mut pool = self.pool.lock().await;
++            pool.pop()
++        };
++        
++        let pooled_runtime = if let Some(mut runtime) = runtime {
++            // Check if expired
++            let idle_timeout = std::time::Duration::from_secs(self.config.idle_timeout_secs);
++            if runtime.is_expired(idle_timeout) {
++                // Create new runtime
++                self.total_created.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++                PooledRuntime::new(&self.runtime_config)?
++            } else {
++                // Reuse existing
++                self.total_reused.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++                runtime.increment_usage();
++                runtime
++            }
++        } else {
++            // Pool empty, create new
++            self.total_created.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++            PooledRuntime::new(&self.runtime_config)?
++        };
++        
++        Ok(WasmRuntimeGuard {
++            _permit: permit,
++            pool: Arc::clone(&self.pool),
++            runtime: Some(pooled_runtime),
++            max_size: self.config.max_size,
++        })
++    }
++    
++    /// Get pool statistics
++    pub fn stats(&self) -> WasmPoolStats {
++        let available = match self.pool.try_lock() {
++            Ok(pool) => pool.len(),
++            Err(_) => 0,
++        };
++        
++        WasmPoolStats {
++            available,
++            max_size: self.config.max_size,
++            total_created: self.total_created.load(std::sync::atomic::Ordering::Relaxed),
++            total_reused: self.total_reused.load(std::sync::atomic::Ordering::Relaxed),
++        }
++    }
++}
++
++/// WASM Pool statistics
++#[derive(Debug, Clone)]
+pub struct WasmPoolStats {
++    pub available: usize,
++    pub max_size: usize,
++    pub total_created: u64,
++    pub total_reused: u64,
++}
++
++/// WASM Runtime guard that returns runtime to pool on drop
++pub struct WasmRuntimeGuard {
++    _permit: tokio::sync::OwnedSemaphorePermit,
++    pool: Arc<Mutex<Vec<PooledRuntime>>>,
++    runtime: Option<PooledRuntime>,
++    max_size: usize,
++}
++
++impl WasmRuntimeGuard {
++    /// Get runtime reference
++    pub fn runtime(&self) -> &WasmRuntime {
++        self.runtime.as_ref().unwrap().runtime()
++    }
++    
++    /// Get runtime mutable reference
++    pub fn runtime_mut(&mut self) -> &mut WasmRuntime {
++        &mut self.runtime.as_mut().unwrap().runtime
++    }
++}
++
++impl Drop for WasmRuntimeGuard {
++    fn drop(&mut self) {
++        if let Some(runtime) = self.runtime.take() {
++            // Try to return to pool if not full
++            if let Ok(mut pool) = self.pool.try_lock() {
++                if pool.len() < self.max_size {
++                    pool.push(runtime);
++                    return;
++                }
++            }
++            // Pool full or locked, runtime will be dropped
++        }
++    }
++}
++
++impl std::ops::Deref for WasmRuntimeGuard {
++    type Target = WasmRuntime;
++    
++    fn deref(&self) -> &Self::Target {
++        self.runtime()
++    }
++}
++
++impl std::ops::DerefMut for WasmRuntimeGuard {
++    fn deref_mut(&mut self) -> &mut Self::Target {
++        self.runtime_mut()
++    }
++}
+
+diff --git a/cis-core/src/pool/mod.rs b/cis-core/src/pool/mod.rs
+new file mode 100644
+index 000000..789abc
+--- /dev/null
++++ b/cis-core/src/pool/mod.rs
+@@ -0,0 +1,189 @@
++//! Generic Object Pool Module
++//!
++//! Provides reusable object pools for frequently allocated/deallocated objects
++//! to reduce GC pressure and allocation overhead.
+
++use std::sync::Arc;
++use tokio::sync::Mutex;
++
++/// Generic object pool
++pub struct ObjectPool<T> {
++    /// Pool storage
++    objects: Arc<Mutex<Vec<T>>>,
++    /// Maximum pool size
++    max_size: usize,
++    /// Factory function for creating new objects
++    factory: Box<dyn Fn() -> T + Send + Sync>,
++    /// Reset function for preparing objects for reuse
++    reset: Box<dyn Fn(&mut T) + Send + Sync>,
++    /// Statistics
++    stats: Arc<std::sync::atomic::AtomicU64>,
++}
++
++impl<T: Send + 'static> ObjectPool<T> {
++    /// Create new object pool
++    pub fn new<F, R>(
++        max_size: usize,
++        initial_size: usize,
++        factory: F,
++        reset: R,
++    ) -> Arc<Self>
++    where
++        F: Fn() -> T + Send + Sync + 'static,
++        R: Fn(&mut T) + Send + Sync + 'static,
++    {
++        let mut objects = Vec::with_capacity(max_size);
++        
++        // Create initial objects
++        for _ in 0..initial_size.min(max_size) {
++            objects.push(factory());
++        }
++        
++        Arc::new(Self {
++            objects: Arc::new(Mutex::new(objects)),
++            max_size,
++            factory: Box::new(factory),
++            reset: Box::new(reset),
++            stats: Arc::new(std::sync::atomic::AtomicU64::new(0)),
++        })
++    }
++    
++    /// Acquire object from pool
++    pub async fn acquire(&self) -> PooledObject<T> {
++        let object = {
++            let mut objects = self.objects.lock().await;
++            objects.pop()
++        };
++        
++        let object = object.unwrap_or_else(|| {
++            self.stats.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++            (self.factory)()
++        });
++        
++        PooledObject {
++            pool: Arc::clone(&self.objects),
++            object: Some(object),
++            reset: &self.reset,
++            max_size: self.max_size,
++        }
++    }
++    
++    /// Get pool statistics
++    pub fn stats(&self) -> PoolStats {
++        let available = match self.objects.try_lock() {
++            Ok(objects) => objects.len(),
++            Err(_) => 0,
++        };
++        
++        PoolStats {
++            available,
++            max_size: self.max_size,
++            created: self.stats.load(std::sync::atomic::Ordering::Relaxed),
++        }
++    }
++}
++
++/// Pool statistics
++#[derive(Debug, Clone)]
+pub struct PoolStats {
++    pub available: usize,
++    pub max_size: usize,
++    pub created: u64,
++}
++
++/// Pooled object guard
++pub struct PooledObject<'a, T> {
++    pool: Arc<Mutex<Vec<T>>>,
++    object: Option<T>,
++    reset: &'a dyn Fn(&mut T),
++    max_size: usize,
++}
++
++impl<'a, T> PooledObject<'a, T> {
++    /// Get object reference
++    pub fn get(&self) -> &T {
++        self.object.as_ref().unwrap()
++    }
++    
++    /// Get object mutable reference
++    pub fn get_mut(&mut self) -> &mut T {
++        self.object.as_mut().unwrap()
++    }
++}
++
++impl<'a, T> Drop for PooledObject<'a, T> {
++    fn drop(&mut self) {
++        if let Some(mut object) = self.object.take() {
++            // Reset object state
++            (self.reset)(&mut object);
++            
++            // Try to return to pool
++            if let Ok(mut pool) = self.pool.try_lock() {
++                if pool.len() < self.max_size {
++                    pool.push(object);
++                    return;
++                }
++            }
++            // Pool full or locked, object will be dropped
++        }
++    }
++}
++
++impl<'a, T> std::ops::Deref for PooledObject<'a, T> {
++    type Target = T;
++    
++    fn deref(&self) -> &Self::Target {
++        self.get()
++    }
++}
++
++impl<'a, T> std::ops::DerefMut for PooledObject<'a, T> {
++    fn deref_mut(&mut self) -> &mut Self::Target {
++        self.get_mut()
++    }
++}
++
++/// Byte buffer pool for reducing allocation overhead
++pub type ByteBufferPool = ObjectPool<Vec<u8>>;
++
++/// Create a new byte buffer pool
++pub fn create_buffer_pool(max_size: usize, buffer_capacity: usize) -> Arc<ByteBufferPool> {
++    ObjectPool::new(
++        max_size,
++        max_size / 2,
++        move || Vec::with_capacity(buffer_capacity),
++        |buf| buf.clear(),
++    )
++}

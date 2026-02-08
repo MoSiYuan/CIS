@@ -130,15 +130,20 @@ pub extern "C" fn skill_init() -> i32 {
 
 /// 处理记忆写入
 /// 输入: JSON { "key": "...", "value": "...", "category": "..." }
+/// 
+/// # Safety
+/// 
+/// This function is unsafe because it dereferences raw pointers.
+/// The caller must ensure that `input_ptr` is valid and points to `input_len` bytes.
 #[no_mangle]
-pub extern "C" fn skill_on_memory_write(input_ptr: *const u8, input_len: usize) -> i32 {
+pub unsafe extern "C" fn skill_on_memory_write(input_ptr: *const u8, input_len: usize) -> i32 {
     use std::slice;
     
     if input_ptr.is_null() || input_len == 0 {
         return -1;
     }
     
-    let input = unsafe { slice::from_raw_parts(input_ptr, input_len) };
+    let input = slice::from_raw_parts(input_ptr, input_len);
     
     let entry: MemoryEntry = match serde_json::from_slice(input) {
         Ok(e) => e,
@@ -152,15 +157,20 @@ pub extern "C" fn skill_on_memory_write(input_ptr: *const u8, input_len: usize) 
 }
 
 /// 解析关键词
+/// 
+/// # Safety
+/// 
+/// This function is unsafe because it dereferences raw pointers.
+/// The caller must ensure that `input` is valid and points to `len` bytes.
 #[no_mangle]
-pub extern "C" fn skill_parse_keywords(input: *const u8, len: usize) -> *mut u8 {
+pub unsafe extern "C" fn skill_parse_keywords(input: *const u8, len: usize) -> *mut u8 {
     use std::ffi::CString;
     
     if input.is_null() || len == 0 {
         return CString::new("[]").unwrap().into_raw() as *mut u8;
     }
     
-    let slice = unsafe { slice::from_raw_parts(input, len) };
+    let slice = slice::from_raw_parts(input, len);
     let response = String::from_utf8_lossy(slice);
     
     let organizer = MemoryOrganizer::new();

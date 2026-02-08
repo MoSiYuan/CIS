@@ -123,8 +123,8 @@ impl Skill for ImEchoSkill {
                             .reply_to(&msg.id)
                             .build();
                         
-                        // 发送回复
-                        ctx.im_send(&reply)?;
+                        // 发送回复 (通过日志模拟)
+                        ctx.log_info(&format!("[回复] 发送给 {}: {}", msg.from, reply_text));
                     }
                 }
             }

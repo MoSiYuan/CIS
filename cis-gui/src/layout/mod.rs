@@ -457,7 +457,7 @@ impl egui::Widget for SessionItem {
             ui.painter().text(
                 subtext_pos,
                 egui::Align2::LEFT_CENTER,
-                &format!("{} • {}", self.status, self.time),
+                format!("{} • {}", self.status, self.time),
                 egui::FontId::proportional(12.0),
                 TEXT_SECONDARY,
             );

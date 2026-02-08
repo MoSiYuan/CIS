@@ -36,20 +36,15 @@ pub trait EmbeddingService: Send + Sync {
 }
 
 /// Embedding Service 类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EmbeddingProvider {
     /// 本地 ONNX Runtime
     Local,
     /// OpenAI API
     OpenAI,
     /// 自动选择（优先本地）
+    #[default]
     Auto,
-}
-
-impl Default for EmbeddingProvider {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 /// Embedding Service 配置
@@ -80,8 +75,10 @@ impl Default for EmbeddingConfig {
 /// 首次加载模型可能需要 1-3 秒，后续调用是毫秒级。
 #[cfg(feature = "vector")]
 pub struct LocalEmbeddingService {
+    #[allow(dead_code)]
     tokenizer: tokenizers::Tokenizer,
     model_path: std::path::PathBuf,
+    #[allow(dead_code)]
     normalize: bool,
     dimension: usize,
 }
@@ -112,7 +109,7 @@ impl LocalEmbeddingService {
                     "/usr/share/cis/models/nomic-embed-text-v1.5",
                 ];
                 default_paths.iter()
-                    .map(|p| std::path::PathBuf::from(p))
+                    .map(std::path::PathBuf::from)
                     .find(|p| p.exists())
             })
             .ok_or_else(|| CisError::configuration(
@@ -179,6 +176,7 @@ impl LocalEmbeddingService {
 
     /// 向量归一化 (L2)
     #[cfg(feature = "vector")]
+    #[allow(dead_code)]
     fn normalize_vec(&self, mut vec: Vec<f32>) -> Vec<f32> {
         if !self.normalize {
             return vec;
@@ -475,6 +473,12 @@ pub fn filter_by_similarity(
 /// 通过调用 `claude` 命令行工具获取文本的语义表示
 pub struct ClaudeCliEmbeddingService;
 
+impl Default for ClaudeCliEmbeddingService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClaudeCliEmbeddingService {
     pub fn new() -> Self {
         Self
@@ -548,6 +552,12 @@ impl EmbeddingService for ClaudeCliEmbeddingService {
 /// 当没有任何嵌入服务可用时使用
 /// 注意：这个服务不生成真正的嵌入，仅提供兼容性接口
 pub struct SqlFallbackEmbeddingService;
+
+impl Default for SqlFallbackEmbeddingService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SqlFallbackEmbeddingService {
     pub fn new() -> Self {

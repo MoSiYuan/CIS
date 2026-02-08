@@ -631,16 +631,18 @@ impl TaskService {
     /// 获取任务日志
     pub async fn logs(&self, id: &str, tail: usize) -> Result<Vec<String>> {
         // 首先检查任务是否存在
-        let core_db = self.get_core_db()?;
-        let db = core_db.lock()
-            .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
-        
-        let conn = db.conn();
-        let exists: bool = conn.query_row(
-            "SELECT 1 FROM tasks WHERE id = ?1",
-            [id],
-            |_| Ok(true),
-        ).unwrap_or(false);
+        let exists = {
+            let core_db = self.get_core_db()?;
+            let db = core_db.lock()
+                .map_err(|e| CisError::storage(format!("Lock failed: {}", e)))?;
+            
+            let conn = db.conn();
+            conn.query_row(
+                "SELECT 1 FROM tasks WHERE id = ?1",
+                [id],
+                |_| Ok(true),
+            ).unwrap_or(false)
+        };
         
         if !exists {
             return Err(CisError::not_found(format!("Task '{}' not found", id)));
@@ -816,5 +818,5 @@ fn task_priority_to_int(priority: TaskPriority) -> i32 {
 
 /// 时间戳转换为 DateTime
 fn timestamp_to_datetime(ts: i64) -> DateTime<Utc> {
-    DateTime::from_timestamp(ts, 0).unwrap_or_else(|| Utc::now())
+    DateTime::from_timestamp(ts, 0).unwrap_or_else(Utc::now)
 }

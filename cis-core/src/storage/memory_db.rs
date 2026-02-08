@@ -461,23 +461,23 @@ mod tests {
     use super::*;
     use std::env;
 
-    fn setup_test_db() -> MemoryDb {
-        let temp_dir = env::temp_dir().join("cis_test_memory_db");
-        let _ = std::fs::remove_dir_all(&temp_dir);
+    fn setup_test_db() -> (MemoryDb, std::path::PathBuf) {
+        // 使用唯一的临时目录避免测试间干扰
+        let temp_dir = env::temp_dir().join(format!("cis_test_memory_db_{}", std::process::id()))
+            .join(uuid::Uuid::new_v4().to_string());
         std::fs::create_dir_all(&temp_dir).unwrap();
         
         let db_path = temp_dir.join("memory.db");
-        MemoryDb::open(&db_path).unwrap()
+        (MemoryDb::open(&db_path).unwrap(), temp_dir)
     }
 
-    fn cleanup_test_db() {
-        let temp_dir = env::temp_dir().join("cis_test_memory_db");
-        let _ = std::fs::remove_dir_all(&temp_dir);
+    fn cleanup_test_db(temp_dir: &std::path::Path) {
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 
     #[test]
     fn test_memory_db_basic() {
-        let db = setup_test_db();
+        let (db, temp_dir) = setup_test_db();
 
         // 存储私域记忆
         db.set_private("private_key", b"private_value", MemoryCategory::Context).unwrap();
@@ -500,12 +500,12 @@ mod tests {
         assert!(matches!(entry.category, MemoryCategory::Result));
 
         db.close().unwrap();
-        cleanup_test_db();
+        cleanup_test_db(&temp_dir);
     }
 
     #[test]
     fn test_memory_db_list_keys() {
-        let db = setup_test_db();
+        let (db, temp_dir) = setup_test_db();
 
         db.set_private("prefix/a", b"1", MemoryCategory::Context).unwrap();
         db.set_private("prefix/b", b"2", MemoryCategory::Context).unwrap();
@@ -525,12 +525,12 @@ mod tests {
         assert_eq!(keys.len(), 1);
 
         db.close().unwrap();
-        cleanup_test_db();
+        cleanup_test_db(&temp_dir);
     }
 
     #[test]
     fn test_memory_db_delete() {
-        let db = setup_test_db();
+        let (db, temp_dir) = setup_test_db();
 
         db.set_private("to_delete", b"value", MemoryCategory::Context).unwrap();
         assert!(db.get("to_delete").unwrap().is_some());
@@ -544,12 +544,12 @@ mod tests {
         assert!(!deleted);
 
         db.close().unwrap();
-        cleanup_test_db();
+        cleanup_test_db(&temp_dir);
     }
 
     #[test]
     fn test_memory_db_sync() {
-        let db = setup_test_db();
+        let (db, temp_dir) = setup_test_db();
 
         db.set_public("sync1", b"value1", MemoryCategory::Result).unwrap();
         db.set_public("sync2", b"value2", MemoryCategory::Result).unwrap();
@@ -568,6 +568,6 @@ mod tests {
         assert_eq!(pending[0].key, "sync2");
 
         db.close().unwrap();
-        cleanup_test_db();
+        cleanup_test_db(&temp_dir);
     }
 }

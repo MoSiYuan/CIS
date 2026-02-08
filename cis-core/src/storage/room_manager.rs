@@ -304,10 +304,7 @@ impl RoomStoreManager {
 fn encode_room_id(room_id: &RoomId) -> String {
     room_id
         .as_str()
-        .replace('!', "_")
-        .replace(':', "_")
-        .replace('/', "_")
-        .replace('\\', "_")
+        .replace(['!', ':', '/', '\\'], "_")
 }
 
 /// Decode room ID from filesystem

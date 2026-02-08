@@ -147,7 +147,7 @@ async fn test_register_and_search_skills() {
         skill_name: "Test Skill".to_string(),
         intent_description: "A test skill for analysis".to_string(),
         capability_description: "Can analyze test data".to_string(),
-        project: None,
+        project: Some("test-project".to_string()),
     };
     
     storage.register_skill(&semantics).await.unwrap();

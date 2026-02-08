@@ -1,0 +1,139 @@
+# CIS v1.1.0 Kubernetes Service
+# 协调器和 Worker 的 Service 配置
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: cis-coordinator
+  namespace: default
+  labels:
+    app: cis
+    component: coordinator
+    version: "1.1.0"
+  annotations:
+    # 如有需要，可以添加 AWS NLB 或其他云提供商的注解
+    # service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+spec:
+  type: ClusterIP
+  selector:
+    app: cis
+    component: coordinator
+  ports:
+    - name: federation
+      port: 7676
+      targetPort: 7676
+      protocol: TCP
+    - name: p2p
+      port: 7677
+      targetPort: 7677
+      protocol: UDP
+    - name: matrix
+      port: 6767
+      targetPort: 6767
+      protocol: TCP
+
+---
+# 协调器外部访问 Service（LoadBalancer 类型）
+# 用于外部 Worker 或客户端连接
+apiVersion: v1
+kind: Service
+metadata:
+  name: cis-coordinator-external
+  namespace: default
+  labels:
+    app: cis
+    component: coordinator
+    version: "1.1.0"
+spec:
+  type: LoadBalancer
+  selector:
+    app: cis
+    component: coordinator
+  ports:
+    - name: federation
+      port: 7676
+      targetPort: 7676
+      protocol: TCP
+    - name: p2p
+      port: 7677
+      targetPort: 7677
+      protocol: UDP
+    - name: matrix
+      port: 6767
+      targetPort: 6767
+      protocol: TCP
+
+---
+# Worker Headless Service
+# 用于 Worker 之间的 P2P 发现和通信
+apiVersion: v1
+kind: Service
+metadata:
+  name: cis-worker
+  namespace: default
+  labels:
+    app: cis
+    component: worker
+    version: "1.1.0"
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless Service
+  selector:
+    app: cis
+    component: worker
+  ports:
+    - name: p2p
+      port: 7677
+      targetPort: 7677
+      protocol: UDP
+    - name: matrix
+      port: 6767
+      targetPort: 6767
+      protocol: TCP
+
+---
+# Worker 负载均衡 Service
+# 用于向 Worker 分配任务
+apiVersion: v1
+kind: Service
+metadata:
+  name: cis-worker-lb
+  namespace: default
+  labels:
+    app: cis
+    component: worker
+    version: "1.1.0"
+spec:
+  type: ClusterIP
+  selector:
+    app: cis
+    component: worker
+  ports:
+    - name: p2p
+      port: 7677
+      targetPort: 7677
+      protocol: UDP
+    - name: matrix
+      port: 6767
+      targetPort: 6767
+      protocol: TCP
+  sessionAffinity: None
+  publishNotReadyAddresses: false
+
+---
+# Prometheus ServiceMonitor（如安装了 Prometheus Operator）
+# apiVersion: monitoring.coreos.com/v1
+# kind: ServiceMonitor
+# metadata:
+#   name: cis-metrics
+#   namespace: default
+#   labels:
+#     app: cis
+# spec:
+#   selector:
+#     matchLabels:
+#       app: cis
+#   endpoints:
+#     - port: metrics
+#       path: /metrics
+#       interval: 30s

@@ -9,9 +9,10 @@ use std::sync::Arc;
 
 use cis_core::skill::{
     ChainOrchestrator, ChainTemplates, SkillIoSignature, SkillSemanticsExt,
-    SkillVectorRouter,
+    SkillVectorRouter, SkillManager,
 };
 use cis_core::vector::storage::VectorStorage;
+use cis_core::storage::db::DbManager;
 use cis_core::error::Result;
 use cis_core::ai::embedding::{EmbeddingService, DEFAULT_EMBEDDING_DIM};
 
@@ -79,8 +80,12 @@ async fn main() -> Result<()> {
     let embedding: Arc<dyn EmbeddingService> = Arc::new(MockEmbeddingService);
     let storage = Arc::new(VectorStorage::open_with_service(&db_path, embedding.clone())?);
 
+    // 创建 SkillManager 和 DbManager
+    let db_manager = Arc::new(DbManager::new()?);
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone())?);
+
     // 创建路由器
-    let mut router = SkillVectorRouter::new(storage.clone(), embedding.clone());
+    let mut router = SkillVectorRouter::new(storage.clone(), embedding.clone(), skill_manager, db_manager);
 
     // 注册测试技能
     println!("1. 注册技能...");

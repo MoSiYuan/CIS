@@ -55,7 +55,7 @@
 //!
 //! ## Example
 //!
-//! ```no_run
+//! ```ignore
 //! use cis_core::matrix::federation::{
 //!     FederationManager, FederationManagerConfig, PeerDiscovery, PeerInfo
 //! };

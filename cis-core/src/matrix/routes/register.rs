@@ -13,12 +13,8 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
-use crate::matrix::{
-    error::{MatrixError, MatrixResult},
-    store_social::MatrixSocialStore,
-};
+use crate::matrix::error::{MatrixError, MatrixResult};
 
 use super::AppState;
 
@@ -31,6 +27,7 @@ pub struct RegisterRequest {
     
     /// Password (optional for CIS, may use DID signature instead)
     #[serde(rename = "password", default)]
+    #[allow(dead_code)]
     pub password: Option<String>,
     
     /// Device ID
@@ -43,6 +40,7 @@ pub struct RegisterRequest {
     
     /// Authentication flows (for UIAA)
     #[serde(rename = "auth", default)]
+    #[allow(dead_code)]
     pub auth: Option<serde_json::Value>,
 }
 

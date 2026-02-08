@@ -177,8 +177,8 @@ fn render_dag_detail_view(ui: &mut Ui, session_id: &str) {
             
             ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(16.0);
-                if ui.button("⏹ Stop").clicked() {}
-                if ui.button("⏸ Pause").clicked() {}
+                ui.button("⏹ Stop").clicked();
+                ui.button("⏸ Pause").clicked();
                 if ui.button("👁 Attach").clicked() {}
             });
         });
@@ -396,7 +396,7 @@ fn render_settings_view(ui: &mut Ui) {
                         } else {
                             RichText::new(*cat).color(TEXT_PRIMARY)
                         };
-                        if ui.selectable_label(selected, text).clicked() {}
+                        ui.selectable_label(selected, text).clicked();
                         ui.add_space(4.0);
                     }
                 });
@@ -426,7 +426,7 @@ fn render_settings_view(ui: &mut Ui) {
                         ui.label(RichText::new("Model: claude-3-sonnet").color(TEXT_SECONDARY));
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
-                            if ui.button("Set as Default").clicked() {}
+                            ui.button("Set as Default").clicked();
                             if ui.button("Edit").clicked() {}
                         });
                     });

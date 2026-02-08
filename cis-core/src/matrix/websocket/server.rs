@@ -38,6 +38,7 @@ pub struct WebSocketServer {
     /// This node's DID
     node_did: String,
     /// DID manager for authentication
+    #[allow(dead_code)]
     did_manager: Arc<DIDManager>,
     /// Shutdown signal sender
     shutdown_tx: Option<mpsc::Sender<()>>,
@@ -248,6 +249,7 @@ struct ConnectionHandler {
     /// This node's DID
     node_did: String,
     /// DID manager for authentication
+    #[allow(dead_code)]
     did_manager: Arc<DIDManager>,
     /// Remote node ID (set after auth)
     remote_node_id: Option<String>,
@@ -568,11 +570,7 @@ impl ConnectionHandler {
             .map_err(|_| WsServerError::AuthFailed("System time error".to_string()))?
             .as_secs();
         
-        let time_diff = if auth.timestamp > current_time {
-            auth.timestamp - current_time
-        } else {
-            current_time - auth.timestamp
-        };
+        let time_diff = auth.timestamp.abs_diff(current_time);
         
         if time_diff > 300 { // 5 minutes
             return Err(WsServerError::AuthFailed(
@@ -639,7 +637,7 @@ impl ConnectionHandler {
 
         for msg in messages {
             // Apply event type filter
-            if let Some(ref f) = filter {
+            if let Some(f) = filter {
                 if !f.matches_event_type(&msg.event_type) {
                     continue;
                 }
@@ -994,7 +992,8 @@ mod tests {
         assert_eq!(response.room_id, room_id);
         assert_eq!(response.events.len(), 5);
         assert!(!response.has_more);
-        assert!(response.next_batch.is_some());
+        // When all events are returned and has_more is false, next_batch should be None
+        assert!(response.next_batch.is_none());
         
         // Test sync request with since (pagination)
         let since_event = "$event2";

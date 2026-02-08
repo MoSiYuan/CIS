@@ -7,6 +7,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::theme::*;
 
+/// DagService 接口 trait（简化版，避免 GUI 直接依赖 async 运行时）
+pub trait DagServiceClient: Send + Sync {
+    /// 获取所有待处理的 DAG 运行
+    fn get_pending_runs(&self) -> Result<Vec<PendingDagInfo>, String>;
+    /// 确认 DAG 运行
+    fn confirm_run(&self, run_id: &str) -> Result<(), String>;
+    /// 拒绝（取消）DAG 运行
+    fn reject_run(&self, run_id: &str) -> Result<(), String>;
+}
+
 /// GLM 面板状态
 pub struct GlmPanel {
     /// 是否打开
@@ -22,19 +32,33 @@ pub struct GlmPanel {
     selected_dag: Option<String>,
     /// 状态消息
     status_message: Option<(String, bool)>, // (message, is_error)
-    /// 刷新任务
+    /// 刷新触发器
     refresh_trigger: std::time::Instant,
+    /// 上次刷新时间
+    last_refresh: Option<std::time::Instant>,
+    /// DagService 客户端
+    dag_service: Option<Box<dyn DagServiceClient>>,
 }
 
 /// 待确认 DAG 信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingDagInfo {
+    /// DAG ID（定义 ID）
     pub dag_id: String,
+    /// 运行 ID（实例 ID）
+    pub run_id: String,
+    /// 描述
     pub description: String,
+    /// 任务数量
     pub task_count: usize,
+    /// 创建时间
     pub created_at: String,
+    /// 过期时间（用于显示）
     pub expires_at: String,
+    /// 请求者
     pub requested_by: String,
+    /// 运行状态
+    pub status: String,
 }
 
 /// GLM 面板响应
@@ -63,7 +87,69 @@ impl GlmPanel {
             selected_dag: None,
             status_message: None,
             refresh_trigger: std::time::Instant::now(),
+            last_refresh: None,
+            dag_service: None,
         }
+    }
+
+    /// 设置 DagService 客户端
+    pub fn set_dag_service(&mut self, service: Box<dyn DagServiceClient>) {
+        self.dag_service = Some(service);
+    }
+
+    /// 检查是否需要刷新（每 5 秒）
+    pub fn should_refresh(&self) -> bool {
+        match self.last_refresh {
+            None => true,
+            Some(last) => last.elapsed().as_secs() >= 5,
+        }
+    }
+
+    /// 刷新待确认 DAG 列表
+    pub fn refresh_pending_dags(&mut self) {
+        if let Some(ref service) = self.dag_service {
+            match service.get_pending_runs() {
+                Ok(runs) => {
+                    self.pending_dags = runs;
+                    self.last_refresh = Some(std::time::Instant::now());
+                    self.status_message = None;
+                }
+                Err(e) => {
+                    self.status_message = Some((format!("刷新失败: {}", e), true));
+                }
+            }
+        } else {
+            self.status_message = Some(("DagService 未初始化".to_string(), true));
+        }
+    }
+
+    /// 确认 DAG 运行
+    pub fn confirm_dag(&mut self, run_id: &str) -> Result<(), String> {
+        if let Some(ref service) = self.dag_service {
+            service.confirm_run(run_id)?;
+            // 刷新列表
+            self.refresh_pending_dags();
+            Ok(())
+        } else {
+            Err("DagService 未初始化".to_string())
+        }
+    }
+
+    /// 拒绝 DAG 运行
+    pub fn reject_dag(&mut self, run_id: &str) -> Result<(), String> {
+        if let Some(ref service) = self.dag_service {
+            service.reject_run(run_id)?;
+            // 刷新列表
+            self.refresh_pending_dags();
+            Ok(())
+        } else {
+            Err("DagService 未初始化".to_string())
+        }
+    }
+
+    /// 获取上次刷新时间
+    pub fn last_refresh(&self) -> Option<std::time::Instant> {
+        self.last_refresh
     }
 
     pub fn open(&mut self) {
@@ -239,7 +325,7 @@ impl GlmPanel {
                                                             .color(ACCENT_RED)
                                                     ).clicked() {
                                                         response = Some(GlmPanelResponse::RejectDag(
-                                                            dag.dag_id.clone()
+                                                            dag.run_id.clone()
                                                         ));
                                                     }
 
@@ -249,7 +335,7 @@ impl GlmPanel {
                                                             .color(ACCENT_GREEN)
                                                     ).clicked() {
                                                         response = Some(GlmPanelResponse::ConfirmDag(
-                                                            dag.dag_id.clone()
+                                                            dag.run_id.clone()
                                                         ));
                                                     }
                                                 }
@@ -305,24 +391,28 @@ impl GlmPanel {
         &self.did
     }
 
-    /// 模拟加载演示数据
+    /// 模拟加载演示数据（当 DagService 不可用时使用）
     pub fn load_demo_data(&mut self) {
         self.pending_dags = vec![
             PendingDagInfo {
                 dag_id: "backup_daily".to_string(),
+                run_id: "run_backup_daily_001".to_string(),
                 description: "每日凌晨3点备份文档到NAS".to_string(),
                 task_count: 2,
                 created_at: "2026-02-04T10:00:00Z".to_string(),
                 expires_at: "2026-02-04T10:05:00Z".to_string(),
                 requested_by: "glm_cloud_user".to_string(),
+                status: "pending".to_string(),
             },
             PendingDagInfo {
                 dag_id: "cleanup_logs".to_string(),
+                run_id: "run_cleanup_logs_001".to_string(),
                 description: "清理30天前的日志文件".to_string(),
                 task_count: 1,
                 created_at: "2026-02-04T09:30:00Z".to_string(),
                 expires_at: "2026-02-04T09:35:00Z".to_string(),
                 requested_by: "glm_cloud_user".to_string(),
+                status: "pending".to_string(),
             },
         ];
     }

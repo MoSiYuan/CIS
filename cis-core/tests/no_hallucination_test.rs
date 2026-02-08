@@ -180,7 +180,9 @@ async fn test_no_false_positives_on_unrelated_queries() {
         ).unwrap()
     );
     
-    let router = SkillVectorRouter::new(storage.clone(), Arc::new(MockEmbeddingService));
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let _router = SkillVectorRouter::new(storage.clone(), Arc::new(MockEmbeddingService), skill_manager, db_manager);
     
     // 注册一些特定领域的技能
     let specific_skill = SkillSemanticsExt {
@@ -201,7 +203,9 @@ async fn test_no_false_positives_on_unrelated_queries() {
     
     // 注意：这里我们使用 register_global_skill 而不是存储
     // 因为在测试中 router 不直接使用存储的技能
-    let mut router_with_skill = SkillVectorRouter::new(storage.clone(), Arc::new(MockEmbeddingService));
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let mut router_with_skill = SkillVectorRouter::new(storage.clone(), Arc::new(MockEmbeddingService), skill_manager, db_manager);
     router_with_skill.register_global_skill(specific_skill);
     
     // 测试完全不相关的查询
@@ -340,7 +344,9 @@ async fn test_confidence_calibration() {
         scope: SkillScope::Global,
     };
     
-    let mut router = SkillVectorRouter::new(storage.clone(), Arc::new(MockEmbeddingService));
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let mut router = SkillVectorRouter::new(storage.clone(), Arc::new(MockEmbeddingService), skill_manager, db_manager);
     router.register_global_skill(specific_skill);
     
     // 测试精确匹配

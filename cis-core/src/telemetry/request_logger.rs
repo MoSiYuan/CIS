@@ -91,6 +91,7 @@ pub enum RequestResult {
 
 /// 性能指标
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct RequestMetrics {
     /// 总耗时
     pub total_duration_ms: u64,
@@ -102,16 +103,6 @@ pub struct RequestMetrics {
     pub execution_duration_ms: u64,
 }
 
-impl Default for RequestMetrics {
-    fn default() -> Self {
-        Self {
-            total_duration_ms: 0,
-            intent_duration_ms: 0,
-            routing_duration_ms: 0,
-            execution_duration_ms: 0,
-        }
-    }
-}
 
 /// 日志查询条件
 #[derive(Debug, Clone, Default)]
@@ -517,7 +508,7 @@ impl RequestLogger {
         })?;
         
         rows.filter_map(|r| r.ok()).collect::<Vec<_>>()
-            .pipe(|v| Ok(v))
+            .pipe(Ok)
     }
     
     fn row_to_request_log(row: &Row) -> rusqlite::Result<RequestLog> {
@@ -550,7 +541,7 @@ impl RequestLogger {
             session_id: row.get(1)?,
             conversation_id: row.get(2)?,
             user_input: row.get(3)?,
-            timestamp: DateTime::from_timestamp(timestamp, 0).unwrap_or_else(|| Utc::now()),
+            timestamp: DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now),
             stages: Vec::new(), // 单独加载
             result,
             metrics: RequestMetrics {
@@ -573,7 +564,7 @@ impl RequestLogger {
             let timestamp = row.get::<_, i64>(1)?;
             Ok(RequestStage {
                 name: row.get(0)?,
-                start_time: DateTime::from_timestamp(timestamp, 0).unwrap_or_else(|| Utc::now()),
+                start_time: DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now),
                 duration_ms: row.get::<_, i64>(2)? as u64,
                 input: row.get(3)?,
                 output: row.get(4)?,
@@ -583,7 +574,7 @@ impl RequestLogger {
         })?;
         
         rows.filter_map(|r| r.ok()).collect::<Vec<_>>()
-            .pipe(|v| Ok(v))
+            .pipe(Ok)
     }
 }
 
@@ -716,13 +707,19 @@ impl<T> Pipe<T> for T {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use tempfile::tempdir;
+    use tempfile::{tempdir, TempDir};
 
-    fn create_test_logger() -> (RequestLogger, PathBuf) {
+    struct TestLogger {
+        logger: RequestLogger,
+        _dir: TempDir,
+        path: PathBuf,
+    }
+
+    fn create_test_logger() -> TestLogger {
         let dir = tempdir().unwrap();
         let path = dir.path().join("test_telemetry.db");
         let logger = RequestLogger::open(&path, None).unwrap();
-        (logger, path)
+        TestLogger { logger, _dir: dir, path }
     }
 
     fn create_test_log(session_id: &str, user_input: &str) -> RequestLog {
@@ -744,45 +741,45 @@ mod tests {
 
     #[test]
     fn test_request_logger_open() {
-        let (_, path) = create_test_logger();
-        assert!(path.exists());
+        let test = create_test_logger();
+        assert!(test.path.exists());
     }
 
     #[test]
     fn test_log_request() {
-        let (logger, _) = create_test_logger();
+        let test = create_test_logger();
         let log = create_test_log("session-1", "测试输入");
         
-        let result = logger.log_request(&log);
+        let result = test.logger.log_request(&log);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_query_logs() {
-        let (logger, _) = create_test_logger();
+        let test = create_test_logger();
         let log = create_test_log("session-1", "测试输入");
-        logger.log_request(&log).unwrap();
+        test.logger.log_request(&log).unwrap();
         
         let query = LogQuery::new()
             .with_session("session-1")
             .with_limit(10);
         
-        let logs = logger.query_logs(&query).unwrap();
+        let logs = test.logger.query_logs(&query).unwrap();
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].user_input, "测试输入");
     }
 
     #[test]
     fn test_session_stats() {
-        let (logger, _) = create_test_logger();
+        let test = create_test_logger();
         
         // 添加多个日志
         for i in 0..5 {
             let log = create_test_log("session-stats", &format!("输入 {}", i));
-            logger.log_request(&log).unwrap();
+            test.logger.log_request(&log).unwrap();
         }
         
-        let stats = logger.get_session_stats("session-stats").unwrap();
+        let stats = test.logger.get_session_stats("session-stats").unwrap();
         assert_eq!(stats.total_requests, 5);
         assert_eq!(stats.successful_requests, 5);
         assert_eq!(stats.failed_requests, 0);
@@ -790,7 +787,7 @@ mod tests {
 
     #[test]
     fn test_log_with_stages() {
-        let (logger, _) = create_test_logger();
+        let test = create_test_logger();
         
         let mut builder = RequestLogBuilder::new("session-stages", "测试分阶段");
         builder.start_stage("intent_parse");
@@ -808,11 +805,11 @@ mod tests {
             })
             .build();
         
-        logger.log_request(&log).unwrap();
+        test.logger.log_request(&log).unwrap();
         
         // 查询并验证阶段
         let query = LogQuery::new().with_session("session-stages");
-        let logs = logger.query_logs(&query).unwrap();
+        let logs = test.logger.query_logs(&query).unwrap();
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].stages.len(), 2);
         assert_eq!(logs[0].stages[0].name, "intent_parse");
@@ -821,23 +818,42 @@ mod tests {
 
     #[test]
     fn test_cleanup_old_logs() {
-        let (logger, _) = create_test_logger();
-        let log = create_test_log("session-cleanup", "测试清理");
-        logger.log_request(&log).unwrap();
+        let test = create_test_logger();
         
-        // 清理0天前的日志（应该清理所有）
-        let count = logger.cleanup_old_logs(0).unwrap();
+        // 创建一个2天前的日志
+        let old_log = RequestLog {
+            id: uuid::Uuid::new_v4().to_string(),
+            session_id: "session-cleanup".to_string(),
+            conversation_id: Some("test-conv".to_string()),
+            user_input: "测试清理".to_string(),
+            timestamp: Utc::now() - chrono::Duration::days(2),
+            stages: vec![],
+            result: RequestResult::Success {
+                skill_id: "test_skill".to_string(),
+                output_summary: "测试".to_string(),
+            },
+            metrics: RequestMetrics::default(),
+            metadata: HashMap::new(),
+        };
+        test.logger.log_request(&old_log).unwrap();
+        
+        // 验证日志已添加
+        let query = LogQuery::new().with_session("session-cleanup");
+        let logs = test.logger.query_logs(&query).unwrap();
+        assert_eq!(logs.len(), 1);
+        
+        // 清理1天前的日志（应该清理2天前的日志）
+        let count = test.logger.cleanup_old_logs(1).unwrap();
         assert_eq!(count, 1);
         
         // 验证已清理
-        let query = LogQuery::new().with_session("session-cleanup");
-        let logs = logger.query_logs(&query).unwrap();
+        let logs = test.logger.query_logs(&query).unwrap();
         assert!(logs.is_empty());
     }
 
     #[test]
     fn test_request_result_variants() {
-        let (logger, _) = create_test_logger();
+        let test = create_test_logger();
         
         // 成功
         let log1 = RequestLogBuilder::new("session-result", "成功测试")
@@ -846,7 +862,7 @@ mod tests {
                 output_summary: "成功".to_string(),
             })
             .build();
-        logger.log_request(&log1).unwrap();
+        test.logger.log_request(&log1).unwrap();
         
         // 无匹配
         let log2 = RequestLogBuilder::new("session-result", "无匹配测试")
@@ -854,7 +870,7 @@ mod tests {
                 reason: "没有匹配的技能".to_string(),
             })
             .build();
-        logger.log_request(&log2).unwrap();
+        test.logger.log_request(&log2).unwrap();
         
         // 错误
         let log3 = RequestLogBuilder::new("session-result", "错误测试")
@@ -862,16 +878,16 @@ mod tests {
                 error: "执行失败".to_string(),
             })
             .build();
-        logger.log_request(&log3).unwrap();
+        test.logger.log_request(&log3).unwrap();
         
         // 取消
         let log4 = RequestLogBuilder::new("session-result", "取消测试")
             .set_result(RequestResult::Cancelled)
             .build();
-        logger.log_request(&log4).unwrap();
+        test.logger.log_request(&log4).unwrap();
         
         let query = LogQuery::new().with_session("session-result");
-        let logs = logger.query_logs(&query).unwrap();
+        let logs = test.logger.query_logs(&query).unwrap();
         assert_eq!(logs.len(), 4);
     }
 

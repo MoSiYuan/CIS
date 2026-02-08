@@ -187,6 +187,7 @@ pub struct AclSync {
     seen_versions: Arc<RwLock<HashMap<String, u64>>>, // peer_did -> last_seen_version
     
     /// Update callbacks
+    #[allow(clippy::type_complexity)]
     callbacks: Vec<Box<dyn Fn(&AclUpdateEvent) + Send + Sync>>,
 }
 

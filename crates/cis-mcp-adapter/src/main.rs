@@ -42,6 +42,7 @@ async fn main() -> Result<()> {
     let capability = cis_capability::CapabilityLayer::new().await?;
     
     // Create MCP server
+    #[allow(clippy::arc_with_non_send_sync)]
     let server = CisMcpServer::new(Arc::new(capability));
 
     // Run in stdio mode

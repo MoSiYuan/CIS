@@ -429,6 +429,10 @@ impl MessageManager {
         let mut count = 0;
         
         for msg in messages {
+            // 跳过自己发送的消息，与 get_unread_count 保持一致
+            if msg.sender_id == user_id {
+                continue;
+            }
             if !msg.read_by.contains(&user_id.to_string()) {
                 self.db.mark_as_read(session_id, user_id, &msg.id).await?;
                 count += 1;
@@ -673,7 +677,7 @@ mod tests {
         let session_id = create_test_session(&db).await;
         
         let msg = manager
-            .send_text(&session_id, "user1", "Test message", SendOptions::default())
+            .send_text(&session_id, "user1", "Test message", SendOptions { persist: true, ..Default::default() })
             .await
             .unwrap();
         
@@ -692,11 +696,11 @@ mod tests {
         
         // 发送两条消息
         manager
-            .send_text(&session_id, "user1", "Message 1", SendOptions::default())
+            .send_text(&session_id, "user1", "Message 1", SendOptions { persist: true, ..Default::default() })
             .await
             .unwrap();
         manager
-            .send_text(&session_id, "user1", "Message 2", SendOptions::default())
+            .send_text(&session_id, "user1", "Message 2", SendOptions { persist: true, ..Default::default() })
             .await
             .unwrap();
         
@@ -718,7 +722,7 @@ mod tests {
         let session_id = create_test_session(&db).await;
         
         let msg = manager
-            .send_text(&session_id, "user1", "Original", SendOptions::default())
+            .send_text(&session_id, "user1", "Original", SendOptions { persist: true, ..Default::default() })
             .await
             .unwrap();
         
@@ -761,7 +765,7 @@ mod tests {
         let session_id = create_test_session(&db).await;
         
         let msg = manager
-            .send_text(&session_id, "user1", "To be recalled", SendOptions::default())
+            .send_text(&session_id, "user1", "To be recalled", SendOptions { persist: true, ..Default::default() })
             .await
             .unwrap();
         
@@ -782,11 +786,11 @@ mod tests {
         
         // 发送多条消息
         manager
-            .send_text(&session_id, "user1", "From user1", SendOptions::default())
+            .send_text(&session_id, "user1", "From user1", SendOptions { persist: true, ..Default::default() })
             .await
             .unwrap();
         manager
-            .send_text(&session_id, "user2", "From user2", SendOptions::default())
+            .send_text(&session_id, "user2", "From user2", SendOptions { persist: true, ..Default::default() })
             .await
             .unwrap();
         

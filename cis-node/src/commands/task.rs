@@ -77,7 +77,7 @@ pub fn list_tasks(status: Option<TaskStatus>) -> Result<()> {
     
     let tasks: Vec<_> = tasks
         .iter()
-        .filter(|t| status.map_or(true, |s| s == t.status))
+        .filter(|t| status.is_none_or(|s| s == t.status))
         .collect();
     
     if tasks.is_empty() {
@@ -87,8 +87,8 @@ pub fn list_tasks(status: Option<TaskStatus>) -> Result<()> {
     
     println!("Tasks:");
     println!(
-        "{:<12} {:<20} {:<10} {:<10} {}",
-        "ID", "Title", "Status", "Priority", "Created"
+        "{:<12} {:<20} {:<10} {:<10} Created",
+        "ID", "Title", "Status", "Priority"
     );
     println!("{}", "-".repeat(90));
     

@@ -36,22 +36,19 @@ use crate::matrix::federation::types::CisMatrixEvent;
 
 /// Sync task priority levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum SyncPriority {
     /// Critical - Room creation, member joins (sync immediately)
     Critical = 0,
     /// High - Messages, state changes (sync within 1 second)
     High = 1,
     /// Normal - Regular events (sync within 5 seconds)
+    #[default]
     Normal = 2,
     /// Low - History sync, backfill (sync when bandwidth available)
     Low = 3,
 }
 
-impl Default for SyncPriority {
-    fn default() -> Self {
-        SyncPriority::Normal
-    }
-}
 
 /// Sync task status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -221,6 +218,7 @@ pub struct SyncQueue {
     /// Task receiver (stored for cloning)
     task_rx: Arc<Mutex<mpsc::Receiver<SyncTask>>>,
     /// Batch sender
+    #[allow(dead_code)]
     batch_tx: mpsc::Sender<BatchOperation>,
     /// Shutdown signal
     shutdown_tx: Arc<Mutex<Option<mpsc::Sender<()>>>>,
@@ -532,6 +530,7 @@ impl SyncQueue {
     }
 
     /// Create a batch key from node and room
+    #[allow(dead_code)]
     fn batch_key(node_id: &str, room_id: &str) -> String {
         format!("{}:{}", node_id, room_id)
     }

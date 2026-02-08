@@ -1,0 +1,68 @@
+{
+  "name": "CIS Development",
+  "dockerComposeFile": [
+    "../docker-compose.dev.yml"
+  ],
+  "service": "cis-node-dev",
+  "workspaceFolder": "/app",
+  
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb",
+        "serayuzgur.crates",
+        "tamasfe.even-better-toml",
+        "GitHub.vscode-pull-request-github",
+        "eamodio.gitlens",
+        "usernamehw.errorlens"
+      ],
+      "settings": {
+        "rust-analyzer.cargo.features": "all",
+        "rust-analyzer.checkOnSave.command": "clippy",
+        "rust-analyzer.procMacro.enable": true,
+        "editor.formatOnSave": true,
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        }
+      }
+    }
+  },
+  
+  "forwardPorts": [
+    7676,
+    7677,
+    6767,
+    8080
+  ],
+  "portsAttributes": {
+    "7676": {
+      "label": "CIS Federation API",
+      "onAutoForward": "notify"
+    },
+    "7677": {
+      "label": "CIS P2P QUIC",
+      "onAutoForward": "silent"
+    },
+    "6767": {
+      "label": "CIS WebSocket",
+      "onAutoForward": "notify"
+    }
+  },
+  
+  "postCreateCommand": "cargo build --bin cis-node",
+  "postStartCommand": "echo 'CIS Dev Container 已启动'",
+  
+  "remoteUser": "devuser",
+  "overrideCommand": false,
+  
+  "mounts": [
+    "source=${localEnv:HOME}/.gitconfig,target=/home/devuser/.gitconfig,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.ssh,target=/home/devuser/.ssh,type=bind,consistency=cached"
+  ]
+}

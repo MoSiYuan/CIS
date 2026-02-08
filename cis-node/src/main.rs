@@ -152,6 +152,12 @@ enum Commands {
         #[command(subcommand)]
         action: commands::debt::DebtCommands,
     },
+
+    /// Four-tier decision management
+    Decision {
+        #[command(subcommand)]
+        action: commands::decision::DecisionCommands,
+    },
     
     /// DAG execution management
     Dag {
@@ -175,6 +181,12 @@ enum Commands {
     System {
         #[command(subcommand)]
         action: commands::system::SystemCommands,
+    },
+    
+    /// Session management (remote agent sessions)
+    Session {
+        #[command(subcommand)]
+        action: commands::session::SessionCommands,
     },
     
     /// CLI Schema self-description for AI integration
@@ -1020,6 +1032,10 @@ async fn run_command(command: Commands, json_output: bool) -> anyhow::Result<()>
         Commands::Debt { action } => {
             commands::debt::handle(action).await
         }
+
+        Commands::Decision { action } => {
+            commands::decision::handle(action).await
+        }
         
         Commands::Dag { action } => {
             commands::dag::handle(action).await
@@ -1035,6 +1051,11 @@ async fn run_command(command: Commands, json_output: bool) -> anyhow::Result<()>
         
         Commands::System { action } => {
             commands::system::handle(action).await
+        }
+        
+        Commands::Session { action } => {
+            let args = commands::session::SessionArgs { command: action };
+            commands::session::handle(args).await
         }
         
         Commands::Schema { format, compositions } => {
@@ -1090,7 +1111,7 @@ fn show_status() {
     // Project check
     let project_file = std::env::current_dir()
         .ok()
-        .and_then(|d| Some(d.join(".cis/project.toml")));
+        .map(|d| d.join(".cis/project.toml"));
     
     if let Some(project_file) = project_file {
         if project_file.exists() {

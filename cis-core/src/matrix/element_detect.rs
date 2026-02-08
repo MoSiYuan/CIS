@@ -3,7 +3,7 @@
 //! Detect installed Element (Matrix client) applications on the system.
 
 use std::path::PathBuf;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Information about detected Element app
 #[derive(Debug, Clone)]
@@ -91,11 +91,11 @@ fn get_element_version(path: &PathBuf) -> Option<String> {
 }
 
 /// Find app bundle path (macOS .app, Linux .desktop, etc.)
-fn find_app_bundle(path: &PathBuf, name: &str) -> Option<PathBuf> {
+fn find_app_bundle(path: &std::path::Path, name: &str) -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         // On macOS, look for .app bundle
-        let mut current = path.clone();
+        let mut current = path.to_path_buf();
         while let Some(parent) = current.parent() {
             if parent.extension().map(|e| e == "app").unwrap_or(false) {
                 return Some(parent.to_path_buf());

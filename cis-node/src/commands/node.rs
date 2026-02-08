@@ -244,8 +244,8 @@ async fn list_nodes(
             println!("\nTotal: {} nodes", result.total);
         }
         OutputFormat::Table => {
-            println!("{:<20} {:<12} {:<20} {:<15} {}", 
-                "NODE ID", "STATUS", "NAME", "VERSION", "LAST SEEN");
+            println!("{:<20} {:<12} {:<20} {:<15} LAST SEEN", 
+                "NODE ID", "STATUS", "NAME", "VERSION");
             println!("{}", "-".repeat(85));
             
             for node in &result.items {

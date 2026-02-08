@@ -18,7 +18,7 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 # Storage
-rusqlite = { version = "0.30", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 # File system
 notify = "6.1"

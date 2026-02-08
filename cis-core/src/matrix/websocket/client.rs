@@ -21,8 +21,9 @@ use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, Web
 use tracing::{debug, error, info, warn};
 
 use crate::matrix::federation::types::PeerInfo;
+#[cfg(feature = "p2p")]
 use crate::p2p::nat::NatType;
-
+#[cfg(feature = "p2p")]
 use super::hole_punching::{HolePunchConfig, HolePunchManager, PunchResult, SignalingClient};
 use super::protocol::{
     build_ws_url, AuthMessage, HandshakeMessage, WsMessage, PROTOCOL_VERSION,
@@ -34,12 +35,14 @@ use super::tunnel::{Tunnel, TunnelError, TunnelManager, TunnelState};
 #[derive(Debug)]
 pub struct WebSocketClient {
     /// This node's ID
+    #[allow(dead_code)]
     node_id: String,
     /// This node's DID
     node_did: String,
     /// Authentication key (for DID auth)
     auth_key: Option<Vec<u8>>,
     /// Hole punching manager
+    #[cfg(feature = "p2p")]
     hole_punch_manager: Option<Arc<HolePunchManager>>,
 }
 
@@ -93,11 +96,13 @@ impl WebSocketClient {
             node_id: node_id.into(),
             node_did: node_did.into(),
             auth_key: None,
+            #[cfg(feature = "p2p")]
             hole_punch_manager: None,
         }
     }
 
     /// Create with hole punching support
+    #[cfg(feature = "p2p")]
     pub fn with_hole_punching(
         node_id: impl Into<String>,
         node_did: impl Into<String>,
@@ -120,6 +125,7 @@ impl WebSocketClient {
     }
 
     /// Set hole punching manager
+    #[cfg(feature = "p2p")]
     pub fn with_hole_punch_manager(mut self, manager: Arc<HolePunchManager>) -> Self {
         self.hole_punch_manager = Some(manager);
         self
@@ -229,6 +235,7 @@ impl WebSocketClient {
     }
 
     /// 检测 NAT 类型
+    #[cfg(feature = "p2p")]
     pub async fn detect_nat_type(&self) -> Result<NatType, WsClientError> {
         match &self.hole_punch_manager {
             Some(manager) => {
@@ -256,6 +263,7 @@ impl WebSocketClient {
     /// # Returns
     /// * `Ok(SocketAddr)` - 成功建立直连的对端地址
     /// * `Err` - 打洞失败（包括 Symmetric NAT 无法穿透的情况）
+    #[cfg(feature = "p2p")]
     pub async fn punch_hole(&self, target_node: &str) -> Result<SocketAddr, WsClientError> {
         info!("Starting UDP hole punching to node: {}", target_node);
 
@@ -301,6 +309,7 @@ impl WebSocketClient {
     /// * `peer` - 对端节点信息
     /// * `tunnel_manager` - 隧道管理器
     /// * `target_node` - 目标节点 ID（用于 hole punching）
+    #[cfg(feature = "p2p")]
     pub async fn connect_with_hole_punching(
         &self,
         peer: &PeerInfo,
@@ -324,6 +333,7 @@ impl WebSocketClient {
     }
 
     /// 获取 hole punching 管理器
+    #[cfg(feature = "p2p")]
     pub fn hole_punch_manager(&self) -> Option<Arc<HolePunchManager>> {
         self.hole_punch_manager.clone()
     }
@@ -332,10 +342,7 @@ impl WebSocketClient {
     pub async fn health_check(&self, peer: &PeerInfo) -> bool {
         let ws_url = build_ws_url(&peer.host, peer.port, peer.use_https);
 
-        match timeout(Duration::from_secs(5), connect_async(&ws_url)).await {
-            Ok(Ok(_)) => true,
-            _ => false,
-        }
+        matches!(timeout(Duration::from_secs(5), connect_async(&ws_url)).await, Ok(Ok(_)))
     }
 }
 
@@ -344,6 +351,7 @@ struct ClientConnectionHandler {
     /// WebSocket stream (wrapped in Option for ownership transfer)
     ws_stream: Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     /// This node's ID
+    #[allow(dead_code)]
     node_id: String,
     /// This node's DID
     node_did: String,
@@ -362,10 +370,12 @@ struct ClientConnectionHandler {
     /// Connection state
     state: ConnectionState,
     /// Ping ID counter
+    #[allow(dead_code)]
     ping_counter: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 enum ConnectionState {
     Connecting,
     Handshaking,
@@ -600,7 +610,7 @@ impl ClientConnectionHandler {
                     WsMessage::Ping(ping) => {
                         // Send pong
                         if let Some(tunnel) = tunnel_manager.get_tunnel(remote_node).await {
-                            let _ = tunnel.send_pong(ping.ping_id);
+                            let _fut = tunnel.send_pong(ping.ping_id);
                         }
                     }
                     WsMessage::Pong(pong) => {
@@ -683,7 +693,9 @@ pub struct WebSocketClientBuilder {
     node_id: Option<String>,
     node_did: Option<String>,
     auth_key: Option<Vec<u8>>,
+    #[cfg(feature = "p2p")]
     hole_punch_config: Option<HolePunchConfig>,
+    #[cfg(feature = "p2p")]
     signaling_client: Option<Arc<dyn SignalingClient>>,
 }
 
@@ -712,6 +724,7 @@ impl WebSocketClientBuilder {
     }
 
     /// Enable hole punching
+    #[cfg(feature = "p2p")]
     pub fn with_hole_punching(
         mut self,
         config: HolePunchConfig,
@@ -730,11 +743,14 @@ impl WebSocketClientBuilder {
 
         let node_did = self.node_did.unwrap_or_else(|| node_id.clone());
 
+        #[cfg(feature = "p2p")]
         let client = if let (Some(config), Some(signaling)) = (self.hole_punch_config, self.signaling_client) {
             WebSocketClient::with_hole_punching(node_id, node_did, config, signaling)
         } else {
             WebSocketClient::new(node_id, node_did)
         };
+        #[cfg(not(feature = "p2p"))]
+        let client = WebSocketClient::new(node_id, node_did);
 
         Ok(if let Some(key) = self.auth_key {
             client.with_auth_key(key)
@@ -747,6 +763,7 @@ impl WebSocketClientBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "p2p")]
     use crate::matrix::websocket::hole_punching::InMemorySignalingClient;
 
     #[test]
@@ -767,6 +784,7 @@ mod tests {
         let client = client.unwrap();
         assert_eq!(client.node_id, "test-node");
         assert_eq!(client.node_did, "did:cis:test");
+        #[cfg(feature = "p2p")]
         assert!(client.hole_punch_manager.is_none());
     }
 
@@ -777,6 +795,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "p2p")]
     fn test_client_builder_with_hole_punching() {
         use crate::matrix::websocket::HolePunchConfig;
         
@@ -804,6 +823,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "p2p")]
     async fn test_detect_nat_type_without_manager() {
         let client = WebSocketClient::new("test-node", "did:cis:test");
         let result = client.detect_nat_type().await;
@@ -812,6 +832,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "p2p")]
     async fn test_punch_hole_without_manager() {
         let client = WebSocketClient::new("test-node", "did:cis:test");
         let result = client.punch_hole("peer-node").await;

@@ -128,18 +128,16 @@ impl<T: Clone + Eq + std::hash::Hash> ORSet<T> {
     pub fn add(&mut self, element: T, node_id: &str) {
         self.adds
             .entry(element)
-            .or_insert_with(GCounter::new)
+            .or_default()
             .increment(node_id);
     }
 
     /// 移除元素
     pub fn remove(&mut self, element: &T, node_id: &str) {
         if let Some(counter) = self.adds.get(element) {
-            self.removes
-                .entry(element.clone())
-                .or_insert_with(GCounter::new)
-                .merge(counter);
-            self.removes.get_mut(element).unwrap().increment(node_id);
+            let existing = self.removes.entry(element.clone()).or_default();
+            *existing = existing.merge(counter);
+            existing.increment(node_id);
         }
     }
 
@@ -165,18 +163,14 @@ impl<T: Clone + Eq + std::hash::Hash> ORSet<T> {
 
         // 合并 adds
         for (elem, counter) in &other.adds {
-            result.adds
-                .entry(elem.clone())
-                .or_insert_with(GCounter::new)
-                .merge(counter);
+            let existing = result.adds.entry(elem.clone()).or_default();
+            *existing = existing.merge(counter);
         }
 
         // 合并 removes
         for (elem, counter) in &other.removes {
-            result.removes
-                .entry(elem.clone())
-                .or_insert_with(GCounter::new)
-                .merge(counter);
+            let existing = result.removes.entry(elem.clone()).or_default();
+            *existing = existing.merge(counter);
         }
 
         result
@@ -280,8 +274,8 @@ mod tests {
         counter2.increment("node2");
 
         let merged = counter1.merge(&counter2);
-        assert_eq!(merged.value(), 5); // max(2,1) + max(1,2) = 2 + 2 = 4, but actually 2 + 2 = 4
-        // Correction: node1 max(2,1)=2, node2 max(1,2)=2, total=4
+        // node1 max(2,1)=2, node2 max(1,2)=2, total=4
+        assert_eq!(merged.value(), 4);
         assert_eq!(merged.counters.get("node1").copied().unwrap_or(0), 2);
         assert_eq!(merged.counters.get("node2").copied().unwrap_or(0), 2);
     }

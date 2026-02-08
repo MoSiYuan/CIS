@@ -217,6 +217,10 @@ impl CoreDb {
 
     /// 设置配置项
     pub fn set_config(&self, key: &str, value: &[u8], encrypted: bool) -> Result<()> {
+        // 验证 key 和 value 长度
+        crate::check_string_length(key, 1024)?;
+        crate::check_allocation_size(value.len(), 10 * 1024 * 1024)?; // 10MB 限制
+        
         let now = chrono::Utc::now().timestamp();
         self.conn.execute(
             "INSERT INTO core_config (key, value, encrypted, updated_at) 
@@ -232,6 +236,8 @@ impl CoreDb {
 
     /// 获取配置项
     pub fn get_config(&self, key: &str) -> Result<Option<(Vec<u8>, bool)>> {
+        crate::check_string_length(key, 1024)?;
+        
         let mut stmt = self.conn.prepare(
             "SELECT value, encrypted FROM core_config WHERE key = ?1"
         ).map_err(|e| CisError::Storage(format!("Failed to prepare query: {}", e)))?;
@@ -255,6 +261,16 @@ impl CoreDb {
         storage_type: &str,
         category: Option<&str>,
     ) -> Result<()> {
+        // 验证输入长度
+        crate::check_string_length(key, 1024)?;
+        if let Some(name) = skill_name {
+            crate::check_string_length(name, 256)?;
+        }
+        crate::check_string_length(storage_type, 64)?;
+        if let Some(cat) = category {
+            crate::check_string_length(cat, 256)?;
+        }
+        
         let now = chrono::Utc::now().timestamp();
         self.conn.execute(
             "INSERT INTO memory_index 
@@ -279,6 +295,8 @@ impl CoreDb {
 
     /// 获取记忆索引
     pub fn get_memory_index(&self, key: &str) -> Result<Option<MemoryIndex>> {
+        crate::check_string_length(key, 1024)?;
+        
         let mut stmt = self.conn.prepare(
             "SELECT key, skill_name, storage_type, category, domain, 
                     created_at, updated_at, accessed_at, version
@@ -344,6 +362,8 @@ impl CoreDb {
 
     /// 获取 DAG 详情
     pub fn get_dag(&self, id: &str) -> Result<Option<DagDetail>> {
+        crate::check_string_length(id, 1024)?;
+        
         let mut stmt = self.conn.prepare(
             "SELECT id, name, version, status, scope, description, definition, owner, permissions, config, 
                     tasks_count, created_at, updated_at, last_run_at 
@@ -378,6 +398,8 @@ impl CoreDb {
 
     /// 根据名称获取 DAG
     pub fn get_dag_by_name(&self, name: &str) -> Result<Option<DagDetail>> {
+        crate::check_string_length(name, 256)?;
+        
         let mut stmt = self.conn.prepare(
             "SELECT id, name, version, status, scope, description, definition, owner, permissions, config, 
                     tasks_count, created_at, updated_at, last_run_at 
@@ -412,6 +434,14 @@ impl CoreDb {
 
     /// 创建 DAG
     pub fn create_dag(&self, id: &str, name: &str, definition: &str, description: Option<&str>) -> Result<()> {
+        // 验证输入长度
+        crate::check_string_length(id, 1024)?;
+        crate::check_string_length(name, 256)?;
+        crate::check_string_length(definition, 10 * 1024 * 1024)?; // 10MB 限制
+        if let Some(desc) = description {
+            crate::check_string_length(desc, 64 * 1024)?; // 64KB 限制
+        }
+        
         let now = chrono::Utc::now().timestamp();
         
         // 从 definition 中解析 tasks_count
@@ -440,6 +470,9 @@ impl CoreDb {
 
     /// 更新 DAG 状态
     pub fn update_dag_status(&self, id: &str, status: &str) -> Result<bool> {
+        crate::check_string_length(id, 1024)?;
+        crate::check_string_length(status, 64)?;
+        
         let now = chrono::Utc::now().timestamp();
         let rows = self.conn.execute(
             "UPDATE dags SET status = ?1, updated_at = ?2 WHERE id = ?3",
@@ -450,6 +483,8 @@ impl CoreDb {
 
     /// 删除 DAG
     pub fn delete_dag(&self, id: &str) -> Result<bool> {
+        crate::check_string_length(id, 1024)?;
+        
         let rows = self.conn.execute(
             "DELETE FROM dags WHERE id = ?1",
             [id],
@@ -459,6 +494,8 @@ impl CoreDb {
 
     /// 更新 DAG 最后运行时间
     pub fn update_dag_last_run(&self, id: &str) -> Result<()> {
+        crate::check_string_length(id, 1024)?;
+        
         let now = chrono::Utc::now().timestamp();
         self.conn.execute(
             "UPDATE dags SET last_run_at = ?1, updated_at = ?1 WHERE id = ?2",
@@ -469,6 +506,12 @@ impl CoreDb {
 
     /// 创建 DAG 运行记录
     pub fn create_dag_run(&self, run_id: &str, dag_id: &str, params: Option<&str>) -> Result<()> {
+        crate::check_string_length(run_id, 1024)?;
+        crate::check_string_length(dag_id, 1024)?;
+        if let Some(p) = params {
+            crate::check_string_length(p, 1024 * 1024)?; // 1MB 限制
+        }
+        
         let now = chrono::Utc::now().timestamp();
         self.conn.execute(
             "INSERT INTO dag_runs (run_id, dag_id, status, params, started_at) 
@@ -480,6 +523,8 @@ impl CoreDb {
 
     /// 获取 DAG 运行记录
     pub fn get_dag_run(&self, run_id: &str) -> Result<Option<DagRunRecord>> {
+        crate::check_string_length(run_id, 1024)?;
+        
         let mut stmt = self.conn.prepare(
             "SELECT run_id, dag_id, status, started_at, finished_at, 
                     tasks_completed, tasks_failed, tasks_total 
@@ -508,6 +553,11 @@ impl CoreDb {
 
     /// 列出 DAG 运行记录
     pub fn list_dag_runs(&self, dag_id: &str, limit: usize) -> Result<Vec<DagRunRecord>> {
+        crate::check_string_length(dag_id, 1024)?;
+        
+        // 限制查询数量
+        let limit = limit.min(10000); // 最大 10000 条
+        
         let mut stmt = self.conn.prepare(
             "SELECT run_id, dag_id, status, started_at, finished_at, 
                     tasks_completed, tasks_failed, tasks_total 
@@ -536,6 +586,9 @@ impl CoreDb {
 
     /// 更新 DAG 运行状态
     pub fn update_dag_run_status(&self, run_id: &str, status: &str) -> Result<bool> {
+        crate::check_string_length(run_id, 1024)?;
+        crate::check_string_length(status, 64)?;
+        
         let now = chrono::Utc::now().timestamp();
         let sql = if status == "success" || status == "failed" || status == "cancelled" {
             "UPDATE dag_runs SET status = ?1, finished_at = ?2 WHERE run_id = ?3"
@@ -554,6 +607,8 @@ impl CoreDb {
 
     /// 更新 DAG 运行任务统计
     pub fn update_dag_run_stats(&self, run_id: &str, completed: usize, failed: usize, total: usize) -> Result<()> {
+        crate::check_string_length(run_id, 1024)?;
+        
         self.conn.execute(
             "UPDATE dag_runs SET tasks_completed = ?1, tasks_failed = ?2, tasks_total = ?3 WHERE run_id = ?4",
             rusqlite::params![completed as i64, failed as i64, total as i64, run_id],
@@ -563,6 +618,13 @@ impl CoreDb {
 
     /// 添加 DAG 日志
     pub fn add_dag_log(&self, dag_id: &str, run_id: Option<&str>, level: &str, message: &str) -> Result<()> {
+        crate::check_string_length(dag_id, 1024)?;
+        if let Some(rid) = run_id {
+            crate::check_string_length(rid, 1024)?;
+        }
+        crate::check_string_length(level, 64)?;
+        crate::check_string_length(message, 1024 * 1024)?; // 1MB 限制
+        
         let now = chrono::Utc::now().timestamp();
         self.conn.execute(
             "INSERT INTO dag_logs (dag_id, run_id, level, message, timestamp) 
@@ -574,6 +636,14 @@ impl CoreDb {
 
     /// 获取 DAG 日志
     pub fn get_dag_logs(&self, dag_id: &str, run_id: Option<&str>, limit: usize) -> Result<Vec<DagLogRecord>> {
+        crate::check_string_length(dag_id, 1024)?;
+        if let Some(rid) = run_id {
+            crate::check_string_length(rid, 1024)?;
+        }
+        
+        // 限制查询数量
+        let limit = limit.min(10000); // 最大 10000 条
+        
         let mut stmt = if run_id.is_some() {
             self.conn.prepare(
                 "SELECT dag_id, run_id, level, message, timestamp 
@@ -622,6 +692,9 @@ impl CoreDb {
 
     /// 清理旧的 DAG 运行记录
     pub fn prune_dag_runs(&self, max_age_days: u32) -> Result<usize> {
+        // 限制最大清理天数
+        let max_age_days = max_age_days.min(3650); // 最大 10 年
+        
         let cutoff = chrono::Utc::now().timestamp() - (max_age_days as i64 * 24 * 60 * 60);
         let rows = self.conn.execute(
             "DELETE FROM dag_runs WHERE started_at < ?1 AND status IN ('success', 'failed', 'cancelled')",
@@ -761,6 +834,9 @@ impl SkillDb {
     /// 
     /// 自动配置 WAL 模式以确保随时关机安全
     pub fn open(skill_name: &str) -> Result<Self> {
+        // 验证 Skill 名称
+        crate::check_string_length(skill_name, 256)?;
+        
         let db_path = Paths::skill_db(skill_name);
         
         // 确保目录存在
@@ -806,6 +882,9 @@ impl SkillDb {
 
     /// 执行初始化 SQL
     pub fn init_schema(&self, sql: &str) -> Result<()> {
+        // 验证 SQL 长度
+        crate::check_string_length(sql, 10 * 1024 * 1024)?; // 10MB 限制
+        
         self.conn.execute_batch(sql)
             .map_err(|e| CisError::Storage(format!(
                 "Failed to init schema for skill {}: {}", self.name, e
@@ -925,6 +1004,9 @@ impl DbManager {
     /// 使用别名挂载 Skill 数据库到多库连接。
     /// 别名格式：`skill_{skill_name}`（将 - 替换为 _）
     pub fn attach_skill_db(&self, skill_name: &str) -> Result<String> {
+        // 验证 Skill 名称
+        crate::check_string_length(skill_name, 256)?;
+        
         let mut multi_conn_guard = self.multi_conn.lock()
             .map_err(|e| CisError::Storage(format!("Lock failed: {}", e)))?;
         
@@ -959,6 +1041,8 @@ impl DbManager {
     ///
     /// 卸载已挂载的 Skill 数据库
     pub fn detach_skill_db(&self, skill_name: &str) -> Result<()> {
+        crate::check_string_length(skill_name, 256)?;
+        
         let mut multi_conn_guard = self.multi_conn.lock()
             .map_err(|e| CisError::Storage(format!("Lock failed: {}", e)))?;
         
@@ -1030,6 +1114,8 @@ impl DbManager {
 
     /// 加载 Skill 数据库（热插拔入口）
     pub fn load_skill_db(&self, skill_name: &str) -> Result<Arc<Mutex<SkillDb>>> {
+        crate::check_string_length(skill_name, 256)?;
+        
         let mut skills = self.skills.lock()
             .map_err(|e| CisError::Storage(format!("Lock failed: {}", e)))?;
 
@@ -1045,15 +1131,47 @@ impl DbManager {
     }
 
     /// 卸载 Skill 数据库（热插拔出口）
+    /// 
+    /// 安全地关闭 Skill 数据库连接，确保资源被正确释放
     pub fn unload_skill_db(&self, skill_name: &str) -> Result<()> {
+        crate::check_string_length(skill_name, 256)?;
+        
         let mut skills = self.skills.lock()
             .map_err(|e| CisError::Storage(format!("Lock failed: {}", e)))?;
 
         if let Some(db) = skills.remove(skill_name) {
+            // 先 DETACH（如果已挂载）
+            drop(skills); // 释放锁以避免死锁
+            let _ = self.detach_skill_db(skill_name);
+            
+            // 重新获取锁
+            let mut skills = self.skills.lock()
+                .map_err(|e| CisError::Storage(format!("Lock failed: {}", e)))?;
+            
             // 尝试获取锁并关闭
-            if let Ok(db) = Arc::try_unwrap(db) {
-                if let Ok(db) = db.into_inner() {
-                    db.close()?;
+            match Arc::try_unwrap(db) {
+                Ok(db_mutex) => {
+                    match db_mutex.into_inner() {
+                        Ok(db) => {
+                            if let Err(e) = db.close() {
+                                tracing::warn!("Failed to close skill db {}: {}", skill_name, e);
+                            } else {
+                                tracing::info!("Skill db {} closed successfully", skill_name);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to get inner db {}: {}", skill_name, e);
+                        }
+                    }
+                }
+                Err(arc) => {
+                    // Arc 仍有其他引用，将数据库放回 map
+                    tracing::warn!(
+                        "Skill db {} still has {} references, deferring close", 
+                        skill_name, 
+                        Arc::strong_count(&arc)
+                    );
+                    skills.insert(skill_name.to_string(), arc);
                 }
             }
         }
@@ -1097,19 +1215,29 @@ impl DbManager {
             .map_err(|e| CisError::Storage(format!("Lock failed: {}", e)))?;
         
         for (name, db) in skills.drain() {
-            if let Ok(db) = Arc::try_unwrap(db) {
-                if let Ok(db) = db.into_inner() {
-                    if let Err(e) = db.close() {
-                        tracing::warn!("Failed to close skill db {}: {}", name, e);
+            match Arc::try_unwrap(db) {
+                Ok(db_mutex) => {
+                    if let Ok(db) = db_mutex.into_inner() {
+                        if let Err(e) = db.close() {
+                            tracing::warn!("Failed to close skill db {}: {}", name, e);
+                        }
                     }
+                }
+                Err(_) => {
+                    tracing::warn!("Skill db {} has active references, skipping close", name);
                 }
             }
         }
 
         // 关闭核心数据库
-        if let Ok(core) = Arc::try_unwrap(self.core) {
-            if let Ok(core) = core.into_inner() {
-                core.close()?;
+        match Arc::try_unwrap(self.core) {
+            Ok(core_mutex) => {
+                if let Ok(core) = core_mutex.into_inner() {
+                    core.close()?;
+                }
+            }
+            Err(_) => {
+                tracing::warn!("Core db has active references, skipping close");
             }
         }
 
@@ -1135,9 +1263,14 @@ impl DbManager {
             .map_err(|e| CisError::Storage(format!("Lock failed: {}", e)))?;
         
         for (name, db) in skills.iter() {
-            if let Ok(db) = db.lock() {
-                if let Err(e) = db.checkpoint() {
-                    warn!("Failed to checkpoint skill db {}: {}", name, e);
+            match db.lock() {
+                Ok(db) => {
+                    if let Err(e) = db.checkpoint() {
+                        warn!("Failed to checkpoint skill db {}: {}", name, e);
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to lock skill db {}: {}", name, e);
                 }
             }
         }
@@ -1201,10 +1334,40 @@ mod tests {
             db.init_schema("CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY)").unwrap();
         }
 
+        // 必须先释放 Arc 引用，否则 unload 无法获取独占所有权
+        drop(skill_db);
+
         // 卸载 Skill 数据库（热插拔）
         manager.unload_skill_db("test-skill").unwrap();
         assert!(!manager.is_skill_loaded("test-skill").unwrap());
 
         cleanup_test_env();
+    }
+
+    #[test]
+    fn test_input_validation() {
+        // 测试配置 key 长度限制
+        let long_key = "a".repeat(1025);
+        assert!(crate::check_string_length(&long_key, 1024).is_err());
+        
+        // 测试有效的 key
+        let valid_key = "a".repeat(1024);
+        assert!(crate::check_string_length(&valid_key, 1024).is_ok());
+        
+        // 测试 DAG 名称长度
+        let long_name = "a".repeat(257);
+        assert!(crate::check_string_length(&long_name, 256).is_err());
+    }
+
+    #[test]
+    fn test_allocation_size_check() {
+        // 测试超大分配
+        assert!(crate::check_allocation_size(11 * 1024 * 1024, 10 * 1024 * 1024).is_err());
+        
+        // 测试零分配
+        assert!(crate::check_allocation_size(0, 100).is_err());
+        
+        // 测试有效分配
+        assert!(crate::check_allocation_size(1024, 10 * 1024 * 1024).is_ok());
     }
 }

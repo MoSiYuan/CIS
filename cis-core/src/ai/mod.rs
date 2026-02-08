@@ -200,8 +200,11 @@ pub trait AiProvider: Send + Sync {
     /// use cis_core::conversation::ConversationContext;
     ///
     /// # async fn example(provider: &dyn AiProvider) -> anyhow::Result<()> {
-    /// let mut ctx = ConversationContext::new();
-    /// ctx.add_user_message("我喜欢暗黑模式").await?;
+    /// let mut ctx = ConversationContext::new(
+    ///     "conv-123".to_string(),
+    ///     "session-456".to_string(),
+    /// );
+    /// ctx.add_user_message("我喜欢暗黑模式");
     ///
     /// let response = provider.chat_with_rag("推荐什么主题？", Some(&ctx)).await?;
     /// println!("{}", response);
@@ -250,17 +253,14 @@ impl AiProviderFactory {
 /// Provider 类型
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum ProviderType {
+    #[default]
     Claude,
     Kimi,
     OpenCode,
 }
 
-impl Default for ProviderType {
-    fn default() -> Self {
-        Self::Claude
-    }
-}
 
 /// AI Provider 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,6 +293,7 @@ use crate::vector::VectorStorage;
 
 /// Completion Request
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct CompletionRequest {
     /// Prompt text
     pub prompt: String,
@@ -304,16 +305,6 @@ pub struct CompletionRequest {
     pub max_tokens: Option<u32>,
 }
 
-impl Default for CompletionRequest {
-    fn default() -> Self {
-        Self {
-            prompt: String::new(),
-            system: None,
-            temperature: None,
-            max_tokens: None,
-        }
-    }
-}
 
 /// Completion Response
 #[derive(Debug, Clone)]
@@ -348,18 +339,16 @@ pub struct TokenUsage {
 /// ## 示例
 ///
 /// ```rust,no_run
-/// use cis_core::ai::{RagProvider, RagProviderBuilder, AiProviderFactory};
+/// use cis_core::ai::{RagProvider, ClaudeCliProvider, AiProvider};
 /// use cis_core::vector::VectorStorage;
 /// use std::sync::Arc;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let storage = Arc::new(VectorStorage::open_default()?);
-/// let inner = AiProviderFactory::default_provider();
+/// let inner = ClaudeCliProvider::default();
 ///
-/// let rag_provider = RagProviderBuilder::new()
-///     .with_vector_storage(storage)
-///     .with_memory_top_k(5)
-///     .build(*inner)?;
+/// let rag_provider = RagProvider::new(inner, storage)
+///     .with_memory_top_k(5);
 ///
 /// // 使用 RAG 增强对话
 /// let response = rag_provider.chat_with_rag("如何优化查询？", None).await?;

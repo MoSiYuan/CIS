@@ -7,10 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Automated CI/CD pipeline with GitHub Actions
-- Cross-platform build scripts for macOS, Linux, and Windows
-- GitHub Release automation with asset upload
+## [1.1.0] - 2026-02-07
+
+### Security
+- **Security Audit**: Comprehensive security review of network, storage, and WASM modules
+- **Memory Encryption**: Verified ChaCha20-Poly1305 implementation for private memory
+- **DID Authentication**: Validated Ed25519 signature verification and challenge-response protocol
+- **ACL System**: Reviewed whitelist/blacklist access control mechanisms
+- **File Permissions**: Verified 0o600 permissions for sensitive files
+
+### Fixed
+- Fixed type inference issues in cis-skill-sdk
+- Fixed serde_json dependency configuration for WASM compatibility
+- Fixed compiler warnings in AI and types modules
+- Fixed borrow checker issue in WebSocket connection handler
+
+### Changed
+- **Version Bump**: All crates updated to v1.1.0
+  - cis-core: 0.1.0 → 1.1.0
+  - cis-node: 0.1.0 → 1.1.0
+  - cis-skill-sdk: 0.1.0 → 1.1.0
+  - cis-skill-sdk-derive: 0.1.0 → 1.1.0
+
+### Code Quality
+- Cleaned up unused variables and imports
+- Updated documentation
 
 ## [1.0.0] - 2026-02-10
 

@@ -9,18 +9,17 @@
 //!
 //! ## Example
 //!
-//! ```no_run
+//! ```rust
 //! use cis_core::matrix::federation::{PeerDiscovery, PeerInfo};
 //!
-//! # async fn example() {
 //! // Manual discovery with known peers
 //! let discovery = PeerDiscovery::new(vec![
 //!     PeerInfo::new("kitchen.local", "kitchen.local"),
 //!     PeerInfo::new("living.local", "living.local"),
 //! ]);
 //!
-//! let peers = discovery.get_known_peers().await;
-//! # }
+//! let peers = discovery.get_known_peers();
+//! ```
 //! ```
 
 use std::collections::HashMap;
@@ -50,6 +49,7 @@ pub struct PeerDiscovery {
     enable_mdns: bool,
     
     /// mDNS service name
+    #[allow(dead_code)]
     mdns_service_name: String,
     
     /// This server's name
@@ -358,6 +358,7 @@ impl PeerDiscovery {
     /// Discover Matrix nodes via mDNS
     ///
     /// This performs an active mDNS browse operation and returns discovered nodes.
+    #[cfg(feature = "p2p")]
     pub async fn discover_mdns_matrix(&self) -> anyhow::Result<Vec<DiscoveredNode>> {
         if !self.enable_mdns {
             return Ok(vec![]);
@@ -409,6 +410,7 @@ impl PeerDiscovery {
     /// Start mDNS broadcast service
     ///
     /// This registers the local node as a CIS Matrix service and keeps the registration alive.
+    #[cfg(feature = "p2p")]
     async fn start_mdns_broadcast(&self) -> anyhow::Result<()> {
         info!("Starting mDNS broadcast for service: {}", MDNS_SERVICE_TYPE);
         
@@ -470,6 +472,7 @@ impl PeerDiscovery {
     /// Start mDNS listener for discovering other nodes
     ///
     /// This continuously listens for mDNS service announcements.
+    #[cfg(feature = "p2p")]
     async fn start_mdns_listener(&self) -> anyhow::Result<()> {
         info!("Starting mDNS listener for service: {}", MDNS_SERVICE_TYPE);
         
@@ -519,6 +522,7 @@ impl PeerDiscovery {
     }
     
     /// Parse mDNS service info into DiscoveredNode
+    #[cfg(feature = "p2p")]
     fn parse_mdns_service_info(info: &mdns_sd::ServiceInfo, local_node_id: &str) -> Option<DiscoveredNode> {
         let properties = info.get_properties();
         

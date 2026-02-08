@@ -12,19 +12,20 @@
 //! ## 示例
 //!
 //! ```rust,no_run
-//! use cis_core::memory::{MemoryService, MemoryDomain, MemoryCategory};
+//! use cis_core::memory::MemoryService;
+//! use cis_core::types::{MemoryDomain, MemoryCategory};
 //!
-//! # fn example() -> anyhow::Result<()> {
+//! # async fn example() -> anyhow::Result<()> {
 //! let service = MemoryService::open_default("node-1")?;
 //!
 //! // 存储私域记忆
-//! service.set("private-key", b"secret", MemoryDomain::Private, MemoryCategory::Context)?;
+//! service.set("private-key", b"secret", MemoryDomain::Private, MemoryCategory::Context).await?;
 //!
 //! // 存储公域记忆
-//! service.set("public-key", b"shared", MemoryDomain::Public, MemoryCategory::Result)?;
+//! service.set("public-key", b"shared", MemoryDomain::Public, MemoryCategory::Result).await?;
 //!
 //! // 读取记忆
-//! if let Some(item) = service.get("private-key")? {
+//! if let Some(item) = service.get("private-key").await? {
 //!     println!("Found: {:?}", item.value);
 //! }
 //! # Ok(())
@@ -73,7 +74,8 @@ pub struct MemorySearchResult {
 /// ## 示例
 ///
 /// ```rust,no_run
-/// use cis_core::memory::{MemoryService, MemoryDomain, MemoryCategory, SearchOptions};
+/// use cis_core::memory::{MemoryService, SearchOptions};
+/// use cis_core::types::{MemoryDomain, MemoryCategory};
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let service = MemoryService::open_default("node-1")?;
@@ -288,14 +290,15 @@ impl MemoryService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use cis_core::memory::{MemoryService, MemoryDomain, MemoryCategory};
+    /// use cis_core::memory::MemoryService;
+    /// use cis_core::types::{MemoryDomain, MemoryCategory};
     ///
-    /// # fn example(service: &MemoryService) -> anyhow::Result<()> {
+    /// # async fn example(service: &MemoryService) -> anyhow::Result<()> {
     /// // 存储私域记忆（加密）
-    /// service.set("api-key", b"secret123", MemoryDomain::Private, MemoryCategory::Secret)?;
+    /// service.set("api-key", b"secret123", MemoryDomain::Private, MemoryCategory::Context).await?;
     ///
     /// // 存储公域记忆（明文，可同步）
-    /// service.set("config", b"{\"theme\":\"dark\"}", MemoryDomain::Public, MemoryCategory::Context)?;
+    /// service.set("config", b"{\"theme\":\"dark\"}", MemoryDomain::Public, MemoryCategory::Context).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -329,8 +332,8 @@ impl MemoryService {
     /// ```rust,no_run
     /// use cis_core::memory::MemoryService;
     ///
-    /// # fn example(service: &MemoryService) -> anyhow::Result<()> {
-    /// if let Some(item) = service.get("my-key")? {
+    /// # async fn example(service: &MemoryService) -> anyhow::Result<()> {
+    /// if let Some(item) = service.get("my-key").await? {
     ///     println!("Value: {:?}", item.value);
     ///     println!("Domain: {:?}", item.domain);
     /// }
@@ -392,7 +395,8 @@ impl MemoryService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use cis_core::memory::{MemoryService, SearchOptions, MemoryDomain, MemoryCategory};
+    /// use cis_core::memory::{MemoryService, SearchOptions};
+    /// use cis_core::types::{MemoryDomain, MemoryCategory};
     ///
     /// # async fn example(service: &MemoryService) -> anyhow::Result<()> {
     /// let options = SearchOptions::new()
@@ -479,7 +483,8 @@ impl MemoryService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use cis_core::memory::{MemoryService, MemoryDomain, MemoryCategory};
+    /// use cis_core::memory::MemoryService;
+    /// use cis_core::types::{MemoryDomain, MemoryCategory};
     ///
     /// # async fn example(service: &MemoryService) -> anyhow::Result<()> {
     /// service.set_with_embedding(
@@ -608,6 +613,8 @@ impl MemoryService {
         value: &[u8],
         category: MemoryCategory,
     ) -> Result<()> {
+        let full_key = self.full_key(key);
+        
         // 1. 加密数据
         let encrypted = if let Some(ref enc) = self.encryption {
             enc.encrypt(value)?
@@ -618,14 +625,15 @@ impl MemoryService {
 
         // 2. 存储到 memory_db
         let db = self.memory_db.lock().await;
-        db.set_private(key, &encrypted, category)?;
+        db.set_private(&full_key, &encrypted, category)?;
 
         // 3. 更新向量索引（使用原始值）
-        self.spawn_index_update(key, value, &category);
+        self.spawn_index_update(&full_key, value, &category);
 
         Ok(())
     }
 
+    #[allow(dead_code)]
     async fn get_private(&self, key: &str) -> Result<Option<MemoryItem>> {
         let db = self.memory_db.lock().await;
 
@@ -650,6 +658,7 @@ impl MemoryService {
         Ok(None)
     }
 
+    #[allow(dead_code)]
     async fn delete_private(&self, key: &str) -> Result<bool> {
         let db = self.memory_db.lock().await;
 
@@ -671,18 +680,21 @@ impl MemoryService {
         value: &[u8],
         category: MemoryCategory,
     ) -> Result<()> {
+        let full_key = self.full_key(key);
+        
         // 1. 明文存储
         let db = self.memory_db.lock().await;
-        db.set_public(key, value, category)?;
+        db.set_public(&full_key, value, category)?;
 
         // 2. 更新向量索引
-        self.spawn_index_update(key, value, &category);
+        self.spawn_index_update(&full_key, value, &category);
 
         // 3. 标记为待同步（P2P）- 已由 MemoryDb 自动处理
 
         Ok(())
     }
 
+    #[allow(dead_code)]
     async fn get_public(&self, key: &str) -> Result<Option<MemoryItem>> {
         let db = self.memory_db.lock().await;
 
@@ -699,6 +711,7 @@ impl MemoryService {
         Ok(None)
     }
 
+    #[allow(dead_code)]
     async fn delete_public(&self, key: &str) -> Result<bool> {
         let db = self.memory_db.lock().await;
 
@@ -904,37 +917,67 @@ impl MemoryServiceTrait for MemoryService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
+    use crate::ai::embedding::{EmbeddingService, DEFAULT_EMBEDDING_DIM};
+    use async_trait::async_trait;
 
-    fn setup_test_service() -> MemoryService {
-        let temp_dir = env::temp_dir().join("cis_test_memory_service_v2");
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        std::fs::create_dir_all(&temp_dir).unwrap();
+    /// Mock embedding service for tests
+    struct MockEmbeddingService;
+
+    #[async_trait]
+    impl EmbeddingService for MockEmbeddingService {
+        async fn embed(&self, text: &str) -> crate::error::Result<Vec<f32>> {
+            // 简单的确定性模拟：根据文本哈希生成向量
+            let mut vec = vec![0.0f32; DEFAULT_EMBEDDING_DIM];
+            let hash = text.bytes().fold(0u64, |acc, b| {
+                acc.wrapping_mul(31).wrapping_add(b as u64)
+            });
+            for i in 0..DEFAULT_EMBEDDING_DIM {
+                let val = ((hash.wrapping_add(i as u64) % 1000) as f32 / 1000.0) * 2.0 - 1.0;
+                vec[i] = val;
+            }
+            // 归一化
+            let norm = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if norm > 0.0 {
+                for x in &mut vec {
+                    *x /= norm;
+                }
+            }
+            Ok(vec)
+        }
+
+        async fn batch_embed(&self, texts: &[&str]) -> crate::error::Result<Vec<Vec<f32>>> {
+            let mut results = Vec::with_capacity(texts.len());
+            for text in texts {
+                results.push(self.embed(text).await?);
+            }
+            Ok(results)
+        }
+    }
+
+    fn setup_test_service() -> (MemoryService, tempfile::TempDir) {
+        let temp_dir = tempfile::tempdir().unwrap();
         
-        let db_path = temp_dir.join("memory.db");
+        let db_path = temp_dir.path().join("memory.db");
         let memory_db = MemoryDb::open(&db_path).unwrap();
         
-        // 使用 mock vector storage（需要特殊处理）
-        let vector_path = temp_dir.join("vector.db");
-        let vector_storage = VectorStorage::open(&vector_path, None).unwrap();
+        // 使用 mock vector storage
+        let vector_path = temp_dir.path().join("vector.db");
+        let embedding = Arc::new(MockEmbeddingService);
+        let vector_storage = VectorStorage::open_with_service(&vector_path, embedding).unwrap();
         
-        MemoryService {
+        let service = MemoryService {
             memory_db: Arc::new(tokio::sync::Mutex::new(memory_db)),
             vector_storage: Arc::new(vector_storage),
             encryption: None,
             node_id: "test-node".to_string(),
             namespace: None,
-        }
-    }
-
-    fn cleanup_test_service() {
-        let temp_dir = env::temp_dir().join("cis_test_memory_service_v2");
-        let _ = std::fs::remove_dir_all(&temp_dir);
+        };
+        (service, temp_dir)
     }
 
     #[tokio::test]
     async fn test_memory_service_basic() {
-        let service = setup_test_service();
+        let (service, _temp) = setup_test_service();
 
         // 存储私域记忆
         service.set_private("private_key", b"private_value", MemoryCategory::Context).await.unwrap();
@@ -955,12 +998,11 @@ mod tests {
         assert!(matches!(item.domain, MemoryDomain::Public));
 
         service.close().await.unwrap();
-        cleanup_test_service();
     }
 
     #[tokio::test]
     async fn test_memory_service_delete() {
-        let service = setup_test_service();
+        let (service, _temp) = setup_test_service();
 
         service.set_private("to_delete", b"value", MemoryCategory::Context).await.unwrap();
         assert!(service.get("to_delete").await.unwrap().is_some());
@@ -970,20 +1012,18 @@ mod tests {
         assert!(service.get("to_delete").await.unwrap().is_none());
 
         service.close().await.unwrap();
-        cleanup_test_service();
     }
 
     #[tokio::test]
     async fn test_memory_service_with_encryption() {
-        let temp_dir = env::temp_dir().join("cis_test_memory_enc_v2");
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        std::fs::create_dir_all(&temp_dir).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
         
-        let db_path = temp_dir.join("memory.db");
+        let db_path = temp_dir.path().join("memory.db");
         let memory_db = MemoryDb::open(&db_path).unwrap();
         
-        let vector_path = temp_dir.join("vector.db");
-        let vector_storage = VectorStorage::open(&vector_path, None).unwrap();
+        let vector_path = temp_dir.path().join("vector.db");
+        let embedding = Arc::new(MockEmbeddingService);
+        let vector_storage = VectorStorage::open_with_service(&vector_path, embedding).unwrap();
         
         let encryption = MemoryEncryption::from_node_key(b"test-key");
         
@@ -1004,20 +1044,18 @@ mod tests {
         assert!(item.encrypted);
 
         service.close().await.unwrap();
-        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[tokio::test]
     async fn test_memory_service_namespace() {
-        let temp_dir = env::temp_dir().join("cis_test_memory_ns_v2");
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        std::fs::create_dir_all(&temp_dir).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
         
-        let db_path = temp_dir.join("memory.db");
+        let db_path = temp_dir.path().join("memory.db");
         let memory_db = MemoryDb::open(&db_path).unwrap();
         
-        let vector_path = temp_dir.join("vector.db");
-        let vector_storage = VectorStorage::open(&vector_path, None).unwrap();
+        let vector_path = temp_dir.path().join("vector.db");
+        let embedding = Arc::new(MockEmbeddingService);
+        let vector_storage = VectorStorage::open_with_service(&vector_path, embedding).unwrap();
         
         let memory_db_arc = Arc::new(tokio::sync::Mutex::new(memory_db));
         let vector_storage_arc = Arc::new(vector_storage);
@@ -1038,7 +1076,5 @@ mod tests {
 
         // Note: 实际上两个服务共享同一个底层数据库，
         // 所以 namespace 隔离只是在 key 上加前缀
-        
-        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

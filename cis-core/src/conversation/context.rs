@@ -70,13 +70,13 @@ pub enum MessageRole {
     Tool,
 }
 
-impl ToString for MessageRole {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for MessageRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MessageRole::User => "user".to_string(),
-            MessageRole::Assistant => "assistant".to_string(),
-            MessageRole::System => "system".to_string(),
-            MessageRole::Tool => "tool".to_string(),
+            MessageRole::User => write!(f, "user"),
+            MessageRole::Assistant => write!(f, "assistant"),
+            MessageRole::System => write!(f, "system"),
+            MessageRole::Tool => write!(f, "tool"),
         }
     }
 }
@@ -610,7 +610,8 @@ impl ConversationContext {
         if text.len() <= max_len {
             text.to_string()
         } else {
-            format!("{}...", &text[..max_len])
+            let boundary = text.floor_char_boundary(max_len);
+            format!("{}...", &text[..boundary])
         }
     }
 
@@ -632,7 +633,7 @@ impl ConversationContext {
 
     /// 添加用户消息（异步版本，便捷方法）
     pub async fn add_user_message_async(&mut self, content: impl Into<String>) -> Result<String> {
-        Ok(self.add_user_message_with_index(content).await?)
+        self.add_user_message_with_index(content).await
     }
 
     /// 添加助手消息（异步版本，便捷方法）
@@ -640,7 +641,7 @@ impl ConversationContext {
         &mut self,
         content: impl Into<String>,
     ) -> Result<String> {
-        Ok(self.add_assistant_message_with_index(content, None).await?)
+        self.add_assistant_message_with_index(content, None).await
     }
 }
 
@@ -953,10 +954,27 @@ mod tests {
 
     #[test]
     fn test_truncate_text() {
+        // 文本未超过最大长度，不截断
         assert_eq!(ConversationContext::truncate_text("短文本", 10), "短文本");
+        
+        // 文本超过最大长度，在字符边界处截断
+        // "这" 占 3 字节，"是" 占 3 字节（字节 3-6），
+        // floor_char_boundary(5) 返回 3，确保不截断在多字节字符中间
         assert_eq!(
             ConversationContext::truncate_text("这是一个很长的文本内容", 5),
-            "这是一个很..."
+            "这..."
+        );
+        
+        // 测试在英文字符边界截断
+        assert_eq!(
+            ConversationContext::truncate_text("Hello World", 5),
+            "Hello..."
+        );
+        
+        // 测试刚好在字符边界的情况（6 是 "是" 的结束位置）
+        assert_eq!(
+            ConversationContext::truncate_text("这是一个很长的文本内容", 6),
+            "这是..."
         );
     }
 }

@@ -63,7 +63,7 @@ impl DiscoveryService {
             
             // 创建服务信息
             let host_name = format!("{}.local", node_id);
-            let service_type = format!("{}", service_name);
+            let service_type = service_name.to_string();
             
             // 构建 TXT 记录
             let mut properties = std::collections::HashMap::new();
@@ -126,7 +126,7 @@ impl DiscoveryService {
                 }
             };
             
-            let service_type = format!("{}", SERVICE_NAME);
+            let service_type = SERVICE_NAME.to_string();
             let receiver = match mdns.browse(&service_type) {
                 Ok(r) => r,
                 Err(e) => {

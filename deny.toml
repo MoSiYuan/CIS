@@ -1,0 +1,76 @@
+# Cargo Deny 配置文件
+# 用于依赖安全策略管理
+
+[graph]
+# 允许所有目标平台
+targets = []
+
+[advisories]
+# 安全漏洞检查
+version = 2
+# 忽略特定警告（需记录原因）
+ignore = [
+    # RSA Marvin Attack - 上游无修复版本，且项目不使用 MySQL
+    # 跟踪: https://rustsec.org/advisories/RUSTSEC-2023-0071
+    "RUSTSEC-2023-0071",
+]
+
+[licenses]
+# 许可证合规检查
+version = 2
+# 允许的开源许可证
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "OpenSSL",
+    "MPL-2.0",
+    "CC0-1.0",
+    "Unlicense",
+]
+# 拒绝的许可证
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-3.0",
+]
+# 需要确认的许可证
+copyleft = "warn"
+unlicensed = "deny"
+default = "deny"
+
+[[licenses.exceptions]]
+# 特定 crate 的许可证例外
+name = "ring"
+version = "*"
+allow = ["OpenSSL"]
+reason = "Ring 使用 ISC + OpenSSL 双许可证"
+
+[bans]
+# 禁止使用的依赖
+# 危险/不安全的 crate
+multiple-versions = "warn"
+wildcards = "warn"
+highlight = "all"
+
+# 禁止使用的 crate（安全原因）
+deny = [
+    # 已知有安全问题的 crate
+    { name = "atty", version = "*", reason = "RUSTSEC-2024-0375: unmaintained, use std::io::IsTerminal instead" },
+]
+
+# 允许特定版本的例外
+skip = []
+
+[sources]
+# 允许的 crate 源
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[sources.allow-org]
+# 允许 GitHub 组织
+# github = ["rust-lang"]

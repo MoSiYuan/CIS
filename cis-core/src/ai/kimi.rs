@@ -98,8 +98,8 @@ impl AiProvider for KimiCodeProvider {
             let after = &trimmed[start + 3..];
             if let Some(end) = after.find("```") {
                 let content = after[..end].trim();
-                if content.starts_with("json") {
-                    content[4..].trim()
+                if let Some(stripped) = content.strip_prefix("json") {
+                    stripped.trim()
                 } else {
                     content
                 }

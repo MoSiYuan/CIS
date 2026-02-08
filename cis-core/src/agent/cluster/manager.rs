@@ -530,11 +530,8 @@ impl AttachHandle {
     async fn new(session_id: SessionId, session: Arc<RwLock<AgentSession>>) -> Result<Self> {
         // Verify session is ready for attach
         let s = session.read().await;
-        match s.get_state().await {
-            SessionState::Spawning => {
-                return Err(CisError::execution("Session still spawning"));
-            }
-            _ => {}
+        if s.get_state().await == SessionState::Spawning {
+            return Err(CisError::execution("Session still spawning"));
         }
         drop(s);
 

@@ -72,6 +72,7 @@ pub struct GlmApiState {
 pub struct MatrixHttpClient {
     server_url: String,
     access_token: String,
+    #[allow(dead_code)]
     user_id: String,
 }
 
@@ -131,13 +132,19 @@ pub struct TargetNodeClient {
     timeout_secs: u64,
 }
 
-impl TargetNodeClient {
-    /// 创建新的目标节点客户端
-    pub fn new() -> Self {
+impl Default for TargetNodeClient {
+    fn default() -> Self {
         Self {
             node_endpoints: HashMap::new(),
             timeout_secs: 30,
         }
+    }
+}
+
+impl TargetNodeClient {
+    /// 创建新的目标节点客户端
+    pub fn new() -> Self {
+        Self::default()
     }
     
     /// 注册节点地址

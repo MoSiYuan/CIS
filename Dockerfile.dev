@@ -1,0 +1,48 @@
+# CIS 开发环境 Dockerfile
+# 用于本地开发和测试
+
+FROM rust:1.75-slim-bookworm
+
+WORKDIR /app
+
+# 安装开发依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    libsqlite3-dev \
+    git \
+    ca-certificates \
+    curl \
+    vim \
+    htop \
+    # 网络工具
+    net-tools \
+    iputils-ping \
+    dnsutils \
+    # 调试工具
+    gdb \
+    lldb \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# 安装 cargo 工具
+RUN cargo install cargo-watch cargo-expand cargo-edit
+
+# 创建非 root 用户（开发环境使用当前用户的 UID/GID）
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+
+RUN groupadd -g ${GROUP_ID} devuser && \
+    useradd -u ${USER_ID} -g devuser -m devuser && \
+    mkdir -p /app/.cis && \
+    chown -R devuser:devuser /app
+
+USER devuser
+
+# 设置环境变量
+ENV RUST_LOG=debug
+ENV RUST_BACKTRACE=1
+ENV USER=devuser
+
+# 默认命令（可被 docker-compose 覆盖）
+CMD ["cargo", "watch", "-x", "run --bin cis-node -- daemon"]

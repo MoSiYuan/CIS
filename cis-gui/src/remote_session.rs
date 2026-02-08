@@ -250,24 +250,18 @@ impl RemoteSession {
                             Ok(Message::Binary(data)) => {
                                 // Parse PTY data frame
                                 if let Ok(frame) = PtyDataFrame::from_bytes(&data) {
-                                    if frame.session_id == session_id {
-                                        if output_tx.send(frame.data).await.is_err() {
-                                            warn!("Output channel closed for session {}", session_id);
-                                            break;
-                                        }
+                                    if frame.session_id == session_id
+                                        && output_tx.send(frame.data).await.is_err() {
+                                        warn!("Output channel closed for session {}", session_id);
+                                        break;
                                     }
                                 }
                             }
                             Ok(Message::Text(text)) => {
                                 debug!("Received text message: {}", text);
                                 // Handle control messages
-                                if let Ok(control) = serde_json::from_str::<SessionControlMessage>(&text) {
-                                    match control {
-                                        SessionControlMessage::Error { message } => {
-                                            error!("Session error from remote: {}", message);
-                                        }
-                                        _ => {}
-                                    }
+                                if let Ok(SessionControlMessage::Error { message }) = serde_json::from_str::<SessionControlMessage>(&text) {
+                                    error!("Session error from remote: {}", message);
                                 }
                             }
                             Ok(Message::Close(_)) => {
@@ -320,7 +314,7 @@ impl RemoteSession {
         info!("Starting {} agent on remote", agent_type);
         
         let session_id = self.session_id
-            .ok_or_else(|| SessionError::NotConnected)?;
+            .ok_or(SessionError::NotConnected)?;
         
         // Send agent start command
         let start_cmd = AgentCommand::Start {
@@ -331,7 +325,7 @@ impl RemoteSession {
         };
         
         let cmd_json = serde_json::to_string(&start_cmd)
-            .map_err(|e| SessionError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
         
         if let Some(ref sender) = self.ws_sender {
             sender
@@ -353,7 +347,7 @@ impl RemoteSession {
         }
         
         let session_id = self.session_id
-            .ok_or_else(|| SessionError::NotRunning)?;
+            .ok_or(SessionError::NotRunning)?;
         
         if let Some(ref sender) = self.ws_sender {
             // Wrap in PTY data frame: [session_id: 16 bytes][data]
@@ -435,7 +429,7 @@ impl RemoteSession {
         }
         
         let session_id = self.session_id
-            .ok_or_else(|| SessionError::NotRunning)?;
+            .ok_or(SessionError::NotRunning)?;
         
         let resize_cmd = AgentCommand::Resize {
             session_id: session_id.to_string(),
@@ -444,7 +438,7 @@ impl RemoteSession {
         };
         
         let cmd_json = serde_json::to_string(&resize_cmd)
-            .map_err(|e| SessionError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
         
         if let Some(ref sender) = self.ws_sender {
             sender

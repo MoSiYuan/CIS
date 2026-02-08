@@ -12,6 +12,8 @@ use tempfile::TempDir;
 
 use cis_core::skill::router::SkillVectorRouter;
 use cis_core::skill::semantics::{SkillIoSignature, SkillScope, SkillSemanticsExt};
+use cis_core::skill::SkillManager;
+use cis_core::storage::db::DbManager;
 use cis_core::vector::storage::{SkillSemantics as StorageSkillSemantics, VectorStorage};
 
 use async_trait::async_trait;
@@ -96,7 +98,7 @@ async fn test_skill_natural_language_routing() {
         skill_name: "Data Analyzer".to_string(),
         intent_description: "分析今天的销售数据".to_string(),
         capability_description: "分析今天的销售数据".to_string(),
-        project: None,
+        project: Some("default".to_string()),
     };
     storage.register_skill(&skill_semantics).await.unwrap();
     
@@ -119,7 +121,9 @@ async fn test_skill_chain_discovery() {
     );
     let embedding = Arc::new(MockEmbeddingService);
     
-    let mut router = SkillVectorRouter::new(storage.clone(), embedding.clone());
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let mut router = SkillVectorRouter::new(storage.clone(), embedding.clone(), skill_manager, db_manager);
     
     // 注册 data-analyzer (输出 analysis 类型)
     let analyzer = create_test_skill(
@@ -183,21 +187,21 @@ async fn test_multiple_skill_routing() {
             skill_name: "File Searcher".to_string(),
             intent_description: "查找所有配置文件".to_string(),
             capability_description: "查找所有配置文件".to_string(),
-            project: None,
+            project: Some("default".to_string()),
         },
         StorageSkillSemantics {
             skill_id: "code-analyzer".to_string(),
             skill_name: "Code Analyzer".to_string(),
             intent_description: "分析这段代码".to_string(),
             capability_description: "分析这段代码".to_string(),
-            project: None,
+            project: Some("default".to_string()),
         },
         StorageSkillSemantics {
             skill_id: "doc-generator".to_string(),
             skill_name: "Documentation Generator".to_string(),
             intent_description: "生成项目文档".to_string(),
             capability_description: "生成项目文档".to_string(),
-            project: None,
+            project: Some("default".to_string()),
         },
     ];
     
@@ -238,7 +242,9 @@ async fn test_skill_compatibility_score() {
     );
     let embedding = Arc::new(MockEmbeddingService);
     
-    let mut router = SkillVectorRouter::new(storage.clone(), embedding.clone());
+    let db_manager = Arc::new(DbManager::new().unwrap());
+    let skill_manager = Arc::new(SkillManager::new(db_manager.clone()).unwrap());
+    let mut router = SkillVectorRouter::new(storage.clone(), embedding.clone(), skill_manager, db_manager);
     
     // 注册具有兼容 IO 签名的技能
     let source_skill = create_test_skill(
@@ -310,7 +316,7 @@ async fn test_skill_routing_confidence_threshold() {
         skill_name: "Kubernetes Deployer".to_string(),
         intent_description: "部署到K8s集群".to_string(),
         capability_description: "部署到K8s集群".to_string(),
-        project: None,
+        project: Some("default".to_string()),
     };
     storage.register_skill(&specialized_skill).await.unwrap();
     

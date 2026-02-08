@@ -252,7 +252,7 @@ pub async fn search_memory(query: &str, limit: Option<usize>) -> Result<()> {
     }
     
     println!("Found {} memory entries matching '{}':", results.len(), query);
-    println!("{:<30} {:<10} {:<12} {}", "Key", "Domain", "Category", "Updated");
+    println!("{:<30} {:<10} {:<12} Updated", "Key", "Domain", "Category");
     println!("{}", "-".repeat(90));
     
     for entry in results {

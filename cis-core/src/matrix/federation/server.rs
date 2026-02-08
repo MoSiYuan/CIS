@@ -74,7 +74,7 @@ pub struct FederationServer {
 
 /// Shared state for Axum handlers
 #[derive(Clone)]
-struct FederationState {
+pub(crate) struct FederationState {
     /// Server configuration
     config: FederationConfig,
     
@@ -85,6 +85,7 @@ struct FederationState {
     store: Arc<MatrixStore>,
     
     /// Known peers
+    #[allow(dead_code)]
     peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
 }
 
@@ -189,8 +190,9 @@ impl FederationServer {
         };
         
         // Configure CORS
+        // Security: In production, restrict to specific trusted origins
         let cors = CorsLayer::new()
-            .allow_origin(Any)
+            .allow_origin(Any)  // TODO: Configure specific origins for production
             .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
             .allow_headers(Any);
         
@@ -476,7 +478,7 @@ async fn verify_event_signature(
     };
     
     // 解析发送者 DID 获取公钥
-    let sender_did = format!("did:cis:{}", event.sender.replace(':', ":"));
+    let sender_did = format!("did:cis:{}", event.sender);
     let verifying_key = match resolve_did_to_key(&sender_did).await {
         Ok(key) => key,
         Err(e) => {
@@ -619,7 +621,8 @@ async fn save_event_to_store(
 ///
 /// Deletes federation events older than the specified retention period.
 /// Default retention is 30 days.
-pub async fn cleanup_expired_events(state: &FederationState, retention_days: Option<i64>) -> Result<usize, MatrixError> {
+#[allow(dead_code)]
+pub(crate) async fn cleanup_expired_events(state: &FederationState, retention_days: Option<i64>) -> Result<usize, MatrixError> {
     let days = retention_days.unwrap_or(30);
     
     if days <= 0 {
@@ -642,7 +645,8 @@ pub async fn cleanup_expired_events(state: &FederationState, retention_days: Opt
 /// Start periodic cleanup task for federation events
 ///
 /// This spawns a background task that periodically cleans up expired events.
-pub fn start_cleanup_task(state: FederationState, interval_hours: u64, retention_days: Option<i64>) {
+#[allow(dead_code)]
+pub(crate) fn start_cleanup_task(state: FederationState, interval_hours: u64, retention_days: Option<i64>) {
     let interval = std::time::Duration::from_secs(interval_hours * 3600);
     
     tokio::spawn(async move {

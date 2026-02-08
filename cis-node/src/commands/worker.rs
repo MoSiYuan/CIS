@@ -545,7 +545,7 @@ pub async fn handle(cmd: WorkerCommands) -> Result<()> {
             matrix_token,
             detach,
         } => {
-            let worker_id = worker_id.unwrap_or_else(|| generate_worker_id());
+            let worker_id = worker_id.unwrap_or_else(generate_worker_id);
             let args = WorkerArgs {
                 worker_id,
                 room,
@@ -1465,7 +1465,7 @@ async fn remove_workers(worker_ids: &[String], force: bool) -> Result<()> {
         
         // Stop if running and force
         if matches!(info.status, WorkerStatus::Running) && force {
-            stop_workers(&[info.worker_id.clone()], true, 0).await?;
+            stop_workers(std::slice::from_ref(&info.worker_id), true, 0).await?;
         }
         
         // Remove from registry
@@ -1666,8 +1666,8 @@ async fn show_worker_top(sort: &str, limit: usize) -> Result<()> {
     
     println!("Top {} workers (sorted by {}):", limit, sort);
     println!();
-    println!("{:<4} {:<20} {:<10} {:<12} {:<15} {}",
-        "RANK", "WORKER ID", "STATUS", "TASKS", "UPTIME", "SCOPE");
+    println!("{:<4} {:<20} {:<10} {:<12} {:<15} SCOPE",
+        "RANK", "WORKER ID", "STATUS", "TASKS", "UPTIME");
     println!("{}", "-".repeat(90));
     
     for (i, info) in workers.iter().enumerate() {
@@ -1733,7 +1733,7 @@ async fn restart_worker(worker_id: &str, timeout: u64) -> Result<()> {
     
     // Stop if running
     if matches!(info.status, WorkerStatus::Running) {
-        stop_workers(&[info.worker_id.clone()], false, timeout).await?;
+        stop_workers(std::slice::from_ref(&info.worker_id), false, timeout).await?;
     }
     
     // Remove old entry

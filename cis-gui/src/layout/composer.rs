@@ -105,7 +105,7 @@ impl Composer {
                 ui.vertical(|ui| {
                     // Attachment chips
                     if !self.attachments.is_empty() {
-                        let attachments: Vec<_> = self.attachments.iter().cloned().collect();
+                        let attachments: Vec<_> = self.attachments.to_vec();
                         ui.horizontal_wrapped(|ui| {
                             for (i, attachment) in attachments.iter().enumerate() {
                                 render_attachment_chip(ui, i, attachment);
@@ -189,10 +189,9 @@ impl Composer {
                         // Enter to send, Shift+Enter for new line
                         if text_response.lost_focus() 
                             && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                            && !ui.input(|i| i.modifiers.shift) {
-                            if !self.text.is_empty() {
-                                response.send_clicked = true;
-                            }
+                            && !ui.input(|i| i.modifiers.shift)
+                            && !self.text.is_empty() {
+                            response.send_clicked = true;
                         }
                     });
                     
@@ -216,13 +215,12 @@ impl Composer {
                                     ];
                                     
                                     for (mention, description) in agents {
-                                        if query.is_empty() || mention.contains(&query) {
-                                            if ui.button(
+                                        if (query.is_empty() || mention.contains(&query))
+                                            && ui.button(
                                                 RichText::new(format!("{} - {}", mention, description))
                                                     .small()
                                             ).clicked() {
-                                                mention_selected = Some(mention.to_string());
-                                            }
+                                            mention_selected = Some(mention.to_string());
                                         }
                                     }
                                 });

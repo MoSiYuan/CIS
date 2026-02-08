@@ -16,21 +16,16 @@ use crate::error::Result;
 use crate::vector::storage::{SkillMatch, SkillSemantics as StorageSkillSemantics, VectorStorage};
 
 /// 技能作用域
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillScope {
     /// 全局技能
     Global,
     /// 项目级别技能
+    #[default]
     Project,
     /// 会话级别技能
     Session,
-}
-
-impl Default for SkillScope {
-    fn default() -> Self {
-        Self::Project
-    }
 }
 
 /// 技能IO签名

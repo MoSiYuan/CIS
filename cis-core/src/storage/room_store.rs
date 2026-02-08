@@ -238,7 +238,7 @@ impl RoomStore {
         let event_tx = self.event_tx.clone();
 
         // Clone for broadcasting after move
-        let events_for_broadcast: Vec<_> = events.iter().cloned().collect();
+        let events_for_broadcast: Vec<_> = events.to_vec();
         
         let count = tokio::task::spawn_blocking(move || {
             let conn = db.blocking_lock();
@@ -582,8 +582,8 @@ impl RoomStore {
 
         tokio::task::spawn_blocking(move || {
             let conn = db.blocking_lock();
-            // Checkpoint before close
-            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)", [])?;
+            // Checkpoint before close - use query_row since PRAGMA returns results
+            conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
             Ok::<(), CisError>(())
         })
         .await

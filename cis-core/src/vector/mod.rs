@@ -10,25 +10,24 @@
 //!
 //! ## 使用示例
 //!
-//! ```rust
+//! ```rust,no_run
 //! use cis_core::vector::VectorStorage;
 //!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     // 打开向量存储
-//!     let storage = VectorStorage::open_default()?;
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // 打开向量存储
+//! let storage = VectorStorage::open_default()?;
 //!
-//!     // 索引记忆
-//!     storage.index_memory("pref/dark_mode", b"Enable dark mode").await?;
+//! // 索引记忆
+//! storage.index_memory("pref/dark_mode", b"Enable dark mode", None).await?;
 //!
-//!     // 语义搜索
-//!     let results = storage.search_memory("night theme", 5).await?;
-//!     for result in results {
-//!         println!("Found: {} (similarity: {})", result.key, result.similarity);
-//!     }
-//!
-//!     Ok(())
+//! // 语义搜索
+//! let results = storage.search_memory("night theme", 5, None).await?;
+//! for result in results {
+//!     println!("Found: {} (similarity: {})", result.key, result.similarity);
 //! }
+//!
+//! # Ok(())
+//! # }
 //! ```
 
 pub mod storage;

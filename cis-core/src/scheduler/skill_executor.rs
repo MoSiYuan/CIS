@@ -12,6 +12,7 @@ use std::sync::Arc;
 use serde_json::Value;
 use tracing::{info, warn};
 
+use crate::decision::{DecisionEngine, DecisionResult};
 use crate::error::{CisError, Result};
 use crate::scheduler::{DagScheduler, PermissionResult};
 use crate::skill::manifest::DagDefinition;
@@ -20,6 +21,7 @@ use crate::skill::SkillManager;
 use crate::types::{Action, FailureType, SkillExecutionResult, Task, TaskLevel};
 
 /// Skill DAG 执行器
+#[allow(dead_code)]
 pub struct SkillDagExecutor {
     /// DAG 调度器
     scheduler: DagScheduler,
@@ -27,8 +29,12 @@ pub struct SkillDagExecutor {
     skill_manager: Arc<SkillManager>,
     /// 执行上下文（用于存储中间结果）
     context: HashMap<String, Value>,
+    /// 决策引擎（四级决策机制）
+    decision_engine: DecisionEngine,
 }
 
+#[allow(dead_code)]
+#[allow(clippy::await_holding_lock)]
 impl SkillDagExecutor {
     /// 创建新的执行器
     pub fn new(scheduler: DagScheduler, skill_manager: Arc<SkillManager>) -> Self {
@@ -36,6 +42,21 @@ impl SkillDagExecutor {
             scheduler,
             skill_manager,
             context: HashMap::new(),
+            decision_engine: DecisionEngine::new(),
+        }
+    }
+
+    /// 使用自定义决策引擎创建执行器
+    pub fn with_decision_engine(
+        scheduler: DagScheduler,
+        skill_manager: Arc<SkillManager>,
+        decision_engine: DecisionEngine,
+    ) -> Self {
+        Self {
+            scheduler,
+            skill_manager,
+            context: HashMap::new(),
+            decision_engine,
         }
     }
 
@@ -191,25 +212,29 @@ impl SkillDagExecutor {
             for task_id in ready_tasks {
                 let task = self.scheduler.get_task(&run_id, &task_id)?;
 
-                // 四级决策检查
-                match self.check_permission(&task).await? {
-                    PermissionResult::AutoApprove => {
+                // 四级决策检查 - 使用决策引擎
+                match self.decision_engine.process_decision(&task, &run_id).await {
+                    DecisionResult::Allow => {
                         // 直接执行
                     }
-                    PermissionResult::Countdown {
-                        seconds,
-                        default_action,
-                    } => {
-                        // 倒计时后执行
-                        self.wait_countdown(seconds, default_action).await?;
+                    DecisionResult::Skip => {
+                        // 跳过任务
+                        warn!("Task '{}' skipped by decision engine", task_id);
+                        self.scheduler.mark_skipped(&run_id, &task_id)
+                            .map_err(|e| CisError::scheduler(format!("Failed to mark skipped: {}", e)))?;
+                        continue;
                     }
-                    PermissionResult::NeedsConfirmation => {
-                        // 等待确认
-                        self.wait_confirmation(&task).await?;
+                    DecisionResult::Abort => {
+                        // 中止执行
+                        warn!("Task '{}' aborted by decision engine", task_id);
+                        return Err(CisError::execution(format!(
+                            "Task '{}' aborted by decision engine", task_id
+                        )));
                     }
-                    PermissionResult::NeedsArbitration { stakeholders: _ } => {
-                        // 暂停等待仲裁 - 简化处理，直接继续
-                        println!("⚠️ Arbitration required but not implemented, continuing...");
+                    DecisionResult::Pending(request_id) => {
+                        // 等待异步决策结果
+                        info!("Task '{}' waiting for decision: {}", task_id, request_id);
+                        // 实际实现中应该在这里等待异步结果
                     }
                 }
 

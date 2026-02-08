@@ -33,8 +33,10 @@ pub struct ContextEntry {
 
 /// Output format type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum OutputFormat {
     /// Plain text
+    #[default]
     Text,
     /// JSON
     Json,
@@ -55,11 +57,6 @@ impl std::fmt::Display for OutputFormat {
     }
 }
 
-impl Default for OutputFormat {
-    fn default() -> Self {
-        OutputFormat::Text
-    }
-}
 
 /// ContextStore manages task outputs and provides upstream context injection
 #[derive(Debug, Clone)]
@@ -262,7 +259,7 @@ impl ContextStore {
             
             let output: Result<String> = stmt.query_row(
                 params![run_id, task_id],
-                |row| Ok(row.get(0)?),
+                |row| row.get(0),
             ).map_err(|_| CisError::not_found(format!("Output for {}:{} not found", run_id, task_id)));
             
             Ok(output)

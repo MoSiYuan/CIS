@@ -84,6 +84,7 @@ fn display_result(result: &WizardResult) {
 
 /// Initialize command options
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct InitOptions {
     /// Initialize project instead of global
     pub project_mode: bool,
@@ -99,18 +100,6 @@ pub struct InitOptions {
     pub non_interactive: bool,
 }
 
-impl Default for InitOptions {
-    fn default() -> Self {
-        Self {
-            project_mode: false,
-            project_dir: None,
-            skip_checks: false,
-            force: false,
-            preferred_provider: None,
-            non_interactive: false,
-        }
-    }
-}
 
 /// Quick initialization with default settings (non-interactive)
 pub async fn quick_init(project_mode: bool) -> Result<()> {

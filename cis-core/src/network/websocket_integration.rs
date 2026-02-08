@@ -108,6 +108,12 @@ pub struct AuthenticatedConnection {
     pub authenticated_at: Option<i64>,
 }
 
+impl Default for AuthenticatedConnection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AuthenticatedConnection {
     pub fn new() -> Self {
         Self {
@@ -137,6 +143,7 @@ pub struct WebSocketAuthenticator {
     connections: Arc<RwLock<HashMap<String, AuthenticatedConnection>>>,
     
     /// Challenge timeout
+    #[allow(dead_code)]
     challenge_timeout: Duration,
 }
 

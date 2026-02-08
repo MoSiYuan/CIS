@@ -1,0 +1,39 @@
+[package]
+name = "cis-core-fuzz"
+
+[workspace]
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.cis-core]
+path = ".."
+default-features = false
+features = ["encryption"]
+
+[[bin]]
+name = "dag_parser"
+path = "fuzz_targets/dag_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "message_parser"
+path = "fuzz_targets/message_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "did_parser"
+path = "fuzz_targets/did_parser.rs"
+test = false
+doc = false
+bench = false

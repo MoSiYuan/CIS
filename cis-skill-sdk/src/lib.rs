@@ -4,7 +4,7 @@
 //!
 //! ## 快速开始
 //!
-//! ```rust
+//! ```ignore
 //! use cis_skill_sdk::{Skill, SkillContext, Event, Result};
 //!
 //! pub struct HelloSkill;
@@ -39,7 +39,22 @@
 //! - **Native** (默认): 本地编译，完整功能
 //! - **WASM**: `no_std` 兼容，沙箱安全
 
-#![cfg_attr(feature = "wasm", no_std)]
+#![cfg_attr(all(feature = "wasm", not(feature = "native")), no_std)]
+
+// WASM 模式下使用 alloc crate
+#[cfg(feature = "wasm")]
+extern crate alloc;
+
+// 导出常用类型
+#[cfg(feature = "wasm")]
+pub mod prelude {
+    pub use alloc::string::String;
+    pub use alloc::vec::Vec;
+    pub use alloc::boxed::Box;
+    pub use alloc::format;
+    pub use alloc::vec;
+    pub use hashbrown::HashMap;
+}
 
 pub mod ai;
 pub mod error;

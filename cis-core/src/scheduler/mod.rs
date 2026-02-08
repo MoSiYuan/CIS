@@ -427,6 +427,36 @@ impl TaskDag {
         Ok(skipped_tasks)
     }
 
+    /// Mark task as skipped
+    ///
+    /// # Arguments
+    /// * `task_id` - Task ID
+    ///
+    /// # Returns
+    /// - `Ok(skipped_tasks)` - Successfully marked, returns list of skipped tasks (including downstream)
+    /// - `Err(DagError)` - Task doesn't exist
+    pub fn mark_skipped(&mut self, task_id: String) -> Result<Vec<String>, DagError> {
+        let node = self
+            .nodes
+            .get_mut(&task_id)
+            .ok_or_else(|| DagError::NodeNotFound(task_id.clone()))?;
+
+        // 只有当任务处于 Pending 或 Ready 状态时才标记为跳过
+        if node.status == DagNodeStatus::Pending || node.status == DagNodeStatus::Ready {
+            node.status = DagNodeStatus::Skipped;
+        }
+
+        // 递归标记所有依赖此任务的下游任务为跳过
+        let mut skipped_tasks = vec![task_id];
+        let dependents: Vec<String> = node.dependents.clone();
+        
+        for dependent_id in dependents {
+            self.mark_dependents_skipped(&dependent_id, &mut skipped_tasks);
+        }
+
+        Ok(skipped_tasks)
+    }
+
     /// Mark task as completed with ignorable debt (continue downstream)
     pub fn mark_task_ignorable(&mut self, task_id: &str) -> std::result::Result<Vec<String>, DagError> {
         // Mark as Debt status
@@ -2352,6 +2382,28 @@ impl DagScheduler {
 
     pub fn get_run_mut(&mut self, run_id: &str) -> Option<&mut DagRun> {
         self.runs.get_mut(run_id)
+    }
+
+    /// 标记任务为跳过状态
+    pub fn mark_skipped(
+        &mut self,
+        run_id: &str,
+        task_id: &str,
+    ) -> std::result::Result<Vec<String>, DagError> {
+        let run = self.runs.get_mut(run_id)
+            .ok_or_else(|| DagError::NodeNotFound(run_id.to_string()))?;
+        
+        // 将任务标记为跳过，并获取被跳过的下游任务
+        let skipped_tasks = run.dag.mark_skipped(task_id.to_string())?;
+        
+        run.update_status();
+        run.updated_at = chrono::Utc::now();
+        
+        // 持久化
+        let run_clone = run.clone();
+        let _ = self.persist_run(&run_clone);
+        
+        Ok(skipped_tasks)
     }
 
     pub fn mark_failed_with_type(

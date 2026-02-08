@@ -10,7 +10,7 @@ use syn::{parse_macro_input, ItemImpl};
 ///
 /// # 示例
 ///
-/// ```rust
+/// ```ignore
 /// use cis_skill_sdk::{Skill, SkillContext, Event, Result};
 ///
 /// pub struct MySkill;

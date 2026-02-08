@@ -251,6 +251,12 @@ impl ImDatabase {
             ],
         ).map_err(|e| ImError::Database(e.to_string()))?;
         
+        // 先删除该会话的所有旧参与者记录（确保参与者列表与 session.participants 一致）
+        conn.execute(
+            "DELETE FROM participants WHERE session_id = ?1",
+            rusqlite::params![session.id],
+        ).map_err(|e| ImError::Database(e.to_string()))?;
+        
         // 插入参与者
         for user_id in &session.participants {
             conn.execute(

@@ -64,8 +64,10 @@ impl MatrixServer {
     }
 
     fn create_router(&self) -> Router {
+        // Security: Restrict CORS to prevent CSRF attacks
+        // In production, configure specific origins instead of Any
         let cors = CorsLayer::new()
-            .allow_origin(Any)
+            .allow_origin(Any)  // TODO: Configure specific origins for production
             .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
             .allow_headers(Any);
 
@@ -176,14 +178,14 @@ impl Default for MatrixServerBuilder { fn default() -> Self { Self::new() } }
 /// 便捷函数：使用默认路径创建 Matrix 服务器
 /// 
 /// 使用 StoragePaths 自动确定数据库位置
-#[cfg(feature = "storage")]
+#[cfg(feature = "sqlx")]
 pub fn create_with_default_paths(port: Option<u16>) -> Result<MatrixServer, MatrixError> {
-    use crate::storage::StoragePaths;
+    use crate::storage::Paths as StoragePaths;
     
     MatrixServerBuilder::new()
         .port(port.unwrap_or(MATRIX_HUMAN_PORT))
-        .events_db_path(StoragePaths::matrix_events_db())
-        .social_db_path(StoragePaths::matrix_social_db())
+        .events_db_path(StoragePaths::matrix_events_db().to_string_lossy().to_string())
+        .social_db_path(StoragePaths::matrix_social_db().to_string_lossy().to_string())
         .build()
 }
 

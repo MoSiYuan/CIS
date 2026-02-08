@@ -184,6 +184,7 @@ impl EventBroadcaster {
     }
 
     /// Send event (broadcast to all subscribers)
+    #[allow(clippy::result_large_err)]
     pub fn send(&self, event: SessionEvent) -> Result<usize, broadcast::error::SendError<SessionEvent>> {
         self.sender.send(event)
     }

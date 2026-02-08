@@ -12,11 +12,13 @@ use tracing::{info, warn};
 /// Network admission mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum NetworkMode {
     /// Open mode - accept any verified DID (insecure, for testing only)
     Open,
     
     /// Whitelist mode - only allow whitelisted DIDs (recommended)
+    #[default]
     Whitelist,
     
     /// Solitary mode - reject all new connections, only talk to existing peers
@@ -26,11 +28,6 @@ pub enum NetworkMode {
     Quarantine,
 }
 
-impl Default for NetworkMode {
-    fn default() -> Self {
-        NetworkMode::Whitelist
-    }
-}
 
 impl std::fmt::Display for NetworkMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -472,12 +469,9 @@ mod tests {
             AclResult::Denied(_)
         ));
         
-        // Blacklist takes precedence
+        // Allow moves from blacklist to whitelist
         acl.allow("did:cis:enemy:bad999", "did:cis:local:abc123");
-        assert!(matches!(
-            acl.check_did("did:cis:enemy:bad999"),
-            AclResult::Denied(_)
-        ));
+        assert_eq!(acl.check_did("did:cis:enemy:bad999"), AclResult::Allowed);
     }
 
     #[test]

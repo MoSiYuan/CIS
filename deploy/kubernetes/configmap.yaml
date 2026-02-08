@@ -1,0 +1,235 @@
+# CIS v1.1.0 Kubernetes ConfigMap
+# 包含协调器和 Worker 节点的配置
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cis-coordinator-config
+  namespace: default
+  labels:
+    app: cis
+    component: coordinator
+    version: "1.1.0"
+data:
+  config.toml: |
+    # CIS Coordinator 节点配置 (v1.1.0)
+    # 部署在 Kubernetes 中的协调器配置
+
+    [node]
+    # 节点唯一标识（首次启动自动生成）
+    id = ""
+    
+    # 节点名称
+    name = "cis-coordinator"
+    
+    # 节点角色: coordinator | worker
+    role = "coordinator"
+    
+    # ==================== P2P 网络配置 ====================
+    [p2p]
+    # 启用 P2P 网络
+    enabled = true
+    
+    # 监听地址（Kubernetes 中监听所有接口）
+    listen_address = "0.0.0.0:7677"
+    
+    # 外部地址（通过 Service 暴露）
+    external_address = ""
+    
+    # mDNS 发现（K8s 中建议关闭，使用静态配置）
+    mdns_enabled = false
+    
+    # Bootstrap 节点（协调器为空）
+    bootstrap_nodes = []
+    
+    # 同步间隔（秒）
+    sync_interval_sec = 60
+    
+    # ==================== 联邦网络配置 ====================
+    [federation]
+    # 启用联邦网络
+    enabled = true
+    
+    # 监听地址
+    listen_address = "0.0.0.0:7676"
+    
+    # 外部可访问地址（通过 Ingress 配置）
+    external_address = ""
+    
+    # 联邦 ID
+    federation_id = "k8s-production-cluster"
+    
+    # 信任节点列表（DID 列表）
+    trusted_nodes = []
+    
+    # ==================== Matrix 配置 ====================
+    [matrix]
+    # Matrix 联邦端口
+    listen_address = "0.0.0.0:6767"
+    
+    # 服务器名称
+    server_name = "cis-coordinator"
+    
+    # ==================== 存储配置 ====================
+    [storage]
+    # 数据目录（使用 PVC 挂载）
+    data_dir = "/var/lib/cis/data"
+    
+    # 日志目录
+    log_dir = "/var/log/cis"
+    
+    # 自动备份数量
+    max_backups = 10
+    
+    # 备份间隔（天）
+    backup_interval_days = 7
+    
+    # ==================== 日志配置 ====================
+    [log]
+    # 日志级别: trace | debug | info | warn | error
+    level = "info"
+    
+    # 是否输出到文件
+    file_output = true
+    
+    # 日志文件轮转
+    file_rotation = "daily"
+    
+    # ==================== 安全配置 ====================
+    [security]
+    # 启用 TLS
+    enable_tls = true
+    
+    # 证书路径（留空则自动生成）
+    # cert_file = "/etc/cis/certs/server.crt"
+    # key_file = "/etc/cis/certs/server.key"
+    
+    # 自动证书生成
+    auto_generate_certs = true
+    
+    # DID 白名单（空表示允许所有）
+    did_whitelist = []
+    
+    # 网络模式: whitelist | solitary | open | quarantine
+    network_mode = "whitelist"
+    
+    # ==================== 监控配置 ====================
+    [telemetry]
+    # 启用遥测
+    enabled = true
+    
+    # 日志保留天数
+    log_retention_days = 30
+    
+    # 性能指标收集
+    enable_metrics = true
+    
+    # ==================== v1.1.0 新增：资源限制 ====================
+    [resource]
+    # 最大内存使用（MB）
+    max_memory_mb = 4096
+    
+    # 最大并发连接数
+    max_connections = 1000
+    
+    # 请求超时（秒）
+    request_timeout_sec = 30
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cis-worker-config
+  namespace: default
+  labels:
+    app: cis
+    component: worker
+    version: "1.1.0"
+data:
+  config.toml: |
+    # CIS Worker 节点配置 (v1.1.0)
+    # 部署在 Kubernetes 中的 Worker 配置
+
+    [node]
+    # 节点唯一标识（自动生成）
+    id = ""
+    
+    # 节点名称（Pod 名称）
+    name = ""
+    
+    # 节点角色
+    role = "worker"
+    
+    # Worker 类型: cuda | metal | cpu
+    worker_type = "cpu"
+    
+    # ==================== P2P 网络配置 ====================
+    [p2p]
+    enabled = true
+    
+    # 监听地址
+    listen_address = "0.0.0.0:7677"
+    
+    # 外部地址（通过 Headless Service）
+    external_address = ""
+    
+    # mDNS 发现（K8s 中关闭）
+    mdns_enabled = false
+    
+    # Bootstrap 节点（填写协调器地址，由环境变量注入）
+    bootstrap_nodes = []
+    
+    # 同步间隔
+    sync_interval_sec = 60
+    
+    # ==================== Worker 配置 ====================
+    [worker]
+    # 最大并发任务数
+    max_concurrent_tasks = 4
+    
+    # 任务超时（秒）
+    task_timeout_sec = 3600
+    
+    # 心跳间隔（秒）
+    heartbeat_interval_sec = 30
+    
+    # 自动重连间隔（秒）
+    reconnect_interval_sec = 10
+    
+    # ==================== CUDA 配置（如适用）====================
+    [cuda]
+    # 启用 CUDA（需要 GPU 节点）
+    enabled = false
+    
+    # CUDA 设备 ID
+    device_id = 0
+    
+    # 显存限制（MB）
+    memory_limit_mb = 4096
+    
+    # ==================== Metal 配置（如适用）====================
+    [metal]
+    # 启用 Metal（macOS）
+    enabled = false
+    
+    # 设备 ID
+    device_id = 0
+    
+    # ==================== 存储配置 ====================
+    [storage]
+    data_dir = "/var/lib/cis/data"
+    log_dir = "/var/log/cis"
+    max_backups = 5
+    backup_interval_days = 7
+    
+    # ==================== 日志配置 ====================
+    [log]
+    level = "info"
+    file_output = true
+    file_rotation = "daily"
+    
+    # ==================== 监控配置 ====================
+    [telemetry]
+    enabled = true
+    log_retention_days = 30
+    enable_metrics = true

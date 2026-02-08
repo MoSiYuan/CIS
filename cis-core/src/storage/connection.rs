@@ -16,7 +16,10 @@ use crate::error::{CisError, Result};
 /// 支持跨库查询，使用 `alias.table` 语法访问已挂载的数据库表。
 ///
 /// # Example
-/// ```
+/// ```no_run
+/// use std::path::Path;
+/// use cis_core::storage::connection::MultiDbConnection;
+///
 /// let mut conn = MultiDbConnection::open(Path::new("core.db"))?;
 /// conn.attach(Path::new("memory.db"), "memory")?;
 /// conn.attach(Path::new("skills/im.db"), "skill_im")?;
@@ -25,6 +28,7 @@ use crate::error::{CisError, Result};
 /// let rows = conn.query_cross_db(
 ///     "SELECT * FROM memory.entries JOIN skill_im.messages ON ..."
 /// )?;
+/// # Ok::<(), cis_core::error::CisError>(())
 /// ```
 pub struct MultiDbConnection {
     /// 主连接（core.db）
@@ -93,9 +97,13 @@ impl MultiDbConnection {
     /// * `alias` - 数据库别名（用于 SQL 中引用）
     ///
     /// # Example
-    /// ```
+    /// ```no_run
+    /// # use std::path::Path;
+    /// # use cis_core::storage::connection::MultiDbConnection;
+    /// # let mut conn = MultiDbConnection::open(Path::new("core.db")).unwrap();
     /// conn.attach(Path::new("memory.db"), "memory")?;
     /// conn.attach(Path::new("skills/im.db"), "skill_im")?;
+    /// # Ok::<(), cis_core::error::CisError>(())
     /// ```
     pub fn attach(&mut self, db_path: &Path, alias: &str) -> Result<()> {
         // 验证别名合法性（SQLite 标识符规则）
@@ -195,13 +203,18 @@ impl MultiDbConnection {
     /// * `Result<Vec<CrossDbRow>>` - 查询结果行列表
     ///
     /// # Example
-    /// ```
+    /// ```no_run
+    /// # use std::path::Path;
+    /// # use cis_core::storage::connection::MultiDbConnection;
+    /// # let mut conn = MultiDbConnection::open(Path::new("core.db")).unwrap();
+    /// # conn.attach(Path::new("memory.db"), "memory").unwrap();
     /// let rows = conn.query_cross_db(
     ///     "SELECT * FROM memory.entries JOIN skill_im.messages ON ..."
     /// )?;
     /// for row in rows {
     ///     println!("{:?}", row.get::<String>("name"));
     /// }
+    /// # Ok::<(), cis_core::error::CisError>(())
     /// ```
     pub fn query_cross_db(&self, sql: &str) -> Result<Vec<CrossDbRow>> {
         let mut stmt = self

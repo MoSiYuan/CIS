@@ -336,6 +336,12 @@ pub struct PendingChallenges {
     challenges: std::collections::HashMap<String, DidChallenge>,
 }
 
+impl Default for PendingChallenges {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PendingChallenges {
     pub fn new() -> Self {
         Self {

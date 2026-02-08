@@ -12,7 +12,6 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
 use crate::matrix::error::{MatrixError, MatrixResult};
-use crate::matrix::store_social::{MatrixSocialStore, UserProfile};
 
 use super::AppState;
 
@@ -24,6 +23,7 @@ pub enum LoginRequest {
     Password {
         identifier: Option<UserIdentifier>,
         user: Option<String>,
+        #[allow(dead_code)]
         password: String,
         device_id: Option<String>,
         initial_device_display_name: Option<String>,

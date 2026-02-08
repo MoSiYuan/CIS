@@ -7,10 +7,12 @@ use serde::Serialize;
 
 /// 输出格式
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum OutputFormat {
     /// JSON 格式
     Json,
     /// 人类可读格式
+    #[default]
     Human,
     /// 流式 NDJSON（每行一个 JSON）
     NdJson,
@@ -20,6 +22,7 @@ pub enum OutputFormat {
 
 impl OutputFormat {
     /// 从字符串解析
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "json" => Some(OutputFormat::Json),
@@ -41,11 +44,6 @@ impl OutputFormat {
     }
 }
 
-impl Default for OutputFormat {
-    fn default() -> Self {
-        OutputFormat::Human
-    }
-}
 
 /// 输出管理器
 pub struct OutputManager {
@@ -218,8 +216,8 @@ impl OutputManager {
     fn print_progress(&mut self, progress: f32) {
         let width = 40;
         let filled = (progress * width as f32) as usize;
-        let bar: String = std::iter::repeat('=').take(filled).collect();
-        let empty: String = std::iter::repeat('-').take(width - filled).collect();
+        let bar: String = "=".repeat(filled);
+        let empty: String = "-".repeat(width - filled);
 
         if self.use_colors {
             use colored::Colorize;

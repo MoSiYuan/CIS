@@ -20,11 +20,14 @@
 //!
 //! ## 使用示例
 //!
-//! ```rust
+//! ```rust,no_run
 //! use cis_core::service::{WorkerService, ListOptions};
 //!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let service = WorkerService::new()?;
 //! let workers = service.list(ListOptions::default()).await?;
+//! # Ok(())
+//! # }
 //! ```
 
 use crate::error::Result;

@@ -1,0 +1,71 @@
+# WebSocket Basic Communication Test DAG
+# 
+# This DAG tests basic WebSocket communication functionality including:
+# - Connection establishment
+# - Message sending and receiving
+# - Connection teardown
+#
+dag_id = "websocket_basic_test"
+version = "1.0.0"
+description = "Basic WebSocket communication test suite"
+
+[[nodes]]
+id = "ws_connect"
+name = "WebSocket Connect"
+type = "websocket_client"
+action = "connect"
+config = { url = "ws://localhost:6768", timeout = 30 }
+
+[[nodes]]
+id = "ws_send_handshake"
+name = "Send Handshake"
+type = "websocket_message"
+action = "send"
+dependencies = ["ws_connect"]
+config = { message_type = "handshake", version = 1, node_id = "test-client" }
+
+[[nodes]]
+id = "ws_receive_response"
+name = "Receive Response"
+type = "websocket_message"
+action = "receive"
+dependencies = ["ws_send_handshake"]
+config = { timeout = 10, expected_type = "handshake_ack" }
+
+[[nodes]]
+id = "ws_send_ping"
+name = "Send Ping"
+type = "websocket_message"
+action = "send"
+dependencies = ["ws_receive_response"]
+config = { message_type = "ping", ping_id = 1 }
+
+[[nodes]]
+id = "ws_receive_pong"
+name = "Receive Pong"
+type = "websocket_message"
+action = "receive"
+dependencies = ["ws_send_ping"]
+config = { timeout = 5, expected_type = "pong" }
+
+[[nodes]]
+id = "ws_send_data"
+name = "Send Data Message"
+type = "websocket_message"
+action = "send"
+dependencies = ["ws_receive_pong"]
+config = { message_type = "data", payload = "Hello WebSocket!", sequence = 1 }
+
+[[nodes]]
+id = "ws_close"
+name = "Close Connection"
+type = "websocket_client"
+action = "close"
+dependencies = ["ws_send_data"]
+config = { graceful = true, reason = "test_complete" }
+
+[metadata]
+test_suite = "websocket_basic"
+priority = "P0"
+created_at = "2026-02-07"
+author = "CIS Test Framework"

@@ -1,6 +1,6 @@
 [package]
 name = "cis-core"
-version = "0.1.0"
+version = "1.1.0"
 edition = "2021"
 rust-version = "1.70"
 authors = ["CIS Team"]
@@ -29,8 +29,8 @@ reqwest = { version = "0.11", features = ["json", "rustls-tls", "blocking"] }
 # Password input (for interactive config)
 rpassword = "7.3"
 # Database (with encryption support planned)
-rusqlite = { version = "0.30", features = ["bundled", "backup", "hooks"] }
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio"], optional = true }
+rusqlite = { version = "0.32", features = ["bundled", "backup", "hooks"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"], optional = true }
 
 # Vector extension for SQLite
 sqlite-vec = { version = "0.1", optional = true }
@@ -52,23 +52,23 @@ prost = { version = "0.12", optional = true }
 tonic = { version = "0.10", optional = true }
 
 # P2P Networking
-quinn = "0.10"
-rcgen = "0.12"
-mdns-sd = "0.10"
-rustls = "0.21"
-rustls-native-certs = "0.6"
+quinn = { version = "0.11", optional = true }
+rcgen = { version = "0.12", optional = true }
+mdns-sd = { version = "0.10", optional = true }
+rustls = { version = "0.23", optional = true }
+rustls-native-certs = { version = "0.6", optional = true }
 
 # DHT for P2P discovery
 # Using a lightweight DHT implementation
 # For production, consider libp2p-kad or similar
 
 # NAT traversal
-stun = "0.5"  # STUN client
-igd = "0.12"  # UPnP IGD client for port mapping
+stun = { version = "0.5", optional = true }  # STUN client
+igd = { version = "0.12", optional = true }  # UPnP IGD client for port mapping
 
 # PTY for remote agent sessions
 portable-pty = "0.8"
-bytes = "1.5"
+bytes = "1.11.1"
 tokio-util = { version = "0.7", features = ["codec"] }
 
 # WebSocket Federation
@@ -126,6 +126,9 @@ colored = "2.0"
 # Regex for pattern matching
 regex = "1"
 
+# IP network utilities for ACL
+ipnetwork = "0.20"
+
 # Temporary files
 tempfile = "3"
 
@@ -159,7 +162,7 @@ wasm = ["wasmer", "wasmer-compiler-cranelift"]
 encryption = ["sqlx", "chacha20poly1305", "argon2"]
 
 # P2P features (planned for Phase 4)
-p2p = ["prost", "tonic", "encryption"]
+p2p = ["prost", "tonic", "encryption", "quinn", "rcgen", "mdns-sd", "rustls", "rustls-native-certs", "stun", "igd"]
 
 
 

@@ -1,0 +1,89 @@
+# CIS 开发环境 Docker Compose
+# 包含热重载和开发工具
+
+version: '3.8'
+
+services:
+  # CIS 开发节点（带热重载）
+  cis-node-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: cis-node:dev
+    container_name: cis-node-dev
+    
+    ports:
+      - "7676:7676"
+      - "7677:7677/udp"
+      - "6767:6767"
+    
+    volumes:
+      # 源代码挂载（用于热重载）
+      - ./cis-core:/app/cis-core
+      - ./cis-node:/app/cis-node
+      - ./crates:/app/crates
+      - ./Cargo.toml:/app/Cargo.toml
+      - ./Cargo.lock:/app/Cargo.lock
+      # 数据持久化
+      - cis-dev-data:/app/.cis
+      # 目标目录（缓存）
+      - target-cache:/app/target
+    
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+      - CARGO_TARGET_DIR=/app/target
+    
+    # 开发模式使用 cargo watch
+    command: >
+      sh -c "
+        cargo install cargo-watch &&
+        cargo watch -x 'run --bin cis-node -- daemon' -w cis-core -w cis-node -w crates
+      "
+    
+    networks:
+      - cis-dev-network
+
+  # 开发数据库（可选：PostgreSQL 替代 SQLite）
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: cis-postgres
+  #   environment:
+  #     POSTGRES_USER: cis
+  #     POSTGRES_PASSWORD: cis
+  #     POSTGRES_DB: cis_dev
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   networks:
+  #     - cis-dev-network
+
+  # Redis（可选：用于缓存）
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: cis-redis
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     - cis-dev-network
+
+  # 文档服务器
+  docs:
+    image: nginx:alpine
+    container_name: cis-docs
+    volumes:
+      - ./docs:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"
+    networks:
+      - cis-dev-network
+
+volumes:
+  cis-dev-data:
+  target-cache:
+  # postgres-data:
+
+networks:
+  cis-dev-network:
+    driver: bridge

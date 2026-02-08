@@ -24,7 +24,7 @@
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let storage = Arc::new(VectorStorage::open_default()?);
-//! let processor = BatchProcessor::new(storage, 10);
+//! let mut processor = BatchProcessor::new(storage, 10);
 //!
 //! // 提交索引请求
 //! let id = processor.submit(
@@ -124,7 +124,7 @@ struct BatchItem {
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let storage = Arc::new(VectorStorage::open_default()?);
-/// let processor = BatchProcessor::new(storage, 10);
+/// let mut processor = BatchProcessor::new(storage, 10);
 ///
 /// // 批量提交
 /// let items = vec![
@@ -178,18 +178,44 @@ impl BatchProcessor {
         
         let handle = tokio::spawn(async move {
             let mut buffer = Vec::with_capacity(batch_size);
+            let mut flush_interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
             
-            while let Some(item) = rx.recv().await {
-                buffer.push(item);
-                
-                if buffer.len() >= batch_size {
-                    let start = Instant::now();
-                    let count = buffer.len();
-                    let (success, failed) = Self::flush_batch(&storage_clone, &mut buffer).await;
-                    let duration = start.elapsed().as_millis() as u64;
-                    
-                    if let Ok(mut s) = stats_clone.lock() {
-                        s.update(count, success, failed, duration);
+            loop {
+                tokio::select! {
+                    // 接收新消息
+                    item = rx.recv() => {
+                        match item {
+                            Some(item) => {
+                                buffer.push(item);
+                                
+                                // 如果 buffer 已满，立即刷新
+                                if buffer.len() >= batch_size {
+                                    let start = Instant::now();
+                                    let count = buffer.len();
+                                    let (success, failed) = Self::flush_batch(&storage_clone, &mut buffer).await;
+                                    let duration = start.elapsed().as_millis() as u64;
+                                    
+                                    if let Ok(mut s) = stats_clone.lock() {
+                                        s.update(count, success, failed, duration);
+                                    }
+                                }
+                            }
+                            None => {
+                                // Channel 已关闭，退出循环
+                                break;
+                            }
+                        }
+                    }
+                    // 超时刷新：如果有数据但 buffer 未满，定期刷新
+                    _ = flush_interval.tick(), if !buffer.is_empty() => {
+                        let start = Instant::now();
+                        let count = buffer.len();
+                        let (success, failed) = Self::flush_batch(&storage_clone, &mut buffer).await;
+                        let duration = start.elapsed().as_millis() as u64;
+                        
+                        if let Ok(mut s) = stats_clone.lock() {
+                            s.update(count, success, failed, duration);
+                        }
                     }
                 }
             }
@@ -473,11 +499,10 @@ mod tests {
     use super::*;
     use crate::ai::embedding::{EmbeddingService, DEFAULT_EMBEDDING_DIM};
     use crate::error::Result;
-    use async_trait::async_trait;
 
     struct MockEmbeddingService;
 
-    #[async_trait]
+    #[async_trait::async_trait]
     impl EmbeddingService for MockEmbeddingService {
         async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
             // 简单的模拟向量
@@ -494,7 +519,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_batch_processor() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("vector.db");

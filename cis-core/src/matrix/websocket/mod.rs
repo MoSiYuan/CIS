@@ -40,8 +40,8 @@
 //!
 //! ### Server
 //!
-//! ```no_run
-//! use cis_core::websocket::{WebSocketServer, WsServerConfig, TunnelManager};
+//! ```ignore
+//! use cis_core::matrix::websocket::{WebSocketServer, WsServerConfig, TunnelManager};
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -52,6 +52,7 @@
 //! let tunnel_manager = Arc::new(TunnelManager::with_event_channel(event_tx));
 //!
 //! let did_manager = Arc::new(cis_core::identity::DIDManager::generate("kitchen")?);
+//! let store = Arc::new(cis_core::matrix::MatrixStore::open_in_memory()?);
 //! let mut server = WebSocketServer::new(
 //!     config,
 //!     tunnel_manager,
@@ -67,9 +68,10 @@
 //!
 //! ### Client
 //!
-//! ```no_run
-//! use cis_core::websocket::WebSocketClient;
+//! ```ignore
+//! use cis_core::matrix::websocket::{WebSocketClient, TunnelManager};
 //! use cis_core::matrix::federation::PeerInfo;
+//! use std::sync::Arc;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let client = WebSocketClient::new("my-node", "did:cis:my-node");
@@ -77,6 +79,7 @@
 //! let peer = PeerInfo::new("living.local", "living.local")
 //!     .with_port(6768);
 //!
+//! let tunnel_manager = Arc::new(TunnelManager::default());
 //! let tunnel = client.connect(&peer, tunnel_manager).await?;
 //! # Ok(())
 //! # }
@@ -100,6 +103,7 @@
 //! - Fallback to HTTP if WebSocket connection fails
 
 pub mod client;
+#[cfg(feature = "p2p")]
 pub mod hole_punching;
 pub mod noise;
 pub mod protocol;
@@ -110,10 +114,12 @@ pub mod tunnel;
 pub use client::{
     ConnectOptions, WebSocketClient, WebSocketClientBuilder, WsClientError,
 };
+#[cfg(feature = "p2p")]
 pub use hole_punching::{
     create_punch_socket, simultaneous_punch, HolePunchConfig, HolePunchManager,
     HolePunchState, InMemorySignalingClient, PunchResult, SignalingClient,
 };
+#[cfg(feature = "p2p")]
 pub use crate::p2p::nat::HolePunchResult;
 pub use noise::{
     keys as noise_keys, NoiseError, NoiseHandshake, NoiseTransport,

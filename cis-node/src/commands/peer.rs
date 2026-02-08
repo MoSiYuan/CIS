@@ -245,7 +245,7 @@ fn format_timestamp(ts: i64) -> String {
         return "Never".to_string();
     }
     let dt = chrono::DateTime::from_timestamp(ts, 0)
-        .unwrap_or_else(|| chrono::DateTime::UNIX_EPOCH);
+        .unwrap_or(chrono::DateTime::UNIX_EPOCH);
     dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()
 }
 

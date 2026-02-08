@@ -16,9 +16,11 @@ use crate::matrix::store_social::MatrixSocialStore;
 #[derive(Debug, Clone)]
 pub struct AuthenticatedUser {
     pub user_id: String,
+    #[allow(dead_code)]
     pub device_id: Option<String>,
 }
 
+#[allow(dead_code)]
 impl AuthenticatedUser {
     /// Create a new authenticated user
     pub fn new(user_id: impl Into<String>) -> Self {
@@ -34,15 +36,15 @@ pub fn extract_token(headers: &HeaderMap) -> Option<String> {
     headers
         .get("authorization")
         .and_then(|value| value.to_str().ok())
-        .and_then(|auth| {
+        .map(|auth| {
             // Support "Bearer <token>" format
             if auth.to_lowercase().starts_with("bearer ") {
-                Some(auth[7..].trim().to_string())
+                auth[7..].trim().to_string()
             } else {
-                Some(auth.to_string())
+                auth.to_string()
             }
         })
-        .or_else(|| {
+        .or({
             // Also check query param (for some endpoints)
             None
         })
@@ -53,13 +55,17 @@ pub fn extract_token(headers: &HeaderMap) -> Option<String> {
 /// 使用 MatrixSocialStore 验证令牌。
 /// 
 /// Example usage in handler:
-/// ```rust
+/// ```ignore
+/// use axum::http::HeaderMap;
+/// use axum::extract::State;
+/// 
 /// pub async fn handler(
 ///     headers: HeaderMap,
 ///     State(state): State<AppState>,
-/// ) -> Result<...> {
+/// ) -> Result<String, Box<dyn std::error::Error>> {
 ///     let user = authenticate(&headers, &state.social_store)?;
 ///     // ...
+///     Ok(String::new())
 /// }
 /// ```
 pub fn authenticate(
@@ -83,6 +89,7 @@ pub fn authenticate(
 }
 
 /// Async version of authenticate for use in async handlers
+#[allow(dead_code)]
 pub async fn authenticate_async(
     headers: &HeaderMap,
     social_store: &MatrixSocialStore,
@@ -93,6 +100,7 @@ pub async fn authenticate_async(
 /// 便捷函数：从 AppState 认证
 /// 
 /// 用于处理函数中快速获取认证用户
+#[allow(dead_code)]
 pub fn authenticate_from_state(
     headers: &HeaderMap,
     social_store: &MatrixSocialStore,
