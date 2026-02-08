@@ -173,6 +173,17 @@ impl Paths {
         Self::data_dir().join("federation.db")
     }
 
+    /// Matrix 事件数据库路径（协议核心，包含房间、事件、同步状态）
+    pub fn matrix_events_db() -> PathBuf {
+        Self::data_dir().join("matrix-events.db")
+    }
+
+    /// Matrix 社交数据库路径（人类用户数据，包含用户、设备、令牌、资料）
+    /// 分离设计允许独立备份用户数据，并支持 Skill 化的注册逻辑
+    pub fn matrix_social_db() -> PathBuf {
+        Self::data_dir().join("matrix-social.db")
+    }
+
     /// 记忆数据库路径
     pub fn memory_db() -> PathBuf {
         Self::data_dir().join("memory.db")

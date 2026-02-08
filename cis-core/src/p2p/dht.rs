@@ -213,7 +213,7 @@ impl Default for DhtConfig {
         Self {
             bootstrap_nodes: vec![
                 // 默认 bootstrap 节点
-                // "bootstrap.cis.dev:7676".to_string(),
+                // "bootstrap.cis.dev:6767".to_string(),
             ],
             listen_addr: "0.0.0.0:7678".to_string(),
             announce_interval_secs: 300,

@@ -1,0 +1,32 @@
+[package]
+name = "matrix-register-skill"
+version = "0.1.0"
+edition = "2021"
+description = "Matrix user registration Skill - 支持灵活的注册策略"
+authors = ["CIS Team"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cis-core = { path = "../../cis-core" }
+cis-skill-sdk = { path = "../../cis-skill-sdk" }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.35", features = ["sync", "time", "rt-multi-thread", "macros"] }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
+thiserror = "1.0"
+tracing = "0.1"
+rusqlite = { version = "0.30", features = ["bundled"] }
+anyhow = "1.0"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = ["native"]
+native = ["cis-core/default"]
+wasm = []

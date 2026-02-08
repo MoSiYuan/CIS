@@ -627,7 +627,7 @@ mod tests {
 
     #[test]
     fn test_session_state() {
-        let session = RemoteSession::new("did:cis:test", "127.0.0.1:6767");
+        let session = RemoteSession::new("did:cis:test", "127.0.0.1:7676");
         assert_eq!(session.state, SessionState::Disconnected);
     }
 }

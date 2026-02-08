@@ -523,7 +523,7 @@ impl GlmApiState {
             let mut client = TargetNodeClient::new();
             
             // 从配置或发现服务获取节点地址
-            let node_url = format!("http://{}:6767", target_node); // 简化处理
+            let node_url = format!("http://{}:7676", target_node); // 节点间通信端口
             client.register_node(target_node.clone(), node_url);
             
             match client.push_dag(target_node, dag).await {

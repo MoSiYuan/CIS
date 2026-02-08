@@ -4,14 +4,16 @@
 //!
 //! ## Port
 //!
-//! Default federation port: 6767
+//! 节点间交互端口（集群内部）: 7676
+//! 用于节点间 Matrix 同步、DAG 分发、room 通信等
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
-/// Default federation port
-pub const FEDERATION_PORT: u16 = 6767;
+/// 节点间交互端口（集群内部）
+/// 用于节点间 Matrix 同步、DAG 分发、room 通信等
+pub const FEDERATION_PORT: u16 = 7676;
 
 /// Federation API version path
 pub const FEDERATION_API_VERSION: &str = "/_cis/v1";
@@ -492,8 +494,8 @@ mod tests {
         assert_eq!(peer.server_name, "kitchen.local");
         assert_eq!(peer.display_name, Some("Kitchen Node".to_string()));
         assert!(peer.trusted);
-        assert_eq!(peer.base_url(), "http://kitchen.local:6767");
-        assert_eq!(peer.federation_url(), "http://kitchen.local:6767/_cis/v1");
+        assert_eq!(peer.base_url(), "http://kitchen.local:7676");
+        assert_eq!(peer.federation_url(), "http://kitchen.local:7676/_cis/v1");
     }
 
     #[test]
@@ -501,7 +503,7 @@ mod tests {
         let peer = PeerInfo::new("secure.local", "secure.local")
             .with_https(true);
         
-        assert_eq!(peer.base_url(), "https://secure.local:6767");
+        assert_eq!(peer.base_url(), "https://secure.local:7676");
     }
 
     #[test]

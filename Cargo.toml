@@ -14,5 +14,6 @@ members = [
     "skills/ai-executor",
     "skills/im",
     "skills/dag-executor",
+    "skills/matrix-register-skill",
     "cis-gui",
 ]

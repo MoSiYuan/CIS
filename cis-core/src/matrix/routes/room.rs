@@ -21,6 +21,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::matrix::error::{MatrixError, MatrixResult};
 use crate::matrix::routes::auth::authenticate;
+use crate::matrix::routes::AppState;
 use crate::matrix::store::MatrixStore;
 
 // ==================== Create Room ====================
@@ -79,11 +80,13 @@ pub struct CreateRoomResponse {
 /// Create a new room.
 pub async fn create_room(
     headers: HeaderMap,
-    State(store): State<Arc<MatrixStore>>,
+    State(state): State<AppState>,
     Json(req): Json<CreateRoomRequest>,
 ) -> MatrixResult<Json<CreateRoomResponse>> {
-    // Authenticate the request
-    let user = authenticate(&headers, &store)?;
+    let store = &state.store;
+    
+    // Authenticate the request using social_store
+    let user = authenticate(&headers, &state.social_store)?;
     // Generate room ID
     let room_id = generate_room_id();
 
@@ -202,14 +205,17 @@ pub struct SendMessageResponse {
 /// Send a message event to a room.
 pub async fn send_message(
     headers: HeaderMap,
-    State(store): State<Arc<MatrixStore>>,
+    State(state): State<AppState>,
     Path((room_id, event_type, _txn_id)): Path<(String, String, String)>,
     Json(content): Json<serde_json::Value>,
 ) -> MatrixResult<Json<SendMessageResponse>> {
-    // Authenticate the request
-    let user = authenticate(&headers, &store)?;
+    let store = &state.store;
+    
+    // Authenticate the request using social_store
+    let user = authenticate(&headers, &state.social_store)?;
     // Verify user is in the room
-    if !store.is_user_in_room(&room_id, &user.user_id)? {
+    if !store.is_user_in_room(&room_id, &user.user_id)
+        .map_err(|e| MatrixError::Store(format!("Failed to check room membership: {}", e)))? {
         return Err(MatrixError::Forbidden(
             "You are not in this room".to_string(),
         ));
@@ -276,14 +282,17 @@ pub struct GetMessagesResponse {
 /// Get messages for a room.
 pub async fn get_messages(
     headers: HeaderMap,
-    State(store): State<Arc<MatrixStore>>,
+    State(state): State<AppState>,
     Path(room_id): Path<String>,
     Query(params): Query<GetMessagesRequest>,
 ) -> MatrixResult<Json<GetMessagesResponse>> {
-    // Authenticate the request
-    let user = authenticate(&headers, &store)?;
+    let store = &state.store;
+    
+    // Authenticate the request using social_store
+    let user = authenticate(&headers, &state.social_store)?;
     // Verify user is in the room
-    if !store.is_user_in_room(&room_id, &user.user_id)? {
+    if !store.is_user_in_room(&room_id, &user.user_id)
+        .map_err(|e| MatrixError::Store(format!("Failed to check room membership: {}", e)))? {
         return Err(MatrixError::Forbidden(
             "You are not in this room".to_string(),
         ));
@@ -358,11 +367,13 @@ pub struct JoinRoomResponse {
 /// Join a room.
 pub async fn join_room(
     headers: HeaderMap,
-    State(store): State<Arc<MatrixStore>>,
+    State(state): State<AppState>,
     Path(room_id): Path<String>,
 ) -> MatrixResult<Json<JoinRoomResponse>> {
-    // Authenticate the request
-    let user = authenticate(&headers, &store)?;
+    let store = &state.store;
+    
+    // Authenticate the request using social_store
+    let user = authenticate(&headers, &state.social_store)?;
     // Check if room exists
     if !store.room_exists(&room_id)? {
         return Err(MatrixError::NotFound(format!("Room {} not found", room_id)));
@@ -400,12 +411,10 @@ pub async fn join_room(
 /// POST /_matrix/client/v3/join/{roomId}
 pub async fn join_room_post(
     headers: HeaderMap,
-    state: State<Arc<MatrixStore>>,
+    state: State<AppState>,
     path: Path<String>,
-    req: Json<JoinRoomRequest>,
+    _req: Json<JoinRoomRequest>,
 ) -> MatrixResult<Json<JoinRoomResponse>> {
-    // Ignore req for now
-    let _ = req;
     join_room(headers, state, path).await
 }
 
@@ -416,11 +425,13 @@ pub async fn join_room_post(
 /// Get the state of a room.
 pub async fn get_room_state(
     headers: HeaderMap,
-    State(store): State<Arc<MatrixStore>>,
+    State(state): State<AppState>,
     Path(room_id): Path<String>,
 ) -> MatrixResult<Json<Vec<serde_json::Value>>> {
-    // Authenticate the request
-    let user = authenticate(&headers, &store)?;
+    let store = &state.store;
+    
+    // Authenticate the request using social_store
+    let user = authenticate(&headers, &state.social_store)?;
     // Verify user is in the room
     if !store.is_user_in_room(&room_id, &user.user_id)? {
         return Err(MatrixError::Forbidden(

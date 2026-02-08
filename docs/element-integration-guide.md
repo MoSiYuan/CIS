@@ -30,7 +30,7 @@ CIS 实现了 Matrix 协议的服务器端，允许使用 Element 等 Matrix 客
 ┌─────────────┐      Matrix API      ┌─────────────┐
 │   Element   │ ◄──────────────────► │  CIS Node   │
 │  (Client)   │   HTTP/WebSocket     │  (Server)   │
-│             │      Port 7676       │             │
+│             │      Port 6767       │             │
 └─────────────┘                      └─────────────┘
 ```
 
@@ -95,7 +95,7 @@ cis matrix detect
 cis matrix start
 ```
 
-服务器将在 `http://localhost:7676` 启动。
+服务器将在 `http://localhost:6767` 启动。
 
 ### 自动启动 Element
 
@@ -133,14 +133,14 @@ cis matrix start
 看到以下输出表示启动成功：
 ```
 🚀 Starting Matrix server...
-   Port: 7676
-   URL: http://localhost:7676
+   Port: 6767
+   URL: http://localhost:6767
 
 📡 Matrix server is ready!
-   Clients can connect to: http://localhost:7676
+   Clients can connect to: http://localhost:6767
 
 💡 Connection info for Element:
-   Homeserver URL: http://localhost:7676
+   Homeserver URL: http://localhost:6767
 ```
 
 ### 第二步：配置 Element
@@ -157,7 +157,7 @@ cis matrix start
 3. **输入 Homeserver URL**
 
    ```
-   http://localhost:7676
+   http://localhost:6767
    ```
 
 4. **点击 "Continue"**（继续）
@@ -239,7 +239,7 @@ CIS 使用 DID 身份验证：
 
 2. **检查端口占用**
    ```bash
-   lsof -i :7676
+   lsof -i :6767
    ```
 
 3. **检查防火墙**
@@ -332,7 +332,7 @@ CIS 使用 DID 身份验证：
 
 ### 自定义端口
 
-如果 7676 端口被占用：
+如果 6767 端口被占用：
 
 ```bash
 # 使用 8080 端口
@@ -358,12 +358,12 @@ http://localhost:8080
    ```toml
    [matrix]
    bind_address = "0.0.0.0"
-   port = 7676
+   port = 6767
    ```
 
 2. **使用实际 IP 连接**
    ```
-   http://<cis-node-ip>:7676
+   http://<cis-node-ip>:6767
    ```
 
 3. **注意安全性**

@@ -3,6 +3,17 @@
 //! Matrix protocol integration for CIS, enabling Element client connections
 //! and inter-node federation.
 //!
+//! ## Port 分工
+//!
+//! - **6767**: 人机交互端口（对外暴露）
+//!   - Matrix 客户端访问（Element 等）
+//!   - 智能体 bearer 鉴权 API 访问
+//!   
+//! - **7676**: 节点间交互端口（集群内部）
+//!   - 节点间 Matrix 同步
+//!   - 跨节点 DAG 分发
+//!   - Room 通信等
+//!
 //! ## Architecture
 //!
 //! ```text
@@ -11,7 +22,7 @@
 //! ├─────────────────────────────────────────────────────────────┤
 //! │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
 //! │  │   Server     │  │   Nucleus    │  │  Federation  │       │
-//! │  │  (7676)      │  │   (Core)     │  │  (6767/6768) │       │
+//! │  │  (6767)      │  │   (Core)     │  │  (7676/6768) │       │
 //! │  └──────────────┘  └──────┬───────┘  └──────────────┘       │
 //! │                           │                                 │
 //! │         ┌─────────────────┼─────────────────┐               │
@@ -25,8 +36,8 @@
 //!
 //! ## Components
 //!
-//! - **Server**: HTTP server handling Matrix Client-Server API (port 7676)
-//! - **Federation**: Inter-node communication (port 6767) - BMI (Between Machine Interface)
+//! - **Server**: HTTP server handling Matrix Client-Server API (port 6767) - 人机交互
+//! - **Federation**: Inter-node communication (port 7676) - BMI (Between Machine Interface)
 //! - **WebSocket**: WebSocket federation (port 6768) - Low latency alternative to HTTP
 //! - **Nucleus**: Core federation logic with sync queue and reconnection
 //! - **Store**: Event storage and retrieval with SQLite
@@ -35,13 +46,13 @@
 //!
 //! ## Phase 0 Scope
 //!
-//! - Basic server running on port 7676
+//! - Basic server running on port 6767
 //! - GET /_matrix/client/versions (discovery)
 //! - POST /_matrix/client/v3/login (simplified)
 //!
 //! ## Phase 2 Scope (Federation)
 //!
-//! - Simplified federation on port 6767
+//! - Simplified federation on port 7676
 //! - GET /_matrix/key/v2/server (Matrix spec)
 //! - POST /_cis/v1/event/receive (CIS custom)
 //! - Manual peer configuration
@@ -73,6 +84,7 @@ pub mod federation;
 pub mod nucleus;
 pub mod server;
 pub mod store;
+pub mod store_social;
 pub mod sync;
 
 // Routes are internal, not exposed directly
@@ -110,6 +122,7 @@ pub use server::MatrixServer;
 
 // Re-export store types
 pub use store::{MatrixStore, RoomOptions, MatrixMessage, MatrixRoom as StoreMatrixRoom};
+pub use store_social::{MatrixSocialStore, UserRecord, DeviceRecord, TokenInfo, UserProfile};
 
 // Re-export sync types
 pub use sync::{

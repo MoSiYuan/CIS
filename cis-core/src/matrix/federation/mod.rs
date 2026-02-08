@@ -10,7 +10,8 @@
 //!
 //! ## Port
 //!
-//! Default federation port: **6767**
+//! 节点间交互端口（集群内部）: **7676**
+//! 用于节点间 Matrix 同步、DAG 分发、room 通信等
 //!
 //! ## Architecture
 //!

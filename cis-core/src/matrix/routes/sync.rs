@@ -21,6 +21,7 @@ use std::sync::Arc;
 use crate::matrix::error::MatrixResult;
 use crate::matrix::routes::auth::authenticate;
 use crate::matrix::store::MatrixStore;
+use crate::matrix::routes::AppState;
 
 /// Sync request query parameters
 #[derive(Debug, Deserialize, Default)]
@@ -172,16 +173,20 @@ pub struct LeftRoom {
 /// Phase 1: Simplified - returns joined rooms with messages.
 pub async fn sync(
     headers: HeaderMap,
-    State(store): State<Arc<MatrixStore>>,
+    State(state): State<AppState>,
     Query(params): Query<SyncRequest>,
 ) -> MatrixResult<Json<SyncResponse>> {
-    // Authenticate the request
-    let user = authenticate(&headers, &store)?;
+    let store = &state.store;
+    let social_store = &state.social_store;
+    
+    // Authenticate the request using social_store
+    let user = authenticate(&headers, social_store)?;
     // Generate next batch token (timestamp-based)
     let next_batch = generate_next_batch();
 
     // Get joined rooms for the user
-    let joined_room_ids = store.get_joined_rooms(&user.user_id)?;
+    let joined_room_ids = store.get_joined_rooms(&user.user_id)
+        .map_err(|e| crate::matrix::error::MatrixError::Store(format!("Failed to get joined rooms: {}", e)))?;
 
     // Build rooms response
     let mut rooms = Rooms::default();
@@ -194,7 +199,8 @@ pub async fn sync(
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(0);
 
-        let messages = store.get_room_messages(&room_id, since_ts, 100)?;
+        let messages = store.get_room_messages(&room_id, since_ts, 100)
+            .map_err(|e| crate::matrix::error::MatrixError::Store(format!("Failed to get room messages: {}", e)))?;
 
         // Convert messages to timeline events
         let events: Vec<serde_json::Value> = messages

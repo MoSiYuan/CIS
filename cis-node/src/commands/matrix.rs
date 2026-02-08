@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use cis_core::matrix::{
-    MatrixServer, MatrixStore, element_detect,
+    MatrixServer, MatrixStore, MatrixSocialStore, element_detect,
     element_detect::{detect_element_apps, is_element_installed, print_element_status},
 };
 
@@ -88,11 +88,12 @@ async fn start_matrix_server(port: u16, daemon: bool, launch: bool) -> Result<()
         println!("   Download: https://element.io/download");
     }
     
-    // Create store
+    // Create stores
     let store = Arc::new(MatrixStore::open_in_memory()?);
+    let social_store = Arc::new(MatrixSocialStore::open_in_memory()?);
     
     // Create and start server
-    let server = MatrixServer::new(port, store);
+    let server = MatrixServer::new(port, store, social_store);
     
     println!("\n📡 Matrix server is ready!");
     println!("   Clients can connect to: http://localhost:{}", port);
@@ -182,7 +183,7 @@ async fn test_element_connection(homeserver: Option<String>) -> Result<()> {
     
     // Test 2: Check homeserver connectivity
     println!("\n2. Checking homeserver connectivity...");
-    let hs_url = homeserver.unwrap_or_else(|| "http://localhost:7676".to_string());
+    let hs_url = homeserver.unwrap_or_else(|| "http://localhost:6767".to_string());
     
     match reqwest::get(format!("{}/_matrix/client/versions", hs_url)).await {
         Ok(resp) => {

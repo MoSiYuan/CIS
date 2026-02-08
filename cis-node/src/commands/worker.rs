@@ -28,7 +28,7 @@ use cis_core::service::{
 /// Uses Matrix Client-Server API to communicate with the Matrix server
 #[derive(Debug, Clone)]
 pub struct MatrixHttpClient {
-    /// Base URL of the Matrix server (e.g., http://localhost:7676)
+    /// Base URL of the Matrix server (e.g., http://localhost:6767)
     server_url: String,
     /// Access token for authentication
     access_token: String,
@@ -330,8 +330,8 @@ pub enum WorkerCommands {
         #[arg(long, default_value = "0")]
         max_memory_mb: usize,
         
-        /// Matrix server URL (e.g., http://localhost:7676)
-        #[arg(long, default_value = "http://localhost:7676")]
+        /// Matrix server URL (e.g., http://localhost:6767)
+        #[arg(long, default_value = "http://localhost:6767")]
         matrix_server: String,
         
         /// Matrix access token for authentication

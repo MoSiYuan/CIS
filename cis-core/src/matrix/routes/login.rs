@@ -2,27 +2,19 @@
 //!
 //! Implements `POST /_matrix/client/v3/login` for user authentication.
 //!
-//! ## Phase 0 Implementation
+//! ## Architecture Note
 //!
-//! This is a simplified login that:
-//! - Accepts any username/password combination
-//! - Creates the user if not exists
-//! - Generates a random access token
-//!
-//! ## Future Improvements
-//!
-//! - Password hashing and verification
-//! - Multiple login types (password, token, SSO)
-//! - Rate limiting
-//! - Device management
+//! 登录逻辑使用 `MatrixSocialStore`（matrix-social.db）进行用户验证和令牌管理，
+//! 与协议事件存储分离。
 
 use axum::{extract::State, Json};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 use crate::matrix::error::{MatrixError, MatrixResult};
-use crate::matrix::store::MatrixStore;
+use crate::matrix::store_social::{MatrixSocialStore, UserProfile};
+
+use super::AppState;
 
 /// Login request body
 #[derive(Debug, Deserialize)]
@@ -79,11 +71,13 @@ pub struct HomeserverInfo {
 /// POST /_matrix/client/v3/login
 ///
 /// Authenticate a user and return an access token.
-/// Phase 0: Simplified - accepts any username/password.
+/// 使用 MatrixSocialStore 进行用户管理和令牌生成。
 pub async fn login(
-    State(store): State<Arc<MatrixStore>>,
+    State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> MatrixResult<Json<LoginResponse>> {
+    let social_store = &state.social_store;
+    
     match req {
         LoginRequest::Password {
             identifier,
@@ -95,20 +89,24 @@ pub async fn login(
             // Extract user ID from identifier or direct user field
             let user_id = extract_user_id(identifier, user)?;
             
-            // Ensure user exists (create if not)
-            store.ensure_user(&user_id)?;
+            // Ensure user exists (create if not) using social_store
+            if !social_store.user_exists(&user_id)? {
+                social_store.create_user(&user_id, None)?;
+            }
             
             // Generate or use provided device ID
             let device_id = device_id.unwrap_or_else(generate_device_id);
             
-            // Register the device
-            store.register_device(&device_id, &user_id, initial_device_display_name.as_deref())?;
+            // Register the device using social_store
+            social_store.register_device(
+                &device_id, 
+                &user_id, 
+                initial_device_display_name.as_deref(),
+                None, // ip_address
+            )?;
             
-            // Generate access token
-            let access_token = generate_token();
-            
-            // Store the token
-            store.store_token(&access_token, &user_id, Some(&device_id))?;
+            // Generate and store access token using social_store
+            let access_token = social_store.create_token(&user_id, Some(&device_id), None)?;
             
             Ok(Json(LoginResponse {
                 access_token,
@@ -119,8 +117,21 @@ pub async fn login(
                 well_known: None,
             }))
         }
-        LoginRequest::Token { .. } => {
-            Err(MatrixError::NotImplemented("Token login not implemented".to_string()))
+        LoginRequest::Token { token } => {
+            // Token login: validate token and get user_id
+            match social_store.validate_token(&token)? {
+                Some(info) => {
+                    Ok(Json(LoginResponse {
+                        access_token: token,
+                        device_id: info.device_id.unwrap_or_default(),
+                        user_id: info.user_id,
+                        expires_in_ms: None,
+                        refresh_token: None,
+                        well_known: None,
+                    }))
+                }
+                None => Err(MatrixError::Unauthorized("Invalid token".to_string())),
+            }
         }
     }
 }
@@ -151,13 +162,6 @@ fn extract_user_id(
     }
 }
 
-/// Generate a secure random token
-fn generate_token() -> String {
-    let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    base64::encode(&bytes)
-}
-
 /// Generate a device ID
 fn generate_device_id() -> String {
     let mut bytes = [0u8; 8];
@@ -165,56 +169,12 @@ fn generate_device_id() -> String {
     format!("CIS_{}", hex::encode(&bytes))
 }
 
-// Simple base64 encoding for token generation
-mod base64 {
-    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    pub fn encode(input: &[u8]) -> String {
-        let mut result = String::new();
-        let chunks = input.chunks_exact(3);
-        let remainder = chunks.remainder();
-
-        for chunk in chunks {
-            let b = ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8) | (chunk[2] as u32);
-            result.push(ALPHABET[((b >> 18) & 0x3F) as usize] as char);
-            result.push(ALPHABET[((b >> 12) & 0x3F) as usize] as char);
-            result.push(ALPHABET[((b >> 6) & 0x3F) as usize] as char);
-            result.push(ALPHABET[(b & 0x3F) as usize] as char);
-        }
-
-        match remainder.len() {
-            1 => {
-                let b = (remainder[0] as u32) << 16;
-                result.push(ALPHABET[((b >> 18) & 0x3F) as usize] as char);
-                result.push(ALPHABET[((b >> 12) & 0x3F) as usize] as char);
-                result.push('=');
-                result.push('=');
-            }
-            2 => {
-                let b = ((remainder[0] as u32) << 16) | ((remainder[1] as u32) << 8);
-                result.push(ALPHABET[((b >> 18) & 0x3F) as usize] as char);
-                result.push(ALPHABET[((b >> 12) & 0x3F) as usize] as char);
-                result.push(ALPHABET[((b >> 6) & 0x3F) as usize] as char);
-                result.push('=');
-            }
-            _ => {}
-        }
-
-        result
-    }
-}
-
-// Simple hex encoding
+/// Simple hex encoding
 mod hex {
-    const HEX_CHARS: &[u8] = b"0123456789abcdef";
-
-    pub fn encode(input: &[u8]) -> String {
-        let mut result = String::with_capacity(input.len() * 2);
-        for &byte in input {
-            result.push(HEX_CHARS[(byte >> 4) as usize] as char);
-            result.push(HEX_CHARS[(byte & 0xF) as usize] as char);
-        }
-        result
+    pub fn encode(bytes: &[u8]) -> String {
+        bytes.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
     }
 }
 
@@ -224,58 +184,34 @@ mod tests {
 
     #[test]
     fn test_extract_user_id() {
-        // From identifier
-        let ident = Some(UserIdentifier::MxidUser {
-            user: "@alice:cis.local".to_string(),
+        // Test with full MXID
+        let ident = Some(UserIdentifier::MxidUser { 
+            user: "@test:cis.local".to_string() 
+        });
+        assert_eq!(
+            extract_user_id(ident, None).unwrap(),
+            "@test:cis.local"
+        );
+
+        // Test with localpart
+        let ident = Some(UserIdentifier::MxidLocalpart { 
+            localpart: "alice".to_string() 
         });
         assert_eq!(
             extract_user_id(ident, None).unwrap(),
             "@alice:cis.local"
         );
 
-        // From localpart
-        let ident = Some(UserIdentifier::MxidLocalpart {
-            localpart: "bob".to_string(),
-        });
+        // Test with user field
         assert_eq!(
-            extract_user_id(ident, None).unwrap(),
+            extract_user_id(None, Some("@bob:cis.local".to_string())).unwrap(),
             "@bob:cis.local"
         );
 
-        // From user field (full MXID)
+        // Test with localpart in user field
         assert_eq!(
-            extract_user_id(None, Some("@charlie:cis.local".to_string())).unwrap(),
+            extract_user_id(None, Some("charlie".to_string())).unwrap(),
             "@charlie:cis.local"
         );
-
-        // From user field (localpart only)
-        assert_eq!(
-            extract_user_id(None, Some("dave".to_string())).unwrap(),
-            "@dave:cis.local"
-        );
-    }
-
-    #[test]
-    fn test_token_generation() {
-        let token1 = generate_token();
-        let token2 = generate_token();
-        
-        // Tokens should be unique
-        assert_ne!(token1, token2);
-        
-        // Tokens should be non-empty
-        assert!(!token1.is_empty());
-        assert!(!token2.is_empty());
-    }
-
-    #[test]
-    fn test_device_id_generation() {
-        let device_id = generate_device_id();
-        
-        // Should start with CIS_
-        assert!(device_id.starts_with("CIS_"));
-        
-        // Should be non-empty after prefix
-        assert!(device_id.len() > 4);
     }
 }

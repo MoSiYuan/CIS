@@ -2,6 +2,11 @@
 //!
 //! Implements user registration endpoints for Element client compatibility.
 //! CIS uses DID-based identity, so registration is essentially "claiming" your DID.
+//!
+//! ## Architecture Note
+//!
+//! 注册逻辑已迁移到使用 `MatrixSocialStore`（matrix-social.db），
+//! 与协议事件存储分离。这是 Skill 化注册的基础。
 
 use axum::{
     extract::State,
@@ -12,8 +17,10 @@ use std::sync::Arc;
 
 use crate::matrix::{
     error::{MatrixError, MatrixResult},
-    store::MatrixStore,
+    store_social::MatrixSocialStore,
 };
+
+use super::AppState;
 
 /// Registration request
 #[derive(Debug, Deserialize)]
@@ -101,10 +108,15 @@ pub async fn get_register_flows() -> MatrixResult<Json<FlowsResponse>> {
 /// Perform user registration
 /// 
 /// POST /_matrix/client/v3/register
+/// 
+/// 使用 `MatrixSocialStore` 进行用户注册，与协议事件存储分离。
+/// 这为后续迁移到 Skill 化注册奠定了基础。
 pub async fn register(
-    State(store): State<Arc<MatrixStore>>,
+    State(state): State<AppState>,
     Json(request): Json<RegisterRequest>,
 ) -> MatrixResult<Json<RegisterResponse>> {
+    let social_store = &state.social_store;
+    
     // Validate username format (should be a DID)
     let user_id = request.username.ok_or_else(|| {
         MatrixError::BadRequest("Username is required".to_string())
@@ -117,33 +129,27 @@ pub async fn register(
         ));
     }
     
-    // Check if user already exists
-    if store.user_exists(&user_id)? {
+    // Check if user already exists (使用 social_store)
+    if social_store.user_exists(&user_id)? {
         return Err(MatrixError::UserInUse(format!(
             "User {} is already registered", user_id
         )));
     }
     
-    // Generate device ID if not provided
-    let device_id = request.device_id.unwrap_or_else(|| {
-        format!("CIS{}", uuid::Uuid::new_v4().simple().to_string()[..8].to_uppercase())
-    });
+    // Use device_id from request or generate new one
+    let device_id = request.device_id;
     
-    // Generate access token
-    let access_token = generate_access_token();
-    
-    // Register the user in store
-    store.register_user(&user_id, &access_token, &device_id)?;
-    
-    // Register device if display name provided
-    if let Some(display_name) = request.initial_device_display_name {
-        store.register_device(&device_id, &user_id, Some(&display_name))?;
-    }
+    // 使用 MatrixSocialStore 的完整注册流程
+    let (user_id, access_token, device_id) = social_store.register_user_complete(
+        &user_id,
+        device_id.as_deref(),
+        request.initial_device_display_name.as_deref(),
+    )?;
     
     tracing::info!("User registered: {} with device {}", user_id, device_id);
     
     Ok(Json(RegisterResponse {
-        user_id: user_id.clone(),
+        user_id,
         access_token,
         home_server: "localhost".to_string(),
         device_id,
@@ -154,7 +160,7 @@ pub async fn register(
 /// 
 /// GET /_matrix/client/v3/register/available?username=xxx
 pub async fn check_username_available(
-    State(store): State<Arc<MatrixStore>>,
+    State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> MatrixResult<Json<AvailableResponse>> {
     let username = params.get("username").ok_or_else(|| {
@@ -168,7 +174,8 @@ pub async fn check_username_available(
         ));
     }
     
-    let available = !store.user_exists(username)?;
+    // 使用 social_store 检查用户是否存在
+    let available = !state.social_store.user_exists(username)?;
     
     Ok(Json(AvailableResponse { available }))
 }
@@ -182,33 +189,27 @@ fn is_valid_did_format(username: &str) -> bool {
     
     let parts: Vec<&str> = username[1..].split(':').collect();
     
-    // Should be: did:cis:<node_id>:<key>
-    if parts.len() != 4 {
+    // Expected: did, cis, <node_id>, <key>
+    if parts.len() < 4 {
         return false;
     }
     
     parts[0] == "did" && parts[1] == "cis"
 }
 
-/// Generate a random access token
-fn generate_access_token() -> String {
+/// Generate random access token
+fn _generate_access_token() -> String {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let token: String = (0..32)
-        .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
-        .collect();
-    token
-}
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const TOKEN_LEN: usize = 64;
 
-/// Get registration fallback URL
-/// 
-/// GET /_matrix/client/v3/register/{login_type}/fallback/web
-pub async fn register_fallback() -> MatrixResult<Json<serde_json::Value>> {
-    // Return a simple HTML page or redirect URL
-    Ok(Json(serde_json::json!({
-        "error": "Fallback registration not implemented",
-        "errcode": "M_NOT_FOUND"
-    })))
+    let mut rng = rand::thread_rng();
+    (0..TOKEN_LEN)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -216,16 +217,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_valid_did_format() {
-        assert!(is_valid_did_format("@did:cis:abc123:def456"));
-        assert!(is_valid_did_format("@did:cis:node1:key123"));
-    }
-
-    #[test]
-    fn test_invalid_did_format() {
-        assert!(!is_valid_did_format("did:cis:abc123:def456")); // Missing @
-        assert!(!is_valid_did_format("@user:example.com")); // Not a DID
-        assert!(!is_valid_did_format("@did:other:abc123:def456")); // Wrong method
-        assert!(!is_valid_did_format("@did:cis:onlythree")); // Missing part
+    fn test_did_format_validation() {
+        assert!(is_valid_did_format("@did:cis:node1:abc123"));
+        assert!(is_valid_did_format("@did:cis:localhost:key1"));
+        assert!(!is_valid_did_format("did:cis:node1:abc123")); // Missing @
+        assert!(!is_valid_did_format("@user:example.com")); // Not a CIS DID
+        assert!(!is_valid_did_format("@did:other:node1:abc")); // Not cis method
+        assert!(!is_valid_did_format("@did:cis:node1")); // Missing key part
     }
 }
