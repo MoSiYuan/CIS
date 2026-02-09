@@ -69,160 +69,41 @@ impl Default for EmbeddingConfig {
     }
 }
 
-/// 本地嵌入服务 (Nomic Embed v1.5 via ONNX Runtime)
+/// 本地嵌入服务 (使用 FastEmbed)
 ///
-/// 使用 ONNX Runtime 本地运行 Nomic Embed v1.5 模型，输出 768 维向量。
-/// 首次加载模型可能需要 1-3 秒，后续调用是毫秒级。
+/// 使用 fastembed-rs 本地运行嵌入模型，支持 Nomic Embed v1.5 等。
+/// 首次加载会自动下载模型（如果需要），后续调用是毫秒级。
 #[cfg(feature = "vector")]
 pub struct LocalEmbeddingService {
-    #[allow(dead_code)]
-    tokenizer: tokenizers::Tokenizer,
-    model_path: std::path::PathBuf,
-    #[allow(dead_code)]
-    normalize: bool,
-    dimension: usize,
-}
-
-#[cfg(not(feature = "vector"))]
-pub struct LocalEmbeddingService {
-    dimension: usize,
-    _phantom: std::marker::PhantomData<()>,
+    inner: crate::ai::embedding_fastembed::FastEmbedService,
 }
 
 impl LocalEmbeddingService {
-    /// 使用默认模型路径创建服务
-    pub fn new() -> Result<Self> {
-        Self::with_config(&EmbeddingConfig::default())
+    /// 使用默认模型创建服务 (Nomic Embed Text v1.5)
+    pub async fn new() -> Result<Self> {
+        let inner = crate::ai::embedding_fastembed::FastEmbedService::new().await?;
+        Ok(Self { inner })
     }
 
     /// 使用配置创建服务
-    #[cfg(feature = "vector")]
-    pub fn with_config(config: &EmbeddingConfig) -> Result<Self> {
-        // 确定模型路径
-        let model_dir = config.model_path.as_ref()
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                // 尝试默认路径
-                let default_paths = [
-                    "models/nomic-embed-text-v1.5",
-                    "models/nomic-embed-text-v1.5.onnx",
-                    "/usr/share/cis/models/nomic-embed-text-v1.5",
-                ];
-                default_paths.iter()
-                    .map(std::path::PathBuf::from)
-                    .find(|p| p.exists())
-            })
-            .ok_or_else(|| CisError::configuration(
-                "Model path not specified and default model not found. \
-                 Please specify model_path in config or place model at models/nomic-embed-text-v1.5/"
-            ))?;
-
-        // 加载 tokenizer
-        let tokenizer_path = model_dir.join("tokenizer.json");
-        let tokenizer = if tokenizer_path.exists() {
-            tokenizers::Tokenizer::from_file(&tokenizer_path)
-                .map_err(|e| CisError::configuration(format!("Failed to load tokenizer: {}", e)))?
-        } else {
-            // 尝试从 Hugging Face 格式加载
-            let vocab_path = model_dir.join("vocab.txt");
-            if vocab_path.exists() {
-                let tokenizer = tokenizers::Tokenizer::new(
-                    tokenizers::models::wordpiece::WordPiece::builder()
-                        .files(vocab_path.to_string_lossy().to_string())
-                        .build()
-                        .map_err(|e| CisError::configuration(format!("Failed to load WordPiece: {}", e)))?
-                );
-                tokenizer
-            } else {
-                return Err(CisError::configuration(
-                    format!("Tokenizer not found at {:?}", tokenizer_path)
-                ));
-            }
-        };
-
-        // 检查 ONNX 模型文件
-        let model_path = if model_dir.extension().map(|e| e == "onnx").unwrap_or(false) {
-            model_dir.clone()
-        } else {
-            model_dir.join("model.onnx")
-        };
-
-        if !model_path.exists() {
-            return Err(CisError::configuration(
-                format!("ONNX model not found at {:?}", model_path)
-            ));
-        }
-
-        // TODO: 初始化 ONNX Runtime 会话
-        // 由于 ort 2.0 API 变化较大，需要更仔细地适配
-        // 目前返回一个占位服务，提示用户使用 OpenAI 降级
-        tracing::warn!("ONNX Runtime embedding not yet fully implemented. Found model at {:?}", model_path);
-        tracing::info!("Please use OpenAI embedding service as fallback: set OPENAI_API_KEY environment variable");
-
-        Ok(Self {
-            tokenizer,
-            model_path,
-            normalize: config.normalize,
-            dimension: DEFAULT_EMBEDDING_DIM,
-        })
-    }
-
-    #[cfg(not(feature = "vector"))]
-    pub fn with_config(_config: &EmbeddingConfig) -> Result<Self> {
-        Err(CisError::configuration(
-            "Vector feature not enabled. Enable 'vector' feature or use OpenAI embedding service.",
-        ))
-    }
-
-    /// 向量归一化 (L2)
-    #[cfg(feature = "vector")]
-    #[allow(dead_code)]
-    fn normalize_vec(&self, mut vec: Vec<f32>) -> Vec<f32> {
-        if !self.normalize {
-            return vec;
-        }
-        let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if norm > 0.0 {
-            for x in &mut vec {
-                *x /= norm;
-            }
-        }
-        vec
-    }
-
-    #[cfg(feature = "vector")]
-    fn encode_internal(&self, _text: &str) -> Result<Vec<f32>> {
-        // ONNX Runtime 推理尚未完全实现
-        // 返回错误提示用户使用 OpenAI 降级
-        Err(CisError::configuration(
-            "Local ONNX embedding not yet fully implemented. \
-             Please use OpenAI embedding service by setting OPENAI_API_KEY environment variable. \
-             Model found at: ".to_string() + &self.model_path.to_string_lossy()
-        ))
-    }
-
-    #[cfg(not(feature = "vector"))]
-    fn encode_internal(&self, _text: &str) -> Result<Vec<f32>> {
-        Err(CisError::configuration("Vector feature not enabled"))
+    pub async fn with_config(_config: &EmbeddingConfig) -> Result<Self> {
+        // 目前使用默认模型，后续可根据配置选择
+        Self::new().await
     }
 }
 
 #[async_trait]
 impl EmbeddingService for LocalEmbeddingService {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        self.encode_internal(text)
+        self.inner.embed(text).await
     }
 
     async fn batch_embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let mut results = Vec::with_capacity(texts.len());
-        for text in texts {
-            results.push(self.encode_internal(text)?);
-        }
-        Ok(results)
+        self.inner.batch_embed(texts).await
     }
 
     fn dimension(&self) -> usize {
-        self.dimension
+        self.inner.dimension()
     }
 }
 
@@ -393,12 +274,13 @@ impl EmbeddingService for OpenAIEmbeddingService {
 /// 1. 如果配置指定 Local，尝试本地模型
 /// 2. 如果配置指定 OpenAI，使用 OpenAI API
 /// 3. 如果配置指定 Auto，先尝试本地模型，失败则降级到 OpenAI
-pub fn create_embedding_service(config: Option<&EmbeddingConfig>) -> Result<Arc<dyn EmbeddingService>> {
+/// 创建 embedding service (异步版本)
+pub async fn create_embedding_service(config: Option<&EmbeddingConfig>) -> Result<Arc<dyn EmbeddingService>> {
     let config = config.cloned().unwrap_or_default();
 
     match config.provider {
         EmbeddingProvider::Local => {
-            let service = LocalEmbeddingService::with_config(&config)?;
+            let service = LocalEmbeddingService::with_config(&config).await?;
             Ok(Arc::new(service))
         }
         EmbeddingProvider::OpenAI => {
@@ -406,9 +288,12 @@ pub fn create_embedding_service(config: Option<&EmbeddingConfig>) -> Result<Arc<
             Ok(Arc::new(service))
         }
         EmbeddingProvider::Auto => {
-            // 先尝试本地模型
-            match LocalEmbeddingService::with_config(&config) {
-                Ok(service) => Ok(Arc::new(service)),
+            // 先尝试本地模型 (FastEmbed 会自动下载)
+            match LocalEmbeddingService::with_config(&config).await {
+                Ok(service) => {
+                    tracing::info!("Using local FastEmbed model (Nomic Embed Text v1.5)");
+                    Ok(Arc::new(service))
+                }
                 Err(e) => {
                     tracing::warn!("Failed to load local embedding model: {}", e);
                     // 尝试 OpenAI 降级
@@ -423,6 +308,13 @@ pub fn create_embedding_service(config: Option<&EmbeddingConfig>) -> Result<Arc<
             }
         }
     }
+}
+
+/// 同步版本 (用于兼容性，内部会 block_on)
+pub fn create_embedding_service_sync(config: Option<&EmbeddingConfig>) -> Result<Arc<dyn EmbeddingService>> {
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| CisError::configuration(format!("Failed to create runtime: {}", e)))?;
+    rt.block_on(create_embedding_service(config))
 }
 
 /// 计算两个向量的余弦相似度
@@ -589,7 +481,7 @@ impl EmbeddingService for SqlFallbackEmbeddingService {
 /// 2. Claude CLI（Agent 工具）
 /// 3. OpenAI API（需要 API Key）
 /// 4. SQL LIKE 回退
-pub fn create_embedding_service_with_fallback(
+pub async fn create_embedding_service_with_fallback(
     config: Option<&EmbeddingConfig>,
     init_config: &crate::ai::embedding_init::EmbeddingInitConfig,
 ) -> Result<Arc<dyn EmbeddingService>> {
@@ -597,20 +489,15 @@ pub fn create_embedding_service_with_fallback(
     
     match init_config.option {
         EmbeddingInitOption::DownloadLocalModel | EmbeddingInitOption::Skip => {
-            // 本地模型优先策略
-            // 1. 首先尝试本地模型
-            let model_config = crate::ai::embedding_init::ModelDownloadConfig::default();
-            if model_config.exists() {
-                tracing::info!("Using local Nomic Embed v1.5 model (highest priority)");
-                let local_config = EmbeddingConfig {
-                    provider: EmbeddingProvider::Local,
-                    model_path: Some(model_config.local_path.to_string_lossy().to_string()),
-                    ..Default::default()
-                };
-                match LocalEmbeddingService::with_config(&local_config) {
-                    Ok(service) => return Ok(Arc::new(service) as Arc<dyn EmbeddingService>),
-                    Err(e) => tracing::warn!("Local model failed: {}, trying alternatives", e),
+            // 本地模型优先策略 (FastEmbed)
+            // 1. 首先尝试 FastEmbed 本地模型 (自动下载)
+            tracing::info!("Initializing FastEmbed with Nomic Embed Text v1.5");
+            match LocalEmbeddingService::new().await {
+                Ok(service) => {
+                    tracing::info!("Using FastEmbed local model (Nomic Embed Text v1.5)");
+                    return Ok(Arc::new(service) as Arc<dyn EmbeddingService>);
                 }
+                Err(e) => tracing::warn!("FastEmbed failed: {}, trying alternatives", e),
             }
             
             // 2. 然后尝试 Claude CLI
@@ -620,7 +507,7 @@ pub fn create_embedding_service_with_fallback(
             }
             
             // 3. 最后尝试 OpenAI 或 SQL 回退
-            create_embedding_service(config).or_else(|_| {
+            create_embedding_service(config).await.or_else(|_| {
                 tracing::warn!("All embedding services failed, using SQL fallback");
                 Ok(Arc::new(SqlFallbackEmbeddingService::new()) as Arc<dyn EmbeddingService>)
             })
@@ -633,7 +520,7 @@ pub fn create_embedding_service_with_fallback(
                 OpenAIEmbeddingService::with_config(&config)
                     .map(|s| Arc::new(s) as Arc<dyn EmbeddingService>)
             } else {
-                create_embedding_service(config)
+                create_embedding_service(config).await
             }
         }
         EmbeddingInitOption::UseClaudeCli => {

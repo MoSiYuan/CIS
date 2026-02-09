@@ -31,7 +31,7 @@ use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::ai::embedding::{create_embedding_service, EmbeddingConfig, EmbeddingService, cosine_similarity};
+use crate::ai::embedding::{create_embedding_service_sync, EmbeddingConfig, EmbeddingService, cosine_similarity};
 use crate::error::{CisError, Result};
 use crate::memory::MemoryEntryExt;
 // use crate::types::{MemoryCategory, MemoryDomain};
@@ -353,7 +353,7 @@ impl VectorStorage {
         // 配置 WAL 模式
         Self::configure_wal(&conn)?;
 
-        let embedding = create_embedding_service(embedding_config)?;
+        let embedding = create_embedding_service_sync(embedding_config)?;
         let config = VectorConfig::default();
 
         let storage = Self {

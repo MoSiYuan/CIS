@@ -42,12 +42,14 @@ mod kimi;
 mod opencode;
 
 pub mod embedding;
+#[cfg(feature = "vector")]
+pub mod embedding_fastembed;
 pub mod embedding_download;
 pub mod embedding_init;
 
 pub use claude::{ClaudeCliProvider, ClaudeConfig};
 pub use embedding::{
-    create_embedding_service, create_embedding_service_with_fallback,
+    create_embedding_service, create_embedding_service_sync, create_embedding_service_with_fallback,
     cosine_similarity, filter_by_similarity,
     EmbeddingConfig, EmbeddingProvider, EmbeddingService as EmbeddingServiceTrait,
     LocalEmbeddingService, OpenAIEmbeddingService,
