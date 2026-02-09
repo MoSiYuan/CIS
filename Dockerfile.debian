@@ -1,0 +1,46 @@
+# CIS v1.1.1 - Debian Slim Release Image with Vector Engine
+# Uses glibc for better compatibility
+
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    jq \
+    netcat-traditional \
+    iputils-ping \
+    dnsutils \
+    sqlite3 \
+    libsqlite3-0 \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create cis user
+RUN useradd -m -s /bin/bash cis
+
+# Copy pre-built binary (with vector feature enabled)
+COPY target/alpine/release/cis-node /usr/local/bin/cis
+RUN chmod +x /usr/local/bin/cis
+
+# Create necessary directories
+RUN mkdir -p /root/.cis /test_configs /test_scripts /test_results && \
+    chown -R cis:cis /root/.cis
+
+# Set environment variables
+ENV PATH="/usr/local/bin:$PATH"
+ENV CIS_HOME=/root/.cis
+ENV RUST_LOG=info
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD cis --version || exit 1
+
+# Default command
+CMD ["cis", "--help"]
+
+# Labels
+LABEL org.opencontainers.image.title="CIS Agent Teams"
+LABEL org.opencontainers.image.version="1.1.1"
+LABEL org.opencontainers.image.description="Cluster of Independent Systems with Agent Teams support and sqlite-vec vector engine"

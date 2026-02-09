@@ -1,0 +1,71 @@
+# CIS v1.1.1 - Local Image Build
+# Uses locally available images
+
+FROM rustlang/rust:nightly-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    musl-dev \
+    openssl-dev \
+    cmake \
+    clang \
+    llvm-dev \
+    pkgconfig \
+    protobuf-dev \
+    perl \
+    make
+
+WORKDIR /build
+
+# Copy project files
+COPY Cargo.toml Cargo.lock ./
+COPY cis-core/ ./cis-core/
+COPY cis-node/ ./cis-node/
+COPY cis-skill-sdk/ ./cis-skill-sdk/
+COPY cis-gui/ ./cis-gui/
+COPY crates/ ./crates/
+COPY skills/ ./skills/
+
+# Build
+RUN cargo build --release -p cis-node --features cis-core/vector
+
+# Runtime stage
+FROM alpine:3.19
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    curl \
+    jq \
+    netcat-openbsd \
+    iputils \
+    bind-tools \
+    sqlite-libs \
+    libgcc \
+    libstdc++ \
+    nodejs \
+    npm
+
+# Create cis user
+RUN adduser -D -s /bin/sh cis
+
+# Copy binary from builder
+COPY --from=builder /build/target/release/cis-node /usr/local/bin/cis
+RUN chmod +x /usr/local/bin/cis
+
+# Create necessary directories
+RUN mkdir -p /root/.cis /test_configs /test_scripts /test_results && \
+    chown -R cis:cis /root/.cis
+
+# Set environment
+ENV PATH="/usr/local/bin:$PATH"
+ENV CIS_HOME=/root/.cis
+ENV RUST_LOG=info
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD cis --version || exit 1
+
+CMD ["cis", "--help"]
+
+LABEL org.opencontainers.image.title="CIS Agent Teams"
+LABEL org.opencontainers.image.version="1.1.1"

@@ -1,0 +1,48 @@
+# CIS v1.1.1 - Simple Alpine Build
+# Uses pre-built binary if available
+
+FROM alpine:3.19
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    curl \
+    jq \
+    netcat-openbsd \
+    iputils \
+    bind-tools \
+    nodejs \
+    npm \
+    libgcc \
+    libstdc++
+
+# Create cis user
+RUN adduser -D -s /bin/sh cis
+
+# Copy pre-built binary (if available locally)
+COPY target/release/cis-node /usr/local/bin/cis 2>/dev/null || \
+     (echo "Binary not found, please build first: cargo build --release -p cis-node" && \
+      mkdir -p /usr/local/bin && \
+      echo '#!/bin/sh\necho "CIS not built. Build with: cargo build --release -p cis-node"' > /usr/local/bin/cis && \
+      chmod +x /usr/local/bin/cis)
+
+# Create necessary directories
+RUN mkdir -p /root/.cis /test_configs /test_scripts /test_results && \
+    chown -R cis:cis /root/.cis
+
+# Set environment variables
+ENV PATH="/usr/local/bin:$PATH"
+ENV CIS_HOME=/root/.cis
+ENV RUST_LOG=info
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD cis --version || exit 1
+
+# Default command
+CMD ["cis", "--help"]
+
+# Labels
+LABEL org.opencontainers.image.title="CIS Agent Teams"
+LABEL org.opencontainers.image.version="1.1.1"
+LABEL org.opencontainers.image.description="Cluster of Independent Systems with Agent Teams support"

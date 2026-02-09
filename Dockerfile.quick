@@ -1,0 +1,33 @@
+# CIS v1.1.1 - Quick Alpine Build
+# Uses cargo-chef for cached builds
+
+FROM rust:1.75-alpine3.19 AS chef
+RUN apk add --no-cache musl-dev openssl-dev cmake clang llvm-dev pkgconfig protobuf-dev
+RUN cargo install cargo-chef
+
+FROM chef AS planner
+WORKDIR /app
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+WORKDIR /app
+COPY --from=planner /app/recipe.json recipe.json
+
+# Build dependencies (cached layer)
+RUN cargo chef cook --release --recipe-path recipe.json -p cis-node --features cis-core/vector
+
+# Build application
+COPY . .
+RUN cargo build --release -p cis-node --features cis-core/vector
+
+# Runtime
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates curl jq netcat-openbsd iputils bind-tools nodejs npm libgcc libstdc++
+COPY --from=builder /app/target/release/cis-node /usr/local/bin/cis
+RUN chmod +x /usr/local/bin/cis
+ENV PATH="/usr/local/bin:$PATH"
+ENV CIS_HOME=/root/.cis
+ENV RUST_LOG=info
+CMD ["cis", "--help"]
+LABEL org.opencontainers.image.version="1.1.1"

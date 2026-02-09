@@ -1,0 +1,51 @@
+# CIS v1.1.1 - Alpine Release Image with Vector Engine
+# Includes sqlite-vec for local semantic search
+
+FROM alpine:3.19
+
+# Install runtime dependencies
+# - sqlite-libs: For sqlite-vec extension
+# - libgcc/libstdc++: For Rust runtime
+# - ca-certificates: For HTTPS requests
+# - curl/jq: For utility
+# - nodejs/npm: For OpenCode CLI support
+RUN apk add --no-cache \
+    ca-certificates \
+    curl \
+    jq \
+    netcat-openbsd \
+    iputils \
+    bind-tools \
+    sqlite-libs \
+    libgcc \
+    libstdc++ \
+    nodejs \
+    npm
+
+# Create cis user
+RUN adduser -D -s /bin/sh cis
+
+# Copy pre-built binary (with vector feature enabled)
+COPY target/alpine/release/cis-node /usr/local/bin/cis
+RUN chmod +x /usr/local/bin/cis
+
+# Create necessary directories
+RUN mkdir -p /root/.cis /test_configs /test_scripts /test_results && \
+    chown -R cis:cis /root/.cis
+
+# Set environment variables
+ENV PATH="/usr/local/bin:$PATH"
+ENV CIS_HOME=/root/.cis
+ENV RUST_LOG=info
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD cis --version || exit 1
+
+# Default command
+CMD ["cis", "--help"]
+
+# Labels
+LABEL org.opencontainers.image.title="CIS Agent Teams"
+LABEL org.opencontainers.image.version="1.1.1"
+LABEL org.opencontainers.image.description="Cluster of Independent Systems with Agent Teams support and sqlite-vec vector engine"
