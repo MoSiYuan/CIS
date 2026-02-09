@@ -31,18 +31,20 @@ impl ClaudeProvider {
             cmd.current_dir(work_dir);
         }
 
-        // 基础参数
+        // 非交互模式：直接输出结果并退出
+        cmd.arg("--print");
+
+        // 模型选择
         if let Some(ref model) = self.config.model {
             cmd.arg("--model").arg(model);
         }
 
-        if let Some(max_tokens) = self.config.max_tokens {
-            cmd.arg("--max-tokens").arg(max_tokens.to_string());
-        }
+        // 注意：Claude CLI 不支持 --max-tokens 参数
+        // 该参数在 API 中有效，但 CLI 版本不支持
 
         // 添加系统提示词
         if let Some(ref system) = req.system_prompt {
-            cmd.arg("--system").arg(system);
+            cmd.arg("--system-prompt").arg(system);
         }
 
         cmd
@@ -67,7 +69,7 @@ impl AgentProvider for ClaudeProvider {
     async fn execute(&self, req: AgentRequest) -> Result<AgentResponse> {
         let mut cmd = self.build_command(&req);
 
-        // 添加 prompt - Claude CLI 直接使用参数，不需要 -- 分隔符
+        // 添加 prompt
         cmd.arg(&req.prompt);
 
         let output = cmd.output().await?;
@@ -90,8 +92,8 @@ impl AgentProvider for ClaudeProvider {
     ) -> Result<AgentResponse> {
         let mut cmd = self.build_command(&req);
 
-        // 启用流式输出
-        cmd.arg("--stream");
+        // 流式输出格式
+        cmd.arg("--output-format").arg("stream-json");
         cmd.arg(&req.prompt);
 
         let mut child = cmd.spawn()?;
@@ -102,8 +104,23 @@ impl AgentProvider for ClaudeProvider {
         let mut lines = reader.lines();
 
         while let Some(line) = lines.next_line().await? {
-            if tx.send(line).await.is_err() {
-                break;
+            // 尝试解析 JSON 流输出
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                // 提取内容字段
+                if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
+                    if tx.send(content.to_string()).await.is_err() {
+                        break;
+                    }
+                } else if let Some(text) = json.get("text").and_then(|t| t.as_str()) {
+                    if tx.send(text.to_string()).await.is_err() {
+                        break;
+                    }
+                }
+            } else {
+                // 非 JSON 行，直接发送
+                if tx.send(line).await.is_err() {
+                    break;
+                }
             }
         }
 
@@ -129,5 +146,26 @@ impl AgentProvider for ClaudeProvider {
                 "claude-opus-4-20250514".to_string(),
             ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_claude_provider_creation() {
+        let config = AgentConfig::default();
+        let provider = ClaudeProvider::new(config);
+        assert_eq!(provider.name(), "claude");
+    }
+
+    #[test]
+    fn test_claude_capabilities() {
+        let config = AgentConfig::default();
+        let provider = ClaudeProvider::new(config);
+        let caps = provider.capabilities();
+        assert!(caps.streaming);
+        assert!(caps.max_context_length.is_some());
     }
 }
