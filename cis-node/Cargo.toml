@@ -4,7 +4,7 @@ version = "1.1.2"
 edition = "2021"
 
 [dependencies]
-cis-core = { path = "../cis-core" }
+cis-core = { path = "../cis-core", features = ["vector", "p2p"] }
 clap = { version = "4.0", features = ["derive"] }
 clap_complete = "4.0"
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
@@ -29,6 +29,11 @@ libc = "0.2"
 crossterm = "0.27"
 colored = "2.0"
 indicatif = "0.17"
+
+[features]
+default = ["vector", "p2p"]
+vector = []
+p2p = []
 
 [dev-dependencies]
 assert_cmd = "2.0"

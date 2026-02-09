@@ -1000,7 +1000,8 @@ async fn sync_acl(from: Option<String>, broadcast: bool) -> anyhow::Result<()> {
     }
     
     #[cfg(feature = "p2p")]
-    if let Some(peer) = from {
+    let from_peer = from.clone();
+    if let Some(peer) = from_peer {
         println!("→ Syncing ACL from {}...", peer);
         
         println!("  Requesting ACL sync from peer: {}", peer);
