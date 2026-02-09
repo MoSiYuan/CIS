@@ -1,41 +1,92 @@
-# 🚀 CIS v1.1.0 并行开发已启动
+# 🚀 CIS v1.1.2 快速开始指南
 
-## 快速开始
+## 安装
 
-### Agent 执行入口
-
-```bash
-# 如果你是 Agent-A (内存安全修复)
-cd plan/tasks
-./start.sh agent-a
-
-# 如果你是 Agent-B (WebSocket测试)
-./start.sh agent-b
-
-# 其他 Agent: agent-c, agent-d, agent-e, agent-f
-```
-
-### 任务文档
+### 方式一：自动安装脚本（推荐）
 
 ```bash
-# 查看任务索引
-cat plan/tasks/TASK_INDEX.md
-
-# 查看执行状态
-cat plan/tasks/EXECUTION_STATUS.md
-
-# 查看详细指令
-cat plan/tasks/AGENT_ASSIGNMENTS.md
+curl -fsSL https://raw.githubusercontent.com/MoSiYuan/CIS/main/scripts/install/install.sh | bash
 ```
 
-## 当前状态
+### 方式二：从源码构建
 
-- **阶段**: Phase 1 - Week 1
-- **并行 Agent**: 6 个
-- **任务状态**: 🟢 全部已开始
+```bash
+# 克隆仓库
+git clone https://github.com/MoSiYuan/CIS.git
+cd CIS
+
+# 构建（默认启用所有功能：vector, p2p, encryption）
+cargo build --release --package cis-node
+
+# 安装
+cp target/release/cis-node ~/.local/bin/cis
+```
+
+## 初始化
+
+```bash
+# 交互式初始化
+cis init
+
+# 或使用快速初始化
+cis init --non-interactive --provider claude
+```
+
+## 启动节点
+
+### 单节点模式
+```bash
+cis node start
+```
+
+### 多主机组网
+
+**Coordinator (协调节点):**
+```bash
+# 1. 获取本机 DID
+cis node info
+
+# 2. 启动
+cis node start --role coordinator
+```
+
+**Worker (工作节点):**
+```bash
+# 1. 配置引导节点（编辑 ~/.config/cis/config.yaml）
+# network:
+#   p2p:
+#     bootstrap_nodes:
+#       - "/ip4/<COORDINATOR_IP>/tcp/7677"
+
+# 2. 启动
+cis node start --role worker
+```
+
+## 验证连接
+
+```bash
+# 查看节点状态
+cis node status
+
+# 查看对等节点
+cis network peers
+
+# 测试连通性
+cis network ping <对方节点DID>
+```
+
+## 使用 Agent
+
+```bash
+# 执行单任务
+cis agent execute "分析当前目录的代码结构"
+
+# 使用 DAG 执行复杂任务
+cis dag run examples/dag-code-review.yaml
+```
 
 ## 更多信息
 
-- [启动总结](plan/tasks/LAUNCH_SUMMARY.md)
-- [快速开始](plan/tasks/QUICKSTART.md)
-- [任务上下文](plan/tasks/CONTEXT.md)
+- [安装指南](INSTALL.md) - 详细安装和配置说明
+- [CHANGELOG](CHANGELOG.md) - 版本更新日志
+- [API 文档](docs/API.md) - 开发接口文档
