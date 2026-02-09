@@ -1,6 +1,6 @@
 [package]
 name = "cis-capability"
-version = "1.1.1"
+version = "1.1.2"
 edition = "2021"
 description = "CIS Core Capability Layer - Unified skill, memory, and context services"
 

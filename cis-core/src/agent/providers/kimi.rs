@@ -47,8 +47,8 @@ impl AgentProvider for KimiProvider {
             cmd.current_dir(work_dir);
         }
 
-        // Kimi CLI 参数
-        cmd.arg("chat").arg("--no-stream").arg("--").arg(&req.prompt);
+        // Kimi CLI 参数 - 直接传递 prompt，不使用 -- 分隔符
+        cmd.arg("chat").arg("--no-stream").arg(&req.prompt);
 
         let output = cmd.output().await?;
 
@@ -74,8 +74,8 @@ impl AgentProvider for KimiProvider {
             cmd.current_dir(work_dir);
         }
 
-        // 流式模式
-        cmd.arg("chat").arg("--stream").arg("--").arg(&req.prompt);
+        // 流式模式 - 直接传递 prompt，不使用 -- 分隔符
+        cmd.arg("chat").arg("--stream").arg(&req.prompt);
 
         let mut child = cmd.spawn()?;
         let stdout = child.stdout.take().expect("Failed to capture stdout");

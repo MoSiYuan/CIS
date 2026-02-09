@@ -116,10 +116,10 @@ impl AgentProvider for OpenCodeProvider {
     async fn execute(&self, req: AgentRequest) -> Result<AgentResponse> {
         let mut cmd = self.build_command(&req);
 
-        // 添加 prompt
-        cmd.arg("--").arg(&req.prompt);
+        // 添加 prompt - 直接传递，不使用 -- 分隔符
+        cmd.arg(&req.prompt);
 
-        debug!("Executing OpenCode command: opencode run --model {:?} --format json -- <prompt>",
+        debug!("Executing OpenCode command: opencode run --model {:?} --format json <prompt>",
                self.config.model);
 
         let output = cmd.output().await?;
@@ -148,8 +148,8 @@ impl AgentProvider for OpenCodeProvider {
     ) -> Result<AgentResponse> {
         let mut cmd = self.build_command(&req);
 
-        // 添加 prompt
-        cmd.arg("--").arg(&req.prompt);
+        // 添加 prompt - 直接传递，不使用 -- 分隔符
+        cmd.arg(&req.prompt);
 
         debug!("Executing OpenCode stream command");
 
