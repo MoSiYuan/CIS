@@ -1,0 +1,41 @@
+# 使用已缓存的 Rust 镜像在容器内构建
+FROM rust:1.75-slim-bookworm as builder
+
+# 安装依赖
+RUN apt-get update && apt-get install -y pkg-config libssl-dev libsqlite3-dev
+
+WORKDIR /build
+
+# 复制所有项目文件
+COPY . .
+
+# 构建发布版本
+RUN cargo build --release -p cis-node
+
+# 运行阶段 - 使用相同基础镜像
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y ca-certificates libsqlite3-0 curl && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/cis-node /usr/local/bin/
+RUN chmod +x /usr/local/bin/cis-node
+
+# 创建启动脚本
+RUN echo '#!/bin/sh' > /entrypoint.sh && \
+    echo 'mkdir -p /var/lib/cis/data /etc/cis' >> /entrypoint.sh && \
+    echo 'cat > /etc/cis/config.toml << EOF' >> /entrypoint.sh && \
+    echo '[node]' >> /entrypoint.sh && \
+    echo "id = \"\${CIS_NODE_ID}\"" >> /entrypoint.sh && \
+    echo "name = \"\${CIS_NODE_NAME}\"" >> /entrypoint.sh && \
+    echo "did = \"\${CIS_DID}\"" >> /entrypoint.sh && \
+    echo "role = \"\${CIS_NODE_ROLE:-worker}\"" >> /entrypoint.sh && \
+    echo '[network]' >> /entrypoint.sh && \
+    echo 'discovery_port = 6767' >> /entrypoint.sh && \
+    echo 'pairing_port = 6768' >> /entrypoint.sh && \
+    echo 'EOF' >> /entrypoint.sh && \
+    echo 'exec cis-node daemon --config /etc/cis/config.toml' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+EXPOSE 7676 7677/udp 6767 6768
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -217,6 +217,45 @@ enum Commands {
         #[command(subcommand)]
         command: commands::neighbor::NeighborCommands,
     },
+    
+    /// Quick pair nodes using 6-digit pairing code
+    Pair {
+        #[command(subcommand)]
+        command: commands::pair::PairCommands,
+    },
+    
+    /// 🚀 Unified Smart CLI - Consolidated interface for all operations
+    Unified {
+        #[command(subcommand)]
+        command: commands::unified::UnifiedCommands,
+    },
+    
+    /// 🚀 Quick setup CIS (unified interface)
+    Setup {
+        /// Fully automatic mode, no interaction
+        #[arg(long)]
+        auto: bool,
+        /// Node role
+        #[arg(long, value_enum, default_value = "worker")]
+        role: NodeRole,
+    },
+    
+    /// 🚀 Quick join network (unified interface)
+    Join {
+        /// Target address
+        #[arg(long, short)]
+        address: Option<String>,
+        /// Pairing code
+        #[arg(long, short)]
+        code: Option<String>,
+    },
+    
+    /// 🚀 Execute natural language command (unified interface)
+    #[command(name = "do")]
+    Do {
+        /// Natural language description
+        command: Vec<String>,
+    },
 }
 
 /// Shell types for completion
@@ -227,6 +266,14 @@ enum ShellType {
     Fish,
     PowerShell,
     Elvish,
+}
+
+/// Node roles for unified CLI
+#[derive(ValueEnum, Debug, Clone, Copy)]
+enum NodeRole {
+    Coordinator,
+    Worker,
+    Edge,
 }
 
 /// Agent subcommands
@@ -1088,6 +1135,53 @@ async fn run_command(command: Commands, json_output: bool) -> anyhow::Result<()>
         Commands::Neighbor { command } => {
             commands::neighbor::handle(commands::neighbor::NeighborArgs { command }).await
         }
+        
+        Commands::Pair { command } => {
+            commands::pair::handle(command).await
+        }
+        
+        Commands::Unified { command } => {
+            commands::unified::handle(command).await
+        }
+        
+        Commands::Setup { auto, role } => {
+            let node_role = match role {
+                NodeRole::Coordinator => commands::unified::NodeRole::Coordinator,
+                NodeRole::Worker => commands::unified::NodeRole::Worker,
+                NodeRole::Edge => commands::unified::NodeRole::Edge,
+            };
+            commands::unified::setup::execute(auto, node_role).await
+        }
+        
+        Commands::Join { address, code } => {
+            commands::unified::join::execute(address, code).await
+        }
+        
+        Commands::Do { command: cmd } => {
+            let command_str = cmd.join(" ");
+            do_natural_language(&command_str).await
+        }
+    }
+}
+
+/// Natural language command parser
+async fn do_natural_language(command: &str) -> anyhow::Result<()> {
+    let cmd = command.to_lowercase();
+    
+    // Simple intent recognition
+    if cmd.contains("组网") || cmd.contains("join") || cmd.contains("连接") || cmd.contains("network") {
+        println!("🤖 Understood: Join network");
+        commands::unified::join::execute(None, None).await
+    } else if cmd.contains("初始化") || cmd.contains("setup") || cmd.contains("安装") || cmd.contains("init") {
+        println!("🤖 Understood: Initialize CIS");
+        commands::unified::setup::execute(true, commands::unified::NodeRole::Worker).await
+    } else if cmd.contains("状态") || cmd.contains("status") || cmd.contains("查看") || cmd.contains("show") {
+        println!("🤖 Understood: Show status");
+        commands::unified::status::execute(true, false).await
+    } else {
+        println!("❓ Unknown command: {}", command);
+        println!("💡 Try: cis setup / cis join / cis status");
+        Ok(())
     }
 }
 

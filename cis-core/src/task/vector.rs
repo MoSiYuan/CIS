@@ -403,6 +403,7 @@ fn deserialize_f32_vec(bytes: &[u8]) -> Vec<f32> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "vector")]
 mod tests {
     use super::*;
     use crate::ai::embedding::{EmbeddingService, DEFAULT_EMBEDDING_DIM};

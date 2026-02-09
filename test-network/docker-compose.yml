@@ -1,0 +1,73 @@
+# CIS 组网测试环境 - 极简配置
+# 3节点组网测试，完全隔离
+
+version: '3.8'
+
+services:
+  node1:
+    build: { context: ., dockerfile: Dockerfile.test }
+    image: cis-network-test:latest
+    container_name: cis-node1
+    hostname: cis-node1
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.11
+    environment:
+      - CIS_NODE_ID=node1
+      - CIS_NODE_NAME=node1-coordinator
+      - CIS_NODE_ROLE=coordinator
+      - CIS_DID=did:cis:node1:test
+      - GLM_API_KEY=${GLM_API_KEY:-}
+      - GLM_MODEL=${GLM_MODEL:-code-plan-glm4.7}
+
+  node2:
+    build: { context: ., dockerfile: Dockerfile.test }
+    image: cis-network-test:latest
+    container_name: cis-node2
+    hostname: cis-node2
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.12
+    environment:
+      - CIS_NODE_ID=node2
+      - CIS_NODE_NAME=node2-worker
+      - CIS_NODE_ROLE=worker
+      - CIS_DID=did:cis:node2:test
+      - GLM_API_KEY=${GLM_API_KEY:-}
+      - GLM_MODEL=${GLM_MODEL:-code-plan-glm4.7}
+    depends_on: [node1]
+
+  node3:
+    build: { context: ., dockerfile: Dockerfile.test }
+    image: cis-network-test:latest
+    container_name: cis-node3
+    hostname: cis-node3
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.13
+    environment:
+      - CIS_NODE_ID=node3
+      - CIS_NODE_NAME=node3-worker
+      - CIS_NODE_ROLE=worker
+      - CIS_DID=did:cis:node3:test
+      - GLM_API_KEY=${GLM_API_KEY:-}
+      - GLM_MODEL=${GLM_MODEL:-code-plan-glm4.7}
+    depends_on: [node1]
+
+  # 可选调试容器
+  debug:
+    image: alpine:3.19
+    container_name: cis-debug
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.100
+    command: sleep infinity
+    profiles: [debug]
+
+networks:
+  cis-net:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

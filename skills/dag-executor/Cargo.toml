@@ -1,6 +1,6 @@
 [package]
 name = "dag-executor"
-version = "0.1.0"
+version = "1.1.1"
 edition = "2021"
 description = "CIS DAG Executor Skill - 基于作用域隔离的DAG执行器"
 authors = ["CIS Team"]

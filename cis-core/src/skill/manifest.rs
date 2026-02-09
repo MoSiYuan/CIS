@@ -40,7 +40,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::agent::AgentConfig;
 use crate::error::{CisError, Result};
+use crate::scheduler::RuntimeType;
 
 /// Skill Manifest
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -266,6 +268,27 @@ pub struct DagTaskDefinition {
     /// 是否幂等
     #[serde(default)]
     pub idempotent: bool,
+    
+    // === Agent Teams 相关字段 ===
+    /// 指定使用的 Agent Runtime
+    #[serde(default)]
+    pub agent_runtime: Option<RuntimeType>,
+    
+    /// 复用已有 Agent ID（同 DAG 内）
+    #[serde(default)]
+    pub reuse_agent: Option<String>,
+    
+    /// 是否保持 Agent（执行后不销毁）
+    #[serde(default = "default_keep_agent")]
+    pub keep_agent: bool,
+    
+    /// Agent 配置（创建新 Agent 时用）
+    #[serde(default)]
+    pub agent_config: Option<AgentConfig>,
+}
+
+fn default_keep_agent() -> bool {
+    false
 }
 
 fn default_retry() -> u8 {
@@ -547,6 +570,10 @@ impl DagTaskDefinition {
             timeout_secs: default_timeout(),
             rollback: Vec::new(),
             idempotent: false,
+            agent_runtime: None,
+            reuse_agent: None,
+            keep_agent: false,
+            agent_config: None,
         }
     }
 
@@ -577,6 +604,30 @@ impl DagTaskDefinition {
     /// 设置回滚命令
     pub fn with_rollback(mut self, commands: Vec<impl Into<String>>) -> Self {
         self.rollback = commands.into_iter().map(|s| s.into()).collect();
+        self
+    }
+
+    /// 设置 Agent Runtime
+    pub fn with_agent_runtime(mut self, runtime: RuntimeType) -> Self {
+        self.agent_runtime = Some(runtime);
+        self
+    }
+
+    /// 设置复用 Agent ID
+    pub fn with_reuse_agent(mut self, agent_id: impl Into<String>) -> Self {
+        self.reuse_agent = Some(agent_id.into());
+        self
+    }
+
+    /// 设置是否保持 Agent
+    pub fn with_keep_agent(mut self, keep: bool) -> Self {
+        self.keep_agent = keep;
+        self
+    }
+
+    /// 设置 Agent 配置
+    pub fn with_agent_config(mut self, config: AgentConfig) -> Self {
+        self.agent_config = Some(config);
         self
     }
 }

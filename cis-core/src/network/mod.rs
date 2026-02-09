@@ -35,6 +35,7 @@ pub mod agent_session;
 pub mod audit;
 pub mod did_verify;
 pub mod session_manager;
+pub mod pairing;
 pub mod simple_discovery;
 pub mod sync;
 pub mod websocket;
@@ -98,6 +99,7 @@ pub use websocket::{
     MAX_RECONNECT_ATTEMPTS,
 };
 pub use audit::{AuditLogger, AuditEntry, AuditEventType, Severity};
+pub use pairing::{PairingManager, PairingService, PairingSession, PairingState, PairingResult, PairingNodeInfo};
 pub use simple_discovery::{SimpleDiscovery, DiscoveredNode};
 
 use crate::error::{CisError, Result};

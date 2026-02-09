@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::agent::{AgentType, AgentCommandConfig};
+use crate::agent::{AgentType, AgentCommandConfig, AgentMode};
 use crate::agent::cluster::events::{EventBroadcaster, SessionEvent, SessionState};
 use crate::agent::cluster::SessionId;
 use crate::error::{CisError, Result};
@@ -167,6 +167,13 @@ pub struct AgentSession {
     event_broadcaster: EventBroadcaster,
     /// Attached user (if any)
     attached_user: Arc<RwLock<Option<String>>>,
+    
+    // === Persistence fields ===
+    /// Whether this is a persistent session (does not auto-destroy after task completion)
+    persistent: bool,
+    
+    /// Maximum idle time in seconds before auto-destroy (0 means no limit)
+    max_idle_secs: u64,
 }
 
 impl AgentSession {
@@ -203,6 +210,8 @@ impl AgentSession {
             max_buffer_lines,
             event_broadcaster,
             attached_user: Arc::new(RwLock::new(None)),
+            persistent: false,
+            max_idle_secs: 0,
         }
     }
 
@@ -268,7 +277,7 @@ impl AgentSession {
     /// Build command for agent type (重构版本)
     fn build_agent_command(&self) -> Result<CommandBuilder> {
         // 获取 Agent 配置
-        let config = AgentCommandConfig::from_agent_type(self.agent_type)
+        let config = AgentCommandConfig::from_agent_type(self.agent_type, AgentMode::Single)
             .ok_or_else(|| CisError::configuration(
                 format!("Agent type {:?} not supported for cluster sessions", self.agent_type)
             ))?;
@@ -478,28 +487,38 @@ impl AgentSession {
     }
 
     /// Mark as completed
+    /// 
+    /// For persistent sessions, transitions to Idle state instead of Completed.
     pub async fn mark_completed(&self, output: &str, exit_code: i32) {
-        let state = SessionState::Completed {
-            output: output.to_string(),
-            exit_code,
-        };
-        self.set_state(state.clone()).await;
-        
-        let _ = self.event_broadcaster.send(SessionEvent::Completed {
-            session_id: self.id.clone(),
-            output: output.to_string(),
-            exit_code,
-            timestamp: Utc::now(),
-        });
+        if self.persistent && exit_code == 0 {
+            // Persistent session with success: go to Idle
+            self.mark_idle().await;
+        } else {
+            // Non-persistent or failed: go to Completed/Failed
+            let state = SessionState::Completed {
+                output: output.to_string(),
+                exit_code,
+            };
+            self.set_state(state.clone()).await;
+
+            let _ = self.event_broadcaster.send(SessionEvent::Completed {
+                session_id: self.id.clone(),
+                output: output.to_string(),
+                exit_code,
+                timestamp: Utc::now(),
+            });
+        }
     }
 
     /// Mark as failed
+    /// 
+    /// Note: Even persistent sessions transition to Failed state on errors.
     pub async fn mark_failed(&self, error: &str) {
         let state = SessionState::Failed {
             error: error.to_string(),
         };
         self.set_state(state.clone()).await;
-        
+
         let _ = self.event_broadcaster.send(SessionEvent::Failed {
             session_id: self.id.clone(),
             error: error.to_string(),
@@ -523,10 +542,18 @@ impl AgentSession {
     }
 
     /// Detach user
+    /// 
+    /// For persistent sessions in Idle state, stays in Idle.
+    /// Otherwise transitions to RunningDetached.
     pub async fn detach(&self, user: &str) -> Result<()> {
         *self.attached_user.write().await = None;
-        self.set_state(SessionState::RunningDetached).await;
         
+        // Only transition to RunningDetached if not already in Idle
+        let current_state = self.state.read().await.clone();
+        if !matches!(current_state, SessionState::Idle) {
+            self.set_state(SessionState::RunningDetached).await;
+        }
+
         let _ = self.event_broadcaster.send(SessionEvent::Detached {
             session_id: self.id.clone(),
             user: user.to_string(),
@@ -559,6 +586,166 @@ impl AgentSession {
             }
         }
         None
+    }
+
+    // === Persistence methods ===
+
+    /// Set persistent mode
+    pub fn set_persistent(&mut self, persistent: bool) {
+        self.persistent = persistent;
+    }
+
+    /// Check if session is persistent
+    pub fn is_persistent(&self) -> bool {
+        self.persistent
+    }
+
+    /// Set maximum idle time in seconds (0 means no limit)
+    pub fn set_max_idle_secs(&mut self, secs: u64) {
+        self.max_idle_secs = secs;
+    }
+
+    /// Get maximum idle time in seconds
+    pub fn max_idle_secs(&self) -> u64 {
+        self.max_idle_secs
+    }
+
+    /// Update last activity timestamp
+    pub async fn touch(&self) {
+        *self.last_activity.write().await = Utc::now();
+    }
+
+    /// Check if session should be auto-destroyed
+    /// 
+    /// For non-persistent sessions: returns true if in terminal state
+    /// For persistent sessions: returns true only if idle timeout exceeded
+    pub async fn should_auto_destroy(&self) -> bool {
+        if self.persistent {
+            // Persistent mode: check idle timeout
+            if self.max_idle_secs > 0 {
+                let last_activity = *self.last_activity.read().await;
+                let idle_time = Utc::now().signed_duration_since(last_activity);
+                if idle_time.num_seconds() > self.max_idle_secs as i64 {
+                    return true; // Idle timeout exceeded
+                }
+            }
+            false // Don't destroy persistent sessions
+        } else {
+            // Non-persistent mode: destroy if in terminal state
+            let state = self.state.read().await.clone();
+            state.is_terminal()
+        }
+    }
+
+    /// Send input to PTY (async version for persistent mode)
+    /// 
+    /// This is the async version that automatically appends a newline
+    /// and updates the activity timestamp.
+    pub async fn send_input_async(&self, input: &str) -> Result<()> {
+        let input_tx = {
+            let internals = self.internals.lock().await;
+            internals.input_tx.clone()
+        };
+
+        if let Some(tx) = input_tx {
+            // Add newline and send
+            let input_with_newline = format!("{}\n", input);
+            tx.send(input_with_newline.into_bytes())
+                .map_err(|_| CisError::execution("Failed to send input to session"))?;
+
+            // Update activity timestamp
+            self.touch().await;
+
+            Ok(())
+        } else {
+            Err(CisError::execution("Session not started"))
+        }
+    }
+
+    /// Get current output content (non-destructive read)
+    /// 
+    /// Returns the full content of the output buffer as a string.
+    pub async fn get_output_content(&self) -> String {
+        self.output_buffer.read().await.as_string()
+    }
+
+    /// Wait for specific output pattern with timeout
+    /// 
+    /// Polls the output buffer until the pattern is found or timeout is reached.
+    /// Returns the full output content when pattern is found.
+    pub async fn wait_for_output(&self, pattern: &str, timeout: Duration) -> Result<String> {
+        let start = Instant::now();
+
+        while start.elapsed() < timeout {
+            let output = self.get_output_content().await;
+            if output.contains(pattern) {
+                return Ok(output);
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        Err(CisError::execution(format!(
+            "Timeout waiting for pattern: {}",
+            pattern
+        )))
+    }
+
+    /// Mark session as idle (for persistent sessions after task completion)
+    /// 
+    /// Only transitions to Idle state if the session is persistent.
+    /// For non-persistent sessions, the original terminal state is preserved.
+    pub async fn mark_idle(&self) {
+        if self.persistent {
+            let old_state = self.state.read().await.clone();
+            *self.state.write().await = SessionState::Idle;
+            self.touch().await;
+
+            let _ = self.event_broadcaster.send(SessionEvent::StateChanged {
+                session_id: self.id.clone(),
+                old_state,
+                new_state: SessionState::Idle,
+                timestamp: Utc::now(),
+            });
+        }
+    }
+
+    /// Mark session as paused
+    pub async fn mark_paused(&self) {
+        let old_state = self.state.read().await.clone();
+        *self.state.write().await = SessionState::Paused;
+
+        let _ = self.event_broadcaster.send(SessionEvent::StateChanged {
+            session_id: self.id.clone(),
+            old_state,
+            new_state: SessionState::Paused,
+            timestamp: Utc::now(),
+        });
+    }
+
+    /// Resume from paused state
+    /// 
+    /// Transitions back to RunningDetached if currently paused.
+    pub async fn resume(&self) -> Result<()> {
+        let current_state = self.state.read().await.clone();
+        
+        if !matches!(current_state, SessionState::Paused) {
+            return Err(CisError::execution(format!(
+                "Cannot resume from state: {:?}",
+                current_state
+            )));
+        }
+
+        *self.state.write().await = SessionState::RunningDetached;
+        self.touch().await;
+
+        let _ = self.event_broadcaster.send(SessionEvent::StateChanged {
+            session_id: self.id.clone(),
+            old_state: SessionState::Paused,
+            new_state: SessionState::RunningDetached,
+            timestamp: Utc::now(),
+        });
+
+        Ok(())
     }
 
     /// Shutdown the session
@@ -606,10 +793,17 @@ impl AgentSession {
 
     /// Check if session is in terminal state
     pub async fn is_terminal(&self) -> bool {
-        matches!(
-            self.get_state().await,
-            SessionState::Completed { .. } | SessionState::Failed { .. }
-        )
+        self.get_state().await.is_terminal()
+    }
+
+    /// Check if session is in active state (can be reused)
+    pub async fn is_active(&self) -> bool {
+        self.get_state().await.is_active()
+    }
+
+    /// Check if session can accept new tasks
+    pub async fn can_accept_task(&self) -> bool {
+        self.get_state().await.can_accept_task()
     }
 }
 
@@ -618,5 +812,174 @@ impl Drop for AgentSession {
         // Note: We can't use async Mutex in Drop, so we rely on async shutdown() 
         // being called before drop. This is a fallback safety net.
         // The process will be killed when the Child handle is dropped anyway.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn create_test_session() -> AgentSession {
+        let event_broadcaster = EventBroadcaster::new(100);
+        AgentSession::new(
+            SessionId::new("test-run", "test-task"),
+            AgentType::OpenCode,
+            PathBuf::from("/tmp"),
+            "test prompt".to_string(),
+            "".to_string(),
+            event_broadcaster,
+            1000,
+        )
+    }
+
+    #[test]
+    fn test_persistent_mode_setters() {
+        let mut session = create_test_session();
+
+        // Default values
+        assert!(!session.is_persistent());
+        assert_eq!(session.max_idle_secs(), 0);
+
+        // Set persistent mode
+        session.set_persistent(true);
+        assert!(session.is_persistent());
+
+        session.set_persistent(false);
+        assert!(!session.is_persistent());
+
+        // Set max idle seconds
+        session.set_max_idle_secs(3600);
+        assert_eq!(session.max_idle_secs(), 3600);
+
+        session.set_max_idle_secs(0);
+        assert_eq!(session.max_idle_secs(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_should_auto_destroy_non_persistent() {
+        let session = create_test_session();
+
+        // Non-persistent session should not auto-destroy initially
+        assert!(!session.should_auto_destroy().await);
+
+        // Mark as completed
+        session
+            .mark_completed("output", 0)
+            .await;
+        assert!(session.should_auto_destroy().await);
+    }
+
+    #[tokio::test]
+    async fn test_should_auto_destroy_persistent() {
+        let mut session = create_test_session();
+        session.set_persistent(true);
+
+        // Persistent session should not auto-destroy even after completion
+        session.mark_completed("output", 0).await;
+        assert!(!session.should_auto_destroy().await);
+
+        // But should auto-destroy if idle timeout is exceeded
+        session.set_max_idle_secs(1);
+        // Wait for timeout
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert!(session.should_auto_destroy().await);
+    }
+
+    #[tokio::test]
+    async fn test_touch_updates_activity() {
+        let session = create_test_session();
+
+        let before = *session.last_activity.read().await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        session.touch().await;
+        let after = *session.last_activity.read().await;
+
+        assert!(after > before);
+    }
+
+    #[tokio::test]
+    async fn test_session_state_helpers() {
+        assert!(SessionState::Idle.is_active());
+        assert!(SessionState::RunningDetached.is_active());
+        assert!(!SessionState::Completed {
+            output: "".to_string(),
+            exit_code: 0,
+        }
+        .is_active());
+        assert!(!SessionState::Failed {
+            error: "".to_string(),
+        }
+        .is_active());
+
+        assert!(SessionState::Idle.can_accept_task());
+        assert!(!SessionState::RunningDetached.can_accept_task());
+        assert!(!SessionState::Completed {
+            output: "".to_string(),
+            exit_code: 0,
+        }
+        .can_accept_task());
+
+        assert!(SessionState::Completed {
+            output: "".to_string(),
+            exit_code: 0,
+        }
+        .is_terminal());
+        assert!(SessionState::Failed {
+            error: "".to_string(),
+        }
+        .is_terminal());
+        assert!(SessionState::Killed.is_terminal());
+        assert!(!SessionState::Idle.is_terminal());
+        assert!(!SessionState::RunningDetached.is_terminal());
+    }
+
+    #[tokio::test]
+    async fn test_mark_idle() {
+        let mut session = create_test_session();
+        
+        // Non-persistent session should not go to Idle
+        session.mark_idle().await;
+        assert!(!matches!(session.get_state().await, SessionState::Idle));
+
+        // Persistent session should go to Idle
+        session.set_persistent(true);
+        session.mark_idle().await;
+        assert!(matches!(session.get_state().await, SessionState::Idle));
+    }
+
+    #[tokio::test]
+    async fn test_pause_and_resume() {
+        let session = create_test_session();
+
+        // Start session first
+        session.set_state(SessionState::RunningDetached).await;
+
+        // Pause
+        session.mark_paused().await;
+        assert!(matches!(session.get_state().await, SessionState::Paused));
+
+        // Resume
+        session.resume().await.unwrap();
+        assert!(matches!(session.get_state().await, SessionState::RunningDetached));
+
+        // Cannot resume from non-paused state
+        assert!(session.resume().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_can_accept_task() {
+        let session = create_test_session();
+        
+        // Initially cannot accept task (Spawning state)
+        assert!(!session.can_accept_task().await);
+
+        // Set to Idle
+        session.set_state(SessionState::Idle).await;
+        assert!(session.can_accept_task().await);
+
+        // Other states cannot accept
+        session.set_state(SessionState::RunningDetached).await;
+        assert!(!session.can_accept_task().await);
     }
 }

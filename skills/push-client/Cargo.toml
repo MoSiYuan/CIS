@@ -1,6 +1,6 @@
 [package]
 name = "cis-skill-push-client"
-version = "0.1.0"
+version = "1.1.1"
 edition = "2021"
 description = "Push Client Skill - 推送客户端（从 AgentFlow 迁移）"
 

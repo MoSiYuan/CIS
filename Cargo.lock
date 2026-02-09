@@ -1185,7 +1185,7 @@ dependencies = [
 
 [[package]]
 name = "cis-capability"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1208,7 +1208,7 @@ dependencies = [
 
 [[package]]
 name = "cis-core"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1223,6 +1223,7 @@ dependencies = [
  "criterion",
  "dashmap 5.5.3",
  "dirs 5.0.1",
+ "downcast-rs",
  "ed25519-dalek",
  "futures",
  "gethostname 0.4.3",
@@ -1279,7 +1280,7 @@ dependencies = [
 
 [[package]]
 name = "cis-gui"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -1304,7 +1305,7 @@ dependencies = [
 
 [[package]]
 name = "cis-mcp-adapter"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1323,7 +1324,7 @@ dependencies = [
 
 [[package]]
 name = "cis-node"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1358,7 +1359,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-ai-executor"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1366,7 +1367,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-init-wizard"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1374,7 +1375,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-memory-organizer"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1382,7 +1383,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-push-client"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1390,7 +1391,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-sdk"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "async-trait",
  "cis-skill-sdk-derive",
@@ -1405,7 +1406,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-sdk-derive"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1742,6 +1743,7 @@ dependencies = [
  "ciborium",
  "clap",
  "criterion-plot",
+ "futures",
  "is-terminal",
  "itertools 0.10.5",
  "num-traits",
@@ -1754,6 +1756,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "tinytemplate",
+ "tokio",
  "walkdir",
 ]
 
@@ -1902,7 +1905,7 @@ dependencies = [
 
 [[package]]
 name = "dag-executor"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3592,7 +3595,7 @@ dependencies = [
 
 [[package]]
 name = "im-skill"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4091,7 +4094,7 @@ checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
 name = "matrix-register-skill"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "async-trait",

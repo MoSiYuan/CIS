@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-02-09
+
+### Added
+
+#### Agent Teams Support
+- **Persistent Agent Runtime** - Support for Claude and OpenCode persistent agents
+  - Claude Runtime: PTY-based persistent sessions with attach/detach
+  - OpenCode Runtime: HTTP-based persistent server with auto-port discovery
+  - Agent Pool management with reuse and lifecycle control
+- **Multi-Agent DAG Executor** - Execute DAG tasks with mixed agent types
+  - Per-task agent runtime selection (Claude/OpenCode)
+  - Agent reuse across tasks for efficiency
+  - Context injection and result aggregation
+- **Agent Federation Protocol** - Cross-node agent communication
+  - Matrix-based federation events (heartbeat, task request/response)
+  - Agent discovery and routing across nodes
+- **Docker Test Environment** - 3-node Docker Compose setup for testing
+  - Coordinator + 2 Workers configuration
+  - Real integration tests with actual AI tools
+- **sqlite-vec Integration** - Local vector engine for semantic search
+  - Memory semantic indexing and search
+  - Task similarity matching
+  - HNSW index support
+
+### Changed
+- **Version**: 1.1.0 → 1.1.1 for all crates
+
 ## [1.1.0] - 2026-02-08
 
 ### Added

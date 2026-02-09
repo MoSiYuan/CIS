@@ -15,11 +15,13 @@ use crate::error::Result;
 pub mod bridge;
 pub mod cluster;
 pub mod config;
+pub mod federation;
+pub mod persistent;
 pub mod providers;
 
 pub use bridge::AgentBridgeSkill;
 pub use cluster::{SessionManager, SessionId, SessionEvent, SessionState};
-pub use config::AgentCommandConfig;
+pub use config::{AgentCommandConfig, AgentMode};
 
 /// Agent 请求
 #[derive(Debug, Clone, Serialize, Deserialize)]

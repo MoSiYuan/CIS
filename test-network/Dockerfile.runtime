@@ -1,0 +1,24 @@
+# CIS 运行时镜像 - 保持容器运行以便执行组网命令
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y ca-certificates libsqlite3-0 curl net-tools iputils-ping && rm -rf /var/lib/apt/lists/*
+
+COPY --from=cis-real:latest /usr/local/bin/cis-node /usr/local/bin/
+RUN chmod +x /usr/local/bin/cis-node
+
+# 创建启动脚本（保持容器运行）
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    'mkdir -p /var/lib/cis/data /etc/cis' \
+    'echo "CIS Node Runtime"' \
+    'echo "Node ID: ${CIS_NODE_ID}"' \
+    'echo "Node Name: ${CIS_NODE_NAME}"' \
+    'echo "Ready for pairing..."' \
+    '' \
+    '# 保持容器运行' \
+    'tail -f /dev/null' \
+    > /entrypoint.sh && chmod +x /entrypoint.sh
+
+EXPOSE 7676 7677/udp 6767 6768
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -127,6 +127,32 @@ pub enum SessionState {
     Completed { output: String, exit_code: i32 },
     /// Failed with error
     Failed { error: String },
+    /// Killed
+    Killed,
+    /// Idle state (persistent Agent waiting for new task)
+    Idle,
+    /// Paused state (waiting for resume)
+    Paused,
+}
+
+impl SessionState {
+    /// Check if state is active (can be reused)
+    pub fn is_active(&self) -> bool {
+        matches!(self, SessionState::Idle | SessionState::RunningDetached)
+    }
+
+    /// Check if state can accept new tasks
+    pub fn can_accept_task(&self) -> bool {
+        matches!(self, SessionState::Idle)
+    }
+
+    /// Check if state is terminal (session should be cleaned up)
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            SessionState::Completed { .. } | SessionState::Failed { .. } | SessionState::Killed
+        )
+    }
 }
 
 impl std::fmt::Display for SessionState {
@@ -138,6 +164,9 @@ impl std::fmt::Display for SessionState {
             SessionState::Blocked { reason } => write!(f, "blocked: {}", reason),
             SessionState::Completed { exit_code, .. } => write!(f, "completed({})", exit_code),
             SessionState::Failed { error } => write!(f, "failed: {}", error),
+            SessionState::Killed => write!(f, "killed"),
+            SessionState::Idle => write!(f, "idle"),
+            SessionState::Paused => write!(f, "paused"),
         }
     }
 }

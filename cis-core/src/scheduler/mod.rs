@@ -20,6 +20,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use crate::types::{Action, DebtEntry, FailureType, TaskLevel};
+use crate::agent::{AgentConfig, AgentType};
 
 /// DAG error types
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,11 +56,16 @@ impl std::fmt::Display for DagError {
 impl std::error::Error for DagError {}
 
 pub mod local_executor;
+pub mod multi_agent_executor;
 pub mod persistence;
 pub mod skill_executor;
 pub mod todo_monitor;
 
 pub use local_executor::{LocalExecutor, WorkerInfo, WorkerSummary, ExecutorStats};
+pub use multi_agent_executor::{
+    MultiAgentDagExecutor, MultiAgentExecutorConfig, MultiAgentExecutionReport,
+    TaskExecutionResult,
+};
 pub use persistence::{DagPersistence, TaskExecution, TaskExecutionStatus};
 pub use skill_executor::SkillDagExecutor;
 pub use todo_monitor::{TodoListMonitor, TodoChangeEvent, TodoListLoader, FileSystemLoader};
@@ -98,6 +104,36 @@ pub enum DagNodeStatus {
     Debt(FailureType),
 }
 
+/// DagTask - DAG 任务定义（用于 YAML 解析和内部使用）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DagTask {
+    pub task_id: String,
+    pub dependencies: Vec<String>,
+    pub skill_id: Option<String>,
+    pub level: TaskLevel,
+    
+    // === 新增字段 ===
+    /// 指定使用的 Agent Runtime
+    #[serde(default)]
+    pub agent_runtime: Option<RuntimeType>,
+    
+    /// 复用已有 Agent ID（同 DAG 内）
+    #[serde(default)]
+    pub reuse_agent: Option<String>,
+    
+    /// 是否保持 Agent（执行后不销毁）
+    #[serde(default = "default_keep_agent")]
+    pub keep_agent: bool,
+    
+    /// Agent 配置（创建新 Agent 时用）
+    #[serde(default)]
+    pub agent_config: Option<AgentConfig>,
+}
+
+fn default_keep_agent() -> bool {
+    false
+}
+
 impl std::fmt::Display for DagNodeStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -128,6 +164,23 @@ pub struct DagNode {
     pub level: TaskLevel,
     /// Rollback commands
     pub rollback: Option<Vec<String>>,
+    
+    // === Agent Teams 相关字段 ===
+    /// 指定使用的 Agent Runtime
+    #[serde(default)]
+    pub agent_runtime: Option<RuntimeType>,
+    
+    /// 复用已有 Agent ID（同 DAG 内）
+    #[serde(default)]
+    pub reuse_agent: Option<String>,
+    
+    /// 是否保持 Agent（执行后不销毁）
+    #[serde(default)]
+    pub keep_agent: bool,
+    
+    /// Agent 配置（创建新 Agent 时用）
+    #[serde(default)]
+    pub agent_config: Option<AgentConfig>,
 }
 
 impl DagNode {
@@ -140,6 +193,10 @@ impl DagNode {
             status: DagNodeStatus::Pending,
             level: TaskLevel::Mechanical { retry: 3 },
             rollback: None,
+            agent_runtime: None,
+            reuse_agent: None,
+            keep_agent: false,
+            agent_config: None,
         }
     }
 
@@ -972,6 +1029,64 @@ pub struct DagTaskSpec {
     pub depends_on: Vec<String>,
     #[serde(default)]
     pub env: HashMap<String, String>,
+}
+
+/// Agent Runtime 类型
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeType {
+    /// Claude Code Runtime
+    Claude,
+    /// Kimi Code Runtime
+    Kimi,
+    /// Aider Runtime
+    Aider,
+    /// OpenCode Runtime
+    OpenCode,
+    /// 使用 DAG 配置的默认 Runtime
+    Default,
+}
+
+impl Default for RuntimeType {
+    fn default() -> Self {
+        RuntimeType::Default
+    }
+}
+
+impl From<AgentType> for RuntimeType {
+    fn from(agent_type: AgentType) -> Self {
+        match agent_type {
+            AgentType::Claude => RuntimeType::Claude,
+            AgentType::Kimi => RuntimeType::Kimi,
+            AgentType::Aider => RuntimeType::Aider,
+            AgentType::OpenCode => RuntimeType::OpenCode,
+            AgentType::Custom => RuntimeType::Default,
+        }
+    }
+}
+
+impl RuntimeType {
+    /// 转换为 AgentType（如果可能）
+    pub fn to_agent_type(self) -> Option<AgentType> {
+        match self {
+            RuntimeType::Claude => Some(AgentType::Claude),
+            RuntimeType::Kimi => Some(AgentType::Kimi),
+            RuntimeType::Aider => Some(AgentType::Aider),
+            RuntimeType::OpenCode => Some(AgentType::OpenCode),
+            RuntimeType::Default => None,
+        }
+    }
+    
+    /// 获取显示名称
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            RuntimeType::Claude => "Claude Code",
+            RuntimeType::Kimi => "Kimi Code",
+            RuntimeType::Aider => "Aider",
+            RuntimeType::OpenCode => "OpenCode",
+            RuntimeType::Default => "Default",
+        }
+    }
 }
 
 /// TODO item status
@@ -3282,5 +3397,24 @@ mod tests {
         assert!(list.proposal_history.iter().any(|r| 
             matches!(r, ProposalResult::Expired { proposal_id: id } if id == &proposal_id)
         ));
+    }
+}
+
+/// From conversion implementations
+
+impl From<DagTask> for DagNode {
+    fn from(task: DagTask) -> Self {
+        Self {
+            task_id: task.task_id,
+            dependencies: task.dependencies,
+            dependents: Vec::new(),
+            status: DagNodeStatus::Pending,
+            level: task.level,
+            rollback: None,
+            agent_runtime: task.agent_runtime,
+            reuse_agent: task.reuse_agent,
+            keep_agent: task.keep_agent,
+            agent_config: task.agent_config,
+        }
     }
 }

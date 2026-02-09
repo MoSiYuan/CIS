@@ -1,0 +1,43 @@
+# CIS Test Node - Alpine 精简版
+FROM alpine:3.19
+
+# 安装必要依赖
+RUN apk add --no-cache ca-certificates curl sqlite-libs libgcc
+
+WORKDIR /app
+
+# 复制二进制文件
+COPY cis-node /usr/local/bin/cis-node
+RUN chmod +x /usr/local/bin/cis-node
+
+# 创建 CIS 目录
+RUN mkdir -p /var/lib/cis/data /etc/cis
+
+# 生成配置的启动脚本
+RUN cat > /entrypoint.sh << 'EOF'
+#!/bin/sh
+# 生成配置
+cat > /etc/cis/config.toml << CFG
+[node]
+id = "${CIS_NODE_ID}"
+name = "${CIS_NODE_NAME}"
+did = "${CIS_DID}"
+role = "${CIS_NODE_ROLE:-worker}"
+
+[ai.glm]
+model = "${GLM_MODEL:-code-plan-glm4.7}"
+base_url = "https://api.glm.ai/v1"
+
+[network]
+discovery_port = 6767
+pairing_port = 6768
+CFG
+
+# 启动 CIS
+cis-node daemon --config /etc/cis/config.toml
+EOF
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 7676 7677/udp 6767 6768
+
+ENTRYPOINT ["/entrypoint.sh"]

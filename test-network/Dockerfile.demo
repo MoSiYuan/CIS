@@ -1,0 +1,18 @@
+# CIS 组网测试 - 演示版本
+FROM alpine:3.19
+
+RUN apk add --no-cache bash curl jq
+
+WORKDIR /app
+
+# 复制模拟脚本
+COPY demo-cis-node.sh /usr/local/bin/cis-node
+RUN chmod +x /usr/local/bin/cis-node
+
+# 复制 entrypoint
+COPY demo-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 7676 7677/udp 6767 6768
+
+ENTRYPOINT ["/entrypoint.sh"]

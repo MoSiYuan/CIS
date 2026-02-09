@@ -1,6 +1,6 @@
 [package]
 name = "cis-core"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 rust-version = "1.70"
 authors = ["CIS Team"]
@@ -151,7 +151,8 @@ ndarray = { version = "0.15", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
-criterion = "0.5"
+criterion = { version = "0.5", features = ["async_tokio"] }
+downcast-rs = "1.2"
 
 [features]
 default = ["encryption"]
@@ -172,3 +173,7 @@ vector = ["ort", "tokenizers", "ndarray", "sqlite-vec"]
 
 # Full feature set
 full = ["encryption", "p2p", "vector"]
+
+[[bench]]
+name = "agent_teams_benchmarks"
+harness = false

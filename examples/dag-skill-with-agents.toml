@@ -1,0 +1,84 @@
+# Example DAG Skill with Agent Teams Configuration
+# 展示如何使用 Agent Runtime 配置
+
+[skill]
+name = "ai-code-review-with-agents"
+version = "1.0.0"
+type = "dag"
+description = "使用多 Agent 协作的代码审查流程"
+author = "CIS Team"
+
+[dag]
+policy = "all_success"
+
+# === Task 1: 初始化审查 Agent ===
+[[dag.tasks]]
+id = "1"
+name = "初始化代码分析 Agent"
+skill = "agent-init"
+level = { type = "mechanical", retry = 3 }
+# 创建一个新的 Claude Agent 用于代码分析
+agent_runtime = "claude"
+keep_agent = true  # 保持 Agent 不销毁，后续任务复用
+
+# 可选：自定义 Agent 配置
+[dag.tasks.agent_config]
+provider_type = "claude"
+model = "claude-3-5-sonnet-20241022"
+timeout_secs = 300
+max_tokens = 4096
+temperature = 0.7
+
+# === Task 2: 获取代码变更 ===
+[[dag.tasks]]
+id = "2"
+name = "获取代码变更"
+skill = "git-diff"
+deps = ["1"]
+level = { type = "mechanical", retry = 3 }
+# 复用 task-1 创建的 Agent
+reuse_agent = "1"
+
+# === Task 3: AI 代码分析 ===
+[[dag.tasks]]
+id = "3"
+name = "AI 分析代码质量"
+skill = "ai-code-analyze"
+deps = ["2"]
+level = { type = "confirmed" }
+# 继续使用同一个 Agent
+reuse_agent = "1"
+keep_agent = true
+
+# === Task 4: 安全扫描（使用不同的 Agent）===
+[[dag.tasks]]
+id = "4"
+name = "安全漏洞扫描"
+skill = "security-scan"
+deps = ["2"]
+level = { type = "mechanical", retry = 3 }
+# 使用 Kimi Agent 进行安全分析
+agent_runtime = "kimi"
+keep_agent = true
+
+# === Task 5: 生成审查报告 ===
+[[dag.tasks]]
+id = "5"
+name = "生成综合审查报告"
+skill = "report-generator"
+deps = ["3", "4"]
+level = { type = "mechanical", retry = 3 }
+# 复用 task-1 的 Claude Agent
+reuse_agent = "1"
+# 任务完成后销毁 Agent
+keep_agent = false
+
+# === Task 6: 人工确认（特殊处理）===
+[[dag.tasks]]
+id = "6"
+name = "关键变更人工确认"
+skill = "human-review"
+deps = ["5"]
+level = { type = "arbitrated", stakeholders = ["tech-lead", "security-team"] }
+# 使用默认 Runtime（不指定特定 Agent）
+# agent_runtime 未设置，使用 DAG 默认配置

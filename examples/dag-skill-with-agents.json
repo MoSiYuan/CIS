@@ -1,0 +1,48 @@
+{
+  "skill": {
+    "name": "multi-agent-data-pipeline",
+    "version": "1.0.0",
+    "type": "dag",
+    "description": "多 Agent 协作的数据处理流水线",
+    "author": "CIS Team"
+  },
+  "dag": {
+    "policy": "all_success",
+    "tasks": [
+      {
+        "id": "extract",
+        "name": "数据提取",
+        "skill": "data-extract",
+        "level": { "type": "mechanical", "retry": 3 },
+        "agent_runtime": "opencode",
+        "keep_agent": true
+      },
+      {
+        "id": "transform",
+        "name": "数据转换",
+        "skill": "data-transform",
+        "deps": ["extract"],
+        "level": { "type": "mechanical", "retry": 3 },
+        "reuse_agent": "extract",
+        "keep_agent": true
+      },
+      {
+        "id": "validate",
+        "name": "数据验证",
+        "skill": "data-validate",
+        "deps": ["transform"],
+        "level": { "type": "confirmed" },
+        "reuse_agent": "extract"
+      },
+      {
+        "id": "load",
+        "name": "数据加载",
+        "skill": "data-load",
+        "deps": ["validate"],
+        "level": { "type": "mechanical", "retry": 5 },
+        "agent_runtime": "aider",
+        "keep_agent": false
+      }
+    ]
+  }
+}
