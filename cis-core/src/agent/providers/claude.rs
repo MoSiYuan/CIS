@@ -67,8 +67,8 @@ impl AgentProvider for ClaudeProvider {
     async fn execute(&self, req: AgentRequest) -> Result<AgentResponse> {
         let mut cmd = self.build_command(&req);
 
-        // 添加 prompt
-        cmd.arg("--").arg(&req.prompt);
+        // 添加 prompt - Claude CLI 直接使用参数，不需要 -- 分隔符
+        cmd.arg(&req.prompt);
 
         let output = cmd.output().await?;
 
@@ -92,7 +92,7 @@ impl AgentProvider for ClaudeProvider {
 
         // 启用流式输出
         cmd.arg("--stream");
-        cmd.arg("--").arg(&req.prompt);
+        cmd.arg(&req.prompt);
 
         let mut child = cmd.spawn()?;
         let stdout = child.stdout.take().expect("Failed to capture stdout");
