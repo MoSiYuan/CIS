@@ -127,14 +127,20 @@ impl InitWizard {
         println!("✅ 全局配置完成\n");
 
         // Step 3: 向量引擎配置（记忆、语义搜索必需）
-        self.print_step(3, 5, "向量引擎配置");
+        self.print_step(3, 6, "向量引擎配置");
         self.configure_vector_engine().await?;
         result.messages.push("向量引擎配置完成".to_string());
         println!("✅ 向量引擎配置完成\n");
 
-        // Step 4: 项目初始化 (可选)
+        // Step 4: 安装内置 Skills
+        self.print_step(4, 6, "安装内置 Skills");
+        self.install_builtin_skills().await?;
+        result.messages.push("内置 Skills 安装完成".to_string());
+        println!("✅ 内置 Skills 安装完成\n");
+
+        // Step 5: 项目初始化 (可选)
         if project_mode {
-            self.print_step(4, 5, "项目初始化");
+            self.print_step(5, 6, "项目初始化");
             self.initialize_project().await?;
             result.project_initialized = true;
             let project_toml = std::env::current_dir()?.join(".cis/project.toml");
@@ -145,8 +151,8 @@ impl InitWizard {
             println!("✅ 项目初始化完成\n");
         }
 
-        // Step 5: 验证
-        self.print_step(5, 5, "验证");
+        // Step 6: 验证
+        self.print_step(6, 6, "验证");
         let tests = self.run_verification_tests().await?;
         result.tests_passed = tests;
 
@@ -591,6 +597,49 @@ bootstrap_nodes = []
                 println!("  ⚠️  模型下载失败: {}", e);
                 println!("     将使用 SQL 回退模式。");
                 println!("     稍后可通过 `cis config vector` 重试。");
+            }
+        }
+        
+        Ok(())
+    }
+
+    // ==================== 内置 Skills 安装 ====================
+
+    async fn install_builtin_skills(&self) -> Result<()> {
+        use crate::skill::builtin::{BuiltinSkillInstaller, BUILTIN_SKILLS};
+        
+        println!("  检查内置 Skills...");
+        
+        // 显示必需技能
+        let required_skills: Vec<_> = BUILTIN_SKILLS.iter().filter(|s| s.required).collect();
+        println!("  发现 {} 个必需内置 Skills:", required_skills.len());
+        for skill in &required_skills {
+            println!("    • {} - {}", skill.name, skill.description);
+        }
+        
+        // 创建安装器
+        let installer = match BuiltinSkillInstaller::new() {
+            Ok(inst) => inst,
+            Err(e) => {
+                println!("  ⚠️  无法创建安装器: {}", e);
+                println!("     跳过内置 Skills 安装");
+                return Ok(());
+            }
+        };
+        
+        // 安装必需技能
+        println!("\n  正在安装必需 Skills...");
+        match installer.install_required_skills() {
+            Ok(installed) => {
+                println!("  ✅ 成功安装 {} 个 Skills:", installed.len());
+                for name in &installed {
+                    println!("     ✓ {}", name);
+                }
+            }
+            Err(e) => {
+                println!("  ⚠️  部分 Skills 安装失败: {}", e);
+                println!("     某些功能可能不可用");
+                // 不返回错误，继续初始化
             }
         }
         

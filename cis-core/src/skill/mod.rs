@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+pub mod builtin;
 pub mod chain;
 pub mod cis_admin;
 pub mod compatibility_db;
@@ -36,6 +37,7 @@ pub mod router;
 pub mod semantics;
 pub mod types;
 
+pub use builtin::{BuiltinSkill, BuiltinSkillInstaller, BUILTIN_SKILLS, ensure_required_skills};
 pub use chain::{ChainBuilder, ChainContext, ChainDiscoveryResult, ChainMetadata, ChainOrchestrator,
                 ChainStep, ChainStepResult, ChainTemplates, SkillChain, SkillCompatibilityRecord, StepResult};
 pub use cis_admin::{CisAdminSkill, CisAnalyzeSkill, CisCommitSkill, CisFileSkill, CisReadSkill, register_cis_local_skills};
