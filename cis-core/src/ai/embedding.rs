@@ -361,116 +361,154 @@ pub fn filter_by_similarity(
 
 /// Claude CLI Embedding Service
 ///
-/// 使用 Claude CLI 生成文本嵌入（实验性）
-/// 通过调用 `claude` 命令行工具获取文本的语义表示
+/// 使用 FastEmbed 本地模型生成文本嵌入。
+/// 这是一个实际的嵌入服务实现，使用 Nomic Embed Text v1.5 模型。
+#[cfg(feature = "vector")]
+pub struct ClaudeCliEmbeddingService {
+    inner: crate::ai::embedding_fastembed::FastEmbedService,
+}
+
+#[cfg(not(feature = "vector"))]
 pub struct ClaudeCliEmbeddingService;
 
+#[cfg(feature = "vector")]
+impl Default for ClaudeCliEmbeddingService {
+    fn default() -> Self {
+        // 在同步上下文中无法使用 async，返回一个占位符
+        panic!("Use ClaudeCliEmbeddingService::new() async method instead")
+    }
+}
+
+#[cfg(not(feature = "vector"))]
 impl Default for ClaudeCliEmbeddingService {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "vector")]
+impl ClaudeCliEmbeddingService {
+    /// 使用默认模型创建服务 (Nomic Embed Text v1.5)
+    pub async fn new() -> Self {
+        match crate::ai::embedding_fastembed::FastEmbedService::new().await {
+            Ok(inner) => Self { inner },
+            Err(e) => panic!("Failed to initialize embedding service: {}", e),
+        }
+    }
+}
+
+#[cfg(not(feature = "vector"))]
 impl ClaudeCliEmbeddingService {
     pub fn new() -> Self {
         Self
     }
-    
-    /// 调用 Claude CLI 生成嵌入
-    /// 注意：这是一个模拟实现，实际应该调用 Claude CLI 的嵌入功能
-    async fn generate_embedding(&self, text: &str) -> Result<Vec<f32>> {
-        // 由于 Claude CLI 不直接提供嵌入 API，我们使用一个启发式方法：
-        // 基于词频和字符特征生成伪嵌入向量
-        // 这不如真正的嵌入准确，但可以在没有 API Key 时提供基本的相似度搜索
-        
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        
-        let mut hasher = DefaultHasher::new();
-        text.hash(&mut hasher);
-        let hash = hasher.finish();
-        
-        // 基于文本特征生成固定维度的向量
-        let dim = 384; // 使用较小的维度
-        let mut embedding = vec![0.0f32; dim];
-        
-        // 基于字符 n-gram 特征
-        let chars: Vec<char> = text.chars().collect();
-        for (i, window) in chars.windows(3).enumerate() {
-            let idx = (i * 7 + window[0] as usize + window[1] as usize * 3 + window[2] as usize * 5) % dim;
-            embedding[idx] += 1.0;
-        }
-        
-        // 添加哈希特征
-        for i in 0..8 {
-            let idx = ((hash >> (i * 8)) as usize) % dim;
-            embedding[idx] += ((hash >> (i * 8)) & 0xFF) as f32 / 255.0;
-        }
-        
-        // 归一化
-        let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if norm > 0.0 {
-            for x in &mut embedding {
-                *x /= norm;
-            }
-        }
-        
-        Ok(embedding)
-    }
 }
 
+#[cfg(feature = "vector")]
 #[async_trait]
 impl EmbeddingService for ClaudeCliEmbeddingService {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        self.generate_embedding(text).await
+        self.inner.embed(text).await
     }
     
     async fn batch_embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let mut results = Vec::with_capacity(texts.len());
-        for text in texts {
-            results.push(self.generate_embedding(text).await?);
-        }
-        Ok(results)
+        self.inner.batch_embed(texts).await
     }
     
     fn dimension(&self) -> usize {
-        384
+        self.inner.dimension()
+    }
+}
+
+#[cfg(not(feature = "vector"))]
+#[async_trait]
+impl EmbeddingService for ClaudeCliEmbeddingService {
+    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+        Err(CisError::configuration("vector feature not enabled"))
+    }
+    
+    async fn batch_embed(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        Err(CisError::configuration("vector feature not enabled"))
+    }
+    
+    fn dimension(&self) -> usize {
+        0
     }
 }
 
 /// SQL Fallback Embedding Service
 ///
-/// 纯 SQL LIKE 搜索的占位符服务
-/// 当没有任何嵌入服务可用时使用
-/// 注意：这个服务不生成真正的嵌入，仅提供兼容性接口
+/// 使用 FastEmbed 本地模型的嵌入服务。
+/// 作为最终的回退方案，确保始终有可用的嵌入功能。
+#[cfg(feature = "vector")]
+pub struct SqlFallbackEmbeddingService {
+    inner: crate::ai::embedding_fastembed::FastEmbedService,
+}
+
+#[cfg(not(feature = "vector"))]
 pub struct SqlFallbackEmbeddingService;
 
+#[cfg(feature = "vector")]
+impl Default for SqlFallbackEmbeddingService {
+    fn default() -> Self {
+        // 在同步上下文中无法使用 async，返回一个占位符
+        // 实际使用应该通过 new() async 方法
+        panic!("Use SqlFallbackEmbeddingService::new() async method instead")
+    }
+}
+
+#[cfg(not(feature = "vector"))]
 impl Default for SqlFallbackEmbeddingService {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "vector")]
+impl SqlFallbackEmbeddingService {
+    /// 创建新的 SQL Fallback 嵌入服务（使用 FastEmbed）
+    pub async fn new() -> Result<Self> {
+        let inner = crate::ai::embedding_fastembed::FastEmbedService::new().await?;
+        Ok(Self { inner })
+    }
+}
+
+#[cfg(not(feature = "vector"))]
 impl SqlFallbackEmbeddingService {
     pub fn new() -> Self {
         Self
     }
 }
 
+#[cfg(feature = "vector")]
 #[async_trait]
 impl EmbeddingService for SqlFallbackEmbeddingService {
-    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
-        // 返回零向量，表示无嵌入可用
-        // 实际搜索应该回退到 SQL LIKE
-        Ok(vec![0.0; 1])
+    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+        self.inner.embed(text).await
     }
     
     async fn batch_embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        Ok(vec![vec![0.0; 1]; texts.len()])
+        self.inner.batch_embed(texts).await
     }
     
     fn dimension(&self) -> usize {
-        1
+        self.inner.dimension()
+    }
+}
+
+#[cfg(not(feature = "vector"))]
+#[async_trait]
+impl EmbeddingService for SqlFallbackEmbeddingService {
+    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+        Err(CisError::configuration("vector feature not enabled"))
+    }
+    
+    async fn batch_embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        Err(CisError::configuration("vector feature not enabled"))
+    }
+    
+    fn dimension(&self) -> usize {
+        0
     }
 }
 
@@ -478,9 +516,8 @@ impl EmbeddingService for SqlFallbackEmbeddingService {
 /// 
 /// 优先级（从高到低）：
 /// 1. 本地模型（Nomic Embed v1.5）- 最高优先级
-/// 2. Claude CLI（Agent 工具）
-/// 3. OpenAI API（需要 API Key）
-/// 4. SQL LIKE 回退
+/// 2. OpenAI API（需要 API Key）
+/// 3. SQL Fallback（FastEmbed 本地模型）
 pub async fn create_embedding_service_with_fallback(
     config: Option<&EmbeddingConfig>,
     init_config: &crate::ai::embedding_init::EmbeddingInitConfig,
@@ -500,17 +537,22 @@ pub async fn create_embedding_service_with_fallback(
                 Err(e) => tracing::warn!("FastEmbed failed: {}, trying alternatives", e),
             }
             
-            // 2. 然后尝试 Claude CLI
-            if std::process::Command::new("claude").arg("--version").output().is_ok() {
-                tracing::info!("Using Claude CLI for embedding");
-                return Ok(Arc::new(ClaudeCliEmbeddingService::new()) as Arc<dyn EmbeddingService>);
+            // 2. 尝试 OpenAI 或 SQL 回退
+            match create_embedding_service(config).await {
+                Ok(service) => Ok(service),
+                Err(e) => {
+                    tracing::warn!("OpenAI embedding failed ({}), trying SQL fallback", e);
+                    #[cfg(feature = "vector")]
+                    {
+                        let service = SqlFallbackEmbeddingService::new().await?;
+                        Ok(Arc::new(service) as Arc<dyn EmbeddingService>)
+                    }
+                    #[cfg(not(feature = "vector"))]
+                    {
+                        Err(CisError::configuration("No embedding service available and vector feature not enabled"))
+                    }
+                }
             }
-            
-            // 3. 最后尝试 OpenAI 或 SQL 回退
-            create_embedding_service(config).await.or_else(|_| {
-                tracing::warn!("All embedding services failed, using SQL fallback");
-                Ok(Arc::new(SqlFallbackEmbeddingService::new()) as Arc<dyn EmbeddingService>)
-            })
         }
         EmbeddingInitOption::UseOpenAI => {
             if let Some(ref key) = init_config.openai_api_key {
@@ -524,10 +566,26 @@ pub async fn create_embedding_service_with_fallback(
             }
         }
         EmbeddingInitOption::UseClaudeCli => {
-            Ok(Arc::new(ClaudeCliEmbeddingService::new()) as Arc<dyn EmbeddingService>)
+            #[cfg(feature = "vector")]
+            {
+                let service = ClaudeCliEmbeddingService::new().await;
+                Ok(Arc::new(service) as Arc<dyn EmbeddingService>)
+            }
+            #[cfg(not(feature = "vector"))]
+            {
+                Err(CisError::configuration("vector feature not enabled"))
+            }
         }
         EmbeddingInitOption::UseSqlFallback => {
-            Ok(Arc::new(SqlFallbackEmbeddingService::new()) as Arc<dyn EmbeddingService>)
+            #[cfg(feature = "vector")]
+            {
+                let service = SqlFallbackEmbeddingService::new().await?;
+                Ok(Arc::new(service) as Arc<dyn EmbeddingService>)
+            }
+            #[cfg(not(feature = "vector"))]
+            {
+                Err(CisError::configuration("vector feature not enabled"))
+            }
         }
     }
 }
