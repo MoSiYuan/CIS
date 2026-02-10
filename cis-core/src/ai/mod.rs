@@ -66,7 +66,7 @@ pub use embedding_init::{
     EmbeddingInitConfig, EmbeddingInitOption, ModelDownloadConfig,
 };
 pub use kimi::{KimiCodeProvider, KimiConfig};
-pub use opencode::{OpenCodeProvider, OpenCodeConfig};
+pub use opencode::{OpenCodeProvider, OpenCodeConfig, OpenCodeSession};
 
 /// AI Provider 错误
 #[derive(Error, Debug)]

@@ -964,6 +964,12 @@ async fn sync_acl(from: Option<String>, broadcast: bool) -> anyhow::Result<()> {
         println!("  Broadcasting {} bytes to topic 'acl/update'", acl_data.len());
         
         let p2p_config = cis_core::p2p::P2PConfig {
+            node_id: acl.local_did.clone(),
+            did: acl.local_did.clone(),
+            listen_addr: "0.0.0.0:7677".to_string(),
+            port: 7677,
+            enable_mdns: true,
+            metadata: std::collections::HashMap::new(),
             enable_dht: true,
             bootstrap_nodes: vec![],
             enable_nat_traversal: false,
@@ -977,8 +983,8 @@ async fn sync_acl(from: Option<String>, broadcast: bool) -> anyhow::Result<()> {
             p2p_config,
         ).await {
             Ok(p2p) => {
-                match p2p.broadcast("acl/update", acl_data).await {
-                    Ok(()) => {
+                match p2p.broadcast(&acl_data).await {
+                    Ok(_) => {
                         println!("✓ ACL broadcast complete");
                     }
                     Err(e) => {
@@ -1010,6 +1016,12 @@ async fn sync_acl(from: Option<String>, broadcast: bool) -> anyhow::Result<()> {
         let acl = load_or_create_acl(&acl_path).await?;
         
         let p2p_config = cis_core::p2p::P2PConfig {
+            node_id: acl.local_did.clone(),
+            did: acl.local_did.clone(),
+            listen_addr: "0.0.0.0:7677".to_string(),
+            port: 7677,
+            enable_mdns: true,
+            metadata: std::collections::HashMap::new(),
             enable_dht: true,
             bootstrap_nodes: vec![peer.clone()],
             enable_nat_traversal: false,
@@ -1248,6 +1260,12 @@ async fn broadcast_acl_update(acl: &NetworkAcl) {
     println!("  Broadcasting ACL update to peers...");
     
     let p2p_config = cis_core::p2p::P2PConfig {
+        node_id: acl.local_did.clone(),
+        did: acl.local_did.clone(),
+        listen_addr: "0.0.0.0:7677".to_string(),
+        port: 7677,
+        enable_mdns: true,
+        metadata: std::collections::HashMap::new(),
         enable_dht: true,
         bootstrap_nodes: vec![],
         enable_nat_traversal: false,
@@ -1263,8 +1281,8 @@ async fn broadcast_acl_update(acl: &NetworkAcl) {
         Ok(p2p) => {
             match serde_json::to_vec(acl) {
                 Ok(acl_data) => {
-                    match p2p.broadcast("acl/update", acl_data).await {
-                        Ok(()) => {
+                    match p2p.broadcast(&acl_data).await {
+                        Ok(_) => {
                             println!("  ✓ ACL update broadcasted to peers");
                         }
                         Err(e) => {

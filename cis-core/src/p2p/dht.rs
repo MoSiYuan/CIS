@@ -3,12 +3,58 @@
 //! 使用 Kademlia DHT 协议实现公网节点发现
 
 use crate::error::{CisError, Result};
-use crate::p2p::NodeInfo;
+use crate::service::node_service::NodeInfo;
+use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use chrono::{DateTime, Utc, Duration};
+
+/// DHT 消息类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DhtMessage {
+    /// Ping 请求
+    Ping {
+        node_id: String,
+        timestamp: i64,
+    },
+    /// Pong 响应
+    Pong {
+        node_id: String,
+        timestamp: i64,
+        /// 已知节点列表
+        nodes: Option<Vec<NodeInfo>>,
+    },
+    /// 查找节点请求
+    FindNode {
+        node_id: String,
+        target_id: String,
+        timestamp: i64,
+    },
+    /// 查找节点响应
+    FoundNode {
+        node_id: String,
+        target_id: String,
+        /// 最近的节点列表
+        nodes: Vec<NodeInfo>,
+        timestamp: i64,
+    },
+    /// 存储值请求
+    Store {
+        node_id: String,
+        key: String,
+        value: Vec<u8>,
+        timestamp: i64,
+    },
+    /// 存储确认
+    StoreAck {
+        node_id: String,
+        key: String,
+        timestamp: i64,
+    },
+}
 
 /// DHT 路由表条目
 #[derive(Debug, Clone)]
@@ -153,6 +199,9 @@ impl DhtService {
     }
 
     /// 尝试连接 bootstrap 节点
+    /// 
+    /// 使用 TCP 连接尝试与 bootstrap 节点建立连接，
+    /// 然后发送 ping 请求获取节点列表
     async fn try_connect_bootstrap(&self, address: &str) -> Result<()> {
         // 解析地址
         let addr: SocketAddr = address
@@ -161,10 +210,77 @@ impl DhtService {
 
         tracing::debug!("Connecting to bootstrap: {}", addr);
 
-        // 模拟获取节点列表
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-        Ok(())
+        // 尝试 TCP 连接
+        match tokio::time::timeout(
+            tokio::time::Duration::from_secs(5),
+            tokio::net::TcpStream::connect(addr)
+        ).await {
+            Ok(Ok(mut stream)) => {
+                tracing::info!("TCP connection established to bootstrap {}", addr);
+                
+                // 发送 DHT ping 请求
+                let ping_request = DhtMessage::Ping {
+                    node_id: self.node_id.clone(),
+                    timestamp: Utc::now().timestamp(),
+                };
+                
+                let request_bytes = serde_json::to_vec(&ping_request)
+                    .map_err(|e| CisError::p2p(format!("Failed to serialize ping: {}", e)))?;
+                
+                // 发送请求
+                tokio::io::AsyncWriteExt::write_all(&mut stream, &request_bytes).await
+                    .map_err(|e| CisError::p2p(format!("Failed to send ping: {}", e)))?;
+                
+                // 读取响应
+                let mut buffer = vec![0u8; 1024];
+                match tokio::time::timeout(
+                    tokio::time::Duration::from_secs(5),
+                    tokio::io::AsyncReadExt::read(&mut stream, &mut buffer)
+                ).await {
+                    Ok(Ok(n)) if n > 0 => {
+                        buffer.truncate(n);
+                        match serde_json::from_slice::<DhtMessage>(&buffer) {
+                            Ok(DhtMessage::Pong { node_id, nodes, .. }) => {
+                                tracing::info!("Received pong from bootstrap node {}", node_id);
+                                
+                                // 将返回的节点添加到路由表
+                                if let Some(nodes) = nodes {
+                                    let mut table = self.routing_table.write().await;
+                                    for node in nodes {
+                                        let entry = RoutingTableEntry::new(node);
+                                        table.insert(entry.node_info.summary.id.clone(), entry);
+                                    }
+                                    tracing::info!("Added {} nodes from bootstrap", table.len());
+                                }
+                            }
+                            Ok(_) => {
+                                tracing::warn!("Unexpected response from bootstrap");
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to parse bootstrap response: {}", e);
+                            }
+                        }
+                    }
+                    Ok(Ok(_)) => {
+                        tracing::warn!("Empty response from bootstrap");
+                    }
+                    Ok(Err(e)) => {
+                        tracing::warn!("Failed to read from bootstrap: {}", e);
+                    }
+                    Err(_) => {
+                        tracing::warn!("Timeout waiting for bootstrap response");
+                    }
+                }
+                
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                Err(CisError::p2p(format!("Failed to connect to bootstrap {}: {}", addr, e)))
+            }
+            Err(_) => {
+                Err(CisError::p2p(format!("Timeout connecting to bootstrap {}", addr)))
+            }
+        }
     }
 
     /// 启动维护任务
@@ -299,17 +415,17 @@ impl DhtService {
 
     /// 添加节点到路由表
     pub async fn add_node(&self, node: NodeInfo) -> Result<()> {
-        tracing::debug!("Adding node {} to routing table", node.node_id);
+        tracing::debug!("Adding node {} to routing table", node.summary.id);
         
         let mut table = self.routing_table.write().await;
         
         // 如果节点已存在，更新最后看到时间
-        if let Some(entry) = table.get_mut(&node.node_id) {
+        if let Some(entry) = table.get_mut(&node.summary.id) {
             entry.update_seen();
             entry.node_info = node;
         } else {
             // 添加新条目
-            table.insert(node.node_id.clone(), RoutingTableEntry::new(node));
+            table.insert(node.summary.id.clone(), RoutingTableEntry::new(node));
         }
         
         Ok(())
@@ -363,6 +479,73 @@ impl DhtService {
         distance
     }
 
+    /// 向特定节点查询目标节点
+    /// 
+    /// 发送 FindNode 消息到指定节点，返回该节点知道的最近节点列表
+    async fn query_node_for_target(&self, node: &NodeInfo, target_id: &str) -> Result<Vec<NodeInfo>> {
+        let addr = node.summary.endpoint.parse::<SocketAddr>()
+            .map_err(|e| CisError::p2p(format!("Invalid node address: {}", e)))?;
+        
+        // 尝试 TCP 连接
+        match tokio::time::timeout(
+            tokio::time::Duration::from_secs(5),
+            tokio::net::TcpStream::connect(addr)
+        ).await {
+            Ok(Ok(mut stream)) => {
+                // 发送 FindNode 请求
+                let request = DhtMessage::FindNode {
+                    node_id: self.node_id.clone(),
+                    target_id: target_id.to_string(),
+                    timestamp: Utc::now().timestamp(),
+                };
+                
+                let request_bytes = serde_json::to_vec(&request)
+                    .map_err(|e| CisError::p2p(format!("Failed to serialize request: {}", e)))?;
+                
+                tokio::io::AsyncWriteExt::write_all(&mut stream, &request_bytes).await
+                    .map_err(|e| CisError::p2p(format!("Failed to send request: {}", e)))?;
+                
+                // 读取响应
+                let mut buffer = vec![0u8; 65536];
+                match tokio::time::timeout(
+                    tokio::time::Duration::from_secs(5),
+                    tokio::io::AsyncReadExt::read(&mut stream, &mut buffer)
+                ).await {
+                    Ok(Ok(n)) if n > 0 => {
+                        buffer.truncate(n);
+                        match serde_json::from_slice::<DhtMessage>(&buffer) {
+                            Ok(DhtMessage::FoundNode { nodes, .. }) => {
+                                tracing::debug!("Received {} nodes from {}", nodes.len(), node.summary.id);
+                                Ok(nodes)
+                            }
+                            Ok(_) => {
+                                Err(CisError::p2p("Unexpected response type".to_string()))
+                            }
+                            Err(e) => {
+                                Err(CisError::p2p(format!("Failed to parse response: {}", e)))
+                            }
+                        }
+                    }
+                    Ok(Ok(_)) => {
+                        Err(CisError::p2p("Empty response".to_string()))
+                    }
+                    Ok(Err(e)) => {
+                        Err(CisError::p2p(format!("Failed to read response: {}", e)))
+                    }
+                    Err(_) => {
+                        Err(CisError::p2p("Timeout waiting for response".to_string()))
+                    }
+                }
+            }
+            Ok(Err(e)) => {
+                Err(CisError::p2p(format!("Failed to connect to node: {}", e)))
+            }
+            Err(_) => {
+                Err(CisError::p2p("Connection timeout".to_string()))
+            }
+        }
+    }
+
     /// 获取配置
     pub fn config(&self) -> &DhtConfig {
         &self.config
@@ -392,7 +575,7 @@ impl DhtService {
             // 选择 alpha 个未查询的最近节点
             let to_query: Vec<NodeInfo> = closest
                 .into_iter()
-                .filter(|n| queried.insert(n.node_id.clone()))
+                .filter(|n| queried.insert(n.summary.id.clone()))
                 .take(alpha)
                 .collect();
 
@@ -400,19 +583,35 @@ impl DhtService {
                 break;
             }
 
-            // 并行查询（简化实现）
+            // 并行查询节点
             for node in &to_query {
-                tracing::debug!("Querying node {} for target {}", node.node_id, target_id);
-                // 在实际实现中，这里会发送 RPC 查询
+                tracing::debug!("Querying node {} for target {}", node.summary.id, target_id);
+                // 发送 FindNode RPC 查询
+                match self.query_node_for_target(node, target_id).await {
+                    Ok(nodes) => {
+                        // 将新发现的节点加入待查询列表
+                        for new_node in nodes {
+                            if !queried.contains(&new_node.summary.id) {
+                                // 添加到路由表
+                                self.add_node(new_node.clone()).await?;
+                                // 添加到 found 列表
+                                found.push(new_node);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to query node {}: {}", node.summary.id, e);
+                    }
+                }
             }
 
-            // 模拟获取更多节点
+            // 添加已查询的节点到结果
             found.extend(to_query);
             
             // 获取下一批最近的节点（获取 k 个，然后过滤已查询的）
             closest = self.find_closest_nodes(target_id, k).await
                 .into_iter()
-                .filter(|n| !queried.contains(&n.node_id))
+                .filter(|n| !queried.contains(&n.summary.id))
                 .collect();
         }
 

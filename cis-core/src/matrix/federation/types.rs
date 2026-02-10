@@ -404,6 +404,9 @@ pub struct FederationConfig {
     
     /// Private key for this server (base64 encoded) - should be stored securely
     pub private_key: Option<String>,
+    
+    /// 允许的 CORS origins（空列表表示允许所有，向后兼容）
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for FederationConfig {
@@ -422,6 +425,7 @@ impl Default for FederationConfig {
             verify_signatures: false,
             public_key: None,
             private_key: None,
+            allowed_origins: Vec::new(),
         }
     }
 }

@@ -131,8 +131,13 @@ impl GossipProtocol {
             }
         }
 
+        // 解析地址
+        let socket_addr: std::net::SocketAddr = address.parse()
+            .map_err(|e| crate::error::CisError::p2p(format!("Invalid address: {}", e)))?;
+
         // 创建新连接
-        let conn = Arc::new(self.transport.connect(address).await?);
+        self.transport.connect(node_id, socket_addr).await?;
+        let conn = Arc::new(self.transport.connect_str(address).await?);
 
         // 保存连接
         self.active_connections.write().await.insert(node_id.to_string(), Arc::clone(&conn));

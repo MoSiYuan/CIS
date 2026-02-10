@@ -16,6 +16,7 @@ pub mod bridge;
 pub mod cluster;
 pub mod config;
 pub mod federation;
+pub mod federation_client;
 pub mod persistent;
 pub mod providers;
 

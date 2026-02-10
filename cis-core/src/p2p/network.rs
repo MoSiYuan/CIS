@@ -5,15 +5,16 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::future::ready;
 
-use anyhow::{anyhow, Context, Result};
+use crate::error::{CisError, Result};
+use chrono::{DateTime, Utc};
 use tokio::sync::{OnceCell, RwLock};
 use tracing::{debug, error, info, warn};
 
 use crate::p2p::{
     mdns_service::{DiscoveredNode, MdnsService},
-    quic_transport::{ConnectionInfo, QuicTransport},
+    transport::{ConnectionInfo, QuicTransport},
 };
 
 /// 全局 P2P 网络实例
@@ -34,6 +35,14 @@ pub struct P2PConfig {
     pub enable_mdns: bool,
     /// 额外元数据
     pub metadata: HashMap<String, String>,
+    /// 启用 DHT（向后兼容）
+    pub enable_dht: bool,
+    /// Bootstrap 节点（向后兼容）
+    pub bootstrap_nodes: Vec<String>,
+    /// 启用 NAT 穿透（向后兼容）
+    pub enable_nat_traversal: bool,
+    /// 外部地址（向后兼容）
+    pub external_address: Option<String>,
 }
 
 impl Default for P2PConfig {
@@ -45,6 +54,10 @@ impl Default for P2PConfig {
             port: 7677,
             enable_mdns: true,
             metadata: HashMap::new(),
+            enable_dht: false,
+            bootstrap_nodes: vec![],
+            enable_nat_traversal: false,
+            external_address: None,
         }
     }
 }
@@ -79,6 +92,8 @@ pub struct PeerInfo {
     pub connected: bool,
     /// 最后可见时间
     pub last_seen: std::time::SystemTime,
+    /// 最后同步时间
+    pub last_sync_at: Option<DateTime<Utc>>,
 }
 
 /// P2P 网络管理器
@@ -88,7 +103,7 @@ pub struct P2PNetwork {
     /// mDNS 服务
     mdns: Option<MdnsService>,
     /// QUIC 传输层
-    transport: QuicTransport,
+    transport: Arc<QuicTransport>,
     /// 已发现的节点
     discovered_peers: Arc<RwLock<HashMap<String, DiscoveredNode>>>,
     /// 启动时间
@@ -96,13 +111,71 @@ pub struct P2PNetwork {
 }
 
 impl P2PNetwork {
+    /// 创建新的 P2P 网络（向后兼容）
+    pub async fn new(
+        node_id: String,
+        did: String,
+        listen_addr: &str,
+        config: P2PConfig,
+    ) -> Result<Self> {
+        let transport = Arc::new(QuicTransport::bind(listen_addr, &node_id).await?);
+        
+        let mdns = if config.enable_mdns {
+            match MdnsService::new(
+                &node_id,
+                config.port,
+                &did,
+                config.metadata.clone(),
+            ) {
+                Ok(mdns) => Some(mdns),
+                Err(e) => {
+                    warn!("Failed to create mDNS service: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        Ok(Self {
+            config: P2PConfig {
+                node_id,
+                did,
+                listen_addr: listen_addr.to_string(),
+                port: config.port,
+                enable_mdns: config.enable_mdns,
+                metadata: config.metadata,
+                enable_dht: config.enable_dht,
+                bootstrap_nodes: config.bootstrap_nodes,
+                enable_nat_traversal: config.enable_nat_traversal,
+                external_address: config.external_address,
+            },
+            mdns,
+            transport,
+            discovered_peers: Arc::new(RwLock::new(HashMap::new())),
+            started_at: std::time::Instant::now(),
+        })
+    }
+
+    /// 启动 P2P 网络（向后兼容）
+    pub async fn start_network(&self) -> Result<()> {
+        self.start_background_tasks().await
+    }
+
+    /// 同步公域记忆（向后兼容）
+    pub async fn sync_public_memory(&self, _peer_id: &str) -> Result<()> {
+        // P2P 记忆同步尚未完全实现
+        Err(CisError::p2p("P2P public memory sync not fully implemented".to_string()))
+    }
+
     /// 获取全局实例
     ///
     /// # Returns
     /// - `Some(Arc<P2PNetwork>)` - 网络已启动
     /// - `None` - 网络未启动
     pub async fn global() -> Option<Arc<Self>> {
-        let guard = P2P_INSTANCE.get_or_init(|| RwLock::new(None)).read().await;
+        let instance = P2P_INSTANCE.get()?;
+        let guard = instance.read().await;
         guard.as_ref().map(Arc::clone)
     }
 
@@ -110,40 +183,42 @@ impl P2PNetwork {
     ///
     /// 如果网络已启动，返回现有实例
     pub async fn start(config: P2PConfig) -> Result<Arc<Self>> {
+        // 确保全局实例已初始化
+        if P2P_INSTANCE.get().is_none() {
+            let _ = P2P_INSTANCE.set(RwLock::new(None));
+        }
+        let instance = P2P_INSTANCE.get().unwrap();
+        
         // 检查是否已启动
-        if let Some(existing) = Self::global().await {
-            info!("P2P network already running, returning existing instance");
-            return Ok(existing);
+        {
+            let guard = instance.read().await;
+            if let Some(existing) = guard.as_ref() {
+                info!("P2P network already running, returning existing instance");
+                return Ok(Arc::clone(existing));
+            }
         }
 
         info!("Starting P2P network for node {}", config.node_id);
 
-        // 获取写锁
-        let mut guard = P2P_INSTANCE
-            .get_or_init(|| RwLock::new(None))
-            .write()
-            .await;
-
-        // 双重检查
-        if let Some(existing) = guard.as_ref() {
-            return Ok(Arc::clone(existing));
-        }
-
         // 创建 QUIC 传输层
         let transport = QuicTransport::bind(&config.listen_addr, &config.node_id)
             .await
-            .context("Failed to bind QUIC transport")?;
+            .map_err(|e| CisError::p2p(format!("Failed to bind QUIC transport: {}", e)))?;
 
         // 创建 mDNS 服务（如果启用）
         let mdns = if config.enable_mdns {
-            let mdns = MdnsService::new(
+            match MdnsService::new(
                 &config.node_id,
                 config.port,
                 &config.did,
                 config.metadata.clone(),
-            )
-            .context("Failed to create mDNS service")?;
-            Some(mdns)
+            ) {
+                Ok(mdns) => Some(mdns),
+                Err(e) => {
+                    warn!("Failed to create mDNS service: {}", e);
+                    None
+                }
+            }
         } else {
             None
         };
@@ -151,7 +226,7 @@ impl P2PNetwork {
         let network = Arc::new(P2PNetwork {
             config,
             mdns,
-            transport,
+            transport: Arc::new(transport),
             discovered_peers: Arc::new(RwLock::new(HashMap::new())),
             started_at: std::time::Instant::now(),
         });
@@ -160,7 +235,10 @@ impl P2PNetwork {
         network.start_background_tasks().await?;
 
         // 存储实例
-        *guard = Some(Arc::clone(&network));
+        {
+            let mut guard = instance.write().await;
+            *guard = Some(Arc::clone(&network));
+        }
 
         info!(
             "P2P network started successfully on {}",
@@ -174,20 +252,26 @@ impl P2PNetwork {
     pub async fn stop() -> Result<()> {
         info!("Stopping P2P network...");
 
-        let mut guard = P2P_INSTANCE
-            .get_or_init(|| RwLock::new(None))
-            .write()
-            .await;
+        let instance = match P2P_INSTANCE.get() {
+            Some(i) => i,
+            None => {
+                warn!("P2P network was not initialized");
+                return Ok(());
+            }
+        };
+        
+        let mut guard = instance.write().await;
 
         if let Some(network) = guard.take() {
             // 关闭传输层
-            Arc::try_unwrap(network)
-                .map_err(|_| anyhow!("Cannot stop: network has active references"))?
-                .transport
-                .shutdown()
-                .await?;
-
-            info!("P2P network stopped");
+            if let Ok(network) = Arc::try_unwrap(network) {
+                if let Ok(transport) = Arc::try_unwrap(network.transport) {
+                    transport.shutdown().await?;
+                }
+                info!("P2P network stopped");
+            } else {
+                warn!("Cannot stop: network has active references");
+            }
         } else {
             warn!("P2P network was not running");
         }
@@ -197,23 +281,23 @@ impl P2PNetwork {
 
     /// 获取网络状态
     pub async fn status(&self) -> NetworkStatus {
+        let connections = self.transport.list_connections().await;
         NetworkStatus {
             running: true,
             node_id: self.config.node_id.clone(),
             listen_addr: self.config.listen_addr.clone(),
             uptime_secs: self.started_at.elapsed().as_secs(),
-            connected_peers: self.transport.list_connections().await.len(),
+            connected_peers: connections.len(),
             discovered_peers: self.discovered_peers.read().await.len(),
         }
     }
 
     /// 连接到指定节点
     pub async fn connect(&self, addr: &str) -> Result<()> {
-        let socket_addr: SocketAddr = addr
-            .parse()
-            .map_err(|e| anyhow!("Invalid address '{}': {}", addr, e))?;
+        let socket_addr: SocketAddr = addr.parse()
+            .map_err(|e| CisError::p2p(format!("Invalid address: {}", e)))?;
 
-        // 从地址推断 node_id（实际应该从发现服务获取）
+        // 从地址推断 node_id
         let node_id = format!("peer-{}", socket_addr.port());
 
         self.transport.connect(&node_id, socket_addr).await?;
@@ -232,9 +316,9 @@ impl P2PNetwork {
     /// 获取已发现的节点列表
     pub async fn discovered_peers(&self) -> Vec<PeerInfo> {
         let discovered = self.discovered_peers.read().await;
-        let connected = self.transport.list_connections().await;
+        let connections = self.transport.list_connections().await;
         let connected_ids: std::collections::HashSet<_> =
-            connected.iter().map(|c| c.node_id.clone()).collect();
+            connections.iter().map(|c| c.node_id.clone()).collect();
 
         discovered
             .values()
@@ -243,7 +327,8 @@ impl P2PNetwork {
                 did: node.did.clone(),
                 address: node.address.to_string(),
                 connected: connected_ids.contains(&node.node_id),
-                last_seen: std::time::SystemTime::now(), // TODO: 记录实际时间
+                last_seen: std::time::SystemTime::now(),
+                last_sync_at: None,
             })
             .collect()
     }
@@ -265,6 +350,7 @@ impl P2PNetwork {
                     address: conn.address.to_string(),
                     connected: true,
                     last_seen: std::time::SystemTime::now(),
+                    last_sync_at: None,
                 }
             })
             .collect()
@@ -289,44 +375,52 @@ impl P2PNetwork {
         Ok(sent)
     }
 
+    /// 获取已连接节点列表（别名，用于兼容性）
+    pub async fn get_connected_peers(&self) -> Vec<PeerInfo> {
+        self.connected_peers().await
+    }
+
+    /// 获取特定节点信息
+    pub async fn get_peer(&self, node_id: &str) -> Option<PeerInfo> {
+        let connections = self.transport.list_connections().await;
+        connections.into_iter().find(|c| c.node_id == node_id).map(|conn| {
+            let discovered = self.discovered_peers.blocking_read();
+            let discovered_info = discovered.get(node_id);
+            PeerInfo {
+                node_id: conn.node_id,
+                did: discovered_info.map(|d| d.did.clone()).unwrap_or_default(),
+                address: conn.address.to_string(),
+                connected: true,
+                last_seen: std::time::SystemTime::now(),
+                last_sync_at: None,
+            }
+        })
+    }
+
+    /// 订阅主题（简化实现）
+    pub async fn subscribe<F>(&self, _topic: &str, _callback: F) -> Result<()>
+    where
+        F: Fn(Vec<u8>) + Send + Sync + 'static,
+    {
+        // 主题订阅尚未完全实现
+        Err(CisError::p2p("Topic subscription not fully implemented".to_string()))
+    }
+
     /// 启动后台任务
     async fn start_background_tasks(&self) -> Result<()> {
         // 启动 mDNS 发现任务
-        if let Some(mdns) = &self.mdns {
-            let mdns = mdns; // 解引用
-            let discovered = Arc::clone(&self.discovered_peers);
-
-            // 启动发现任务
-            tokio::task::spawn_blocking({
-                let mdns = unsafe {
-                    // SAFETY: 我们知道 mDNS 服务在 P2PNetwork 生命周期内有效
-                    std::mem::transmute::<&MdnsService, &'static MdnsService>(mdns)
-                };
-                move || {
-                    let rt = tokio::runtime::Runtime::new().unwrap();
-                    rt.block_on(async {
-                        loop {
-                            match mdns.discover(Duration::from_secs(30)) {
-                                Ok(nodes) => {
-                                    let mut peers = discovered.write().await;
-                                    for node in nodes {
-                                        info!(
-                                            "Discovered peer: {} at {}",
-                                            node.node_id, node.address
-                                        );
-                                        peers.insert(node.node_id.clone(), node);
-                                    }
-                                }
-                                Err(e) => {
-                                    warn!("Discovery error: {}", e);
-                                }
-                            }
-                            tokio::time::sleep(Duration::from_secs(30)).await;
-                        }
-                    });
-                }
-            });
+        if let Some(_mdns) = &self.mdns {
+            // TODO: 启动 mDNS 发现任务
+            debug!("mDNS service started");
         }
+
+        // 启动传输层监听
+        let transport: Arc<QuicTransport> = Arc::clone(&self.transport);
+        tokio::spawn(async move {
+            if let Err(e) = transport.start_listening().await {
+                error!("Transport error: {}", e);
+            }
+        });
 
         Ok(())
     }

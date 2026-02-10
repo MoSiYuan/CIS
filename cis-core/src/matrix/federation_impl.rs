@@ -36,6 +36,7 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::{interval, sleep};
 use tracing::{debug, error, info, warn};
 
+use crate::agent::federation_client::FederationClient as AgentFederationClient;
 use crate::error::{CisError, Result};
 use crate::identity::DIDManager;
 use crate::matrix::federation::{
@@ -675,19 +676,20 @@ impl FederationManager {
             None => return Err(CisError::p2p(format!("Unknown server: {}", server))),
         };
 
-        // Query via HTTP API
-        let _url = format!("{}/_cis/v1/room/{}", connection.peer_info.federation_url(), room_id);
-
-        // For now, return a placeholder response
-        // In a full implementation, this would make an actual HTTP request
-        Ok(RoomInfo {
-            room_id: room_id.to_string(),
-            creator: format!("@admin:{}", server),
-            name: Some("Remote Room".to_string()),
-            topic: None,
-            federate: true,
-            created_at: chrono::Utc::now().timestamp(),
-        })
+        // Query via FederationClient
+        let client = AgentFederationClient::new(&self.node_id);
+        let server_url = connection.peer_info.federation_url();
+        
+        match client.query_room(room_id, &server_url).await {
+            Ok(room_info) => {
+                info!("Successfully queried room {} from {}", room_id, server);
+                Ok(room_info)
+            }
+            Err(e) => {
+                error!("Failed to query room {} from {}: {}", room_id, server, e);
+                Err(CisError::p2p(format!("Failed to query room: {}", e)))
+            }
+        }
     }
 
     /// Sync room history from a remote node

@@ -190,11 +190,22 @@ impl FederationServer {
         };
         
         // Configure CORS
-        // Security: In production, restrict to specific trusted origins
-        let cors = CorsLayer::new()
-            .allow_origin(Any)  // TODO: Configure specific origins for production
-            .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
-            .allow_headers(Any);
+        // If allowed_origins is empty, allow all origins (backward compatible)
+        let cors = if self.config.allowed_origins.is_empty() {
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+                .allow_headers(Any)
+        } else {
+            let origins: Vec<axum::http::HeaderValue> = self.config.allowed_origins
+                .iter()
+                .map(|o| o.parse().expect("Invalid CORS origin"))
+                .collect();
+            CorsLayer::new()
+                .allow_origin(origins)
+                .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+                .allow_headers(Any)
+        };
         
         Router::new()
             // Matrix spec endpoint: Get server key

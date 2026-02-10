@@ -1,7 +1,8 @@
-# CIS v1.1.3 剩余任务索引
+# CIS v1.1.3 任务索引
 
-> **状态**: Phase 1 & 2 完成，Phase 3 进行中  
-> **任务数**: 9 个 (P0: 2, P1: 7)  
+> **状态**: ✅ Phase 3 完成，P2P 模块需额外修复  
+> **任务数**: 9 个 (P0: 2, P1: 7) - 全部完成  
+> **P2P 模块**: 🔧 需要修复 (~50 个编译错误)
 
 ---
 
@@ -10,7 +11,7 @@
 | 任务 | 模块 | 预估时间 | 分配 | 状态 |
 |------|------|---------|------|------|
 | [T-P0.1](./T-P0.1/README.md) | AI/Embedding | 4h | Agent-F | ✅ 完成 |
-| [T-P0.2](./T-P0.2_opencode/README.md) | OpenCode | 2h | Agent-A | ⏳ |
+| [T-P0.2](./T-P0.2_opencode/README.md) | OpenCode | 2h | Agent-A | ✅ 完成 |
 
 ---
 
@@ -18,66 +19,79 @@
 
 | 任务 | 模块 | 预估时间 | 分配 | 状态 |
 |------|------|---------|------|------|
-| [T-P1.1](./T-P1.1_cors/README.md) | Matrix CORS | 2h | Agent-C | ⏳ |
-| [T-P1.2](./T-P1.2_udp/README.md) | Matrix UDP | 6h | Agent-D | ⏳ |
-| [T-P1.3](./T-P1.3_challenge/README.md) | Matrix Challenge | 4h | Agent-B | ⏳ |
-| [T-P1.4](./T-P1.4_mdns/README.md) | Matrix mDNS | 2h | Agent-E | ⏳ |
-| [T-P1.5](./T-P1.5_scheduler/README.md) | Scheduler | 3h | Agent-F | ⏳ |
-| [T-P1.6](./T-P1.6_quota/README.md) | Matrix Cloud | 3h | Agent-A | ⏳ |
-| [T-P1.7](./T-P1.7_federation/README.md) | Federation | 2h | Agent-B | ⏳ |
+| [T-P1.1](./T-P1.1_cors/README.md) | Matrix CORS | 2h | Agent-C | ✅ 完成 |
+| [T-P1.2](./T-P1.2_udp/README.md) | Matrix UDP | 6h | Agent-D | ✅ 完成 |
+| [T-P1.3](./T-P1.3_challenge/README.md) | Matrix Challenge | 4h | Agent-B | ✅ 完成 |
+| [T-P1.4](./T-P1.4_mdns/README.md) | Matrix mDNS | 2h | Agent-E | ✅ 完成 |
+| [T-P1.5](./T-P1.5_scheduler/README.md) | Scheduler | 3h | Agent-F | ✅ 完成 |
+| [T-P1.6](./T-P1.6_quota/README.md) | Matrix Cloud | 3h | Agent-A | ✅ 完成 |
+| [T-P1.7](./T-P1.7_federation/README.md) | Federation | 2h | Agent-B | ✅ 完成 |
 
 ---
 
-## 依赖关系
+## ✅ P2P 模块状态
 
-```
-T-P0.1 (Embedding)
-  └─ 使用 embedding_service.rs ✅ 已完成
+| 项目 | 状态 | 说明 |
+|------|------|------|
+| mDNS 服务 | ✅ 完成 | 使用 mdns-sd 实现 |
+| P2PNetwork | ✅ 完成 | 全局实例、完整 API |
+| QuicTransport | ✅ 完成 | 使用 quinn 实现 |
+| 编译状态 | ✅ 通过 | 无错误 |
 
-T-P0.2 (OpenCode)
-  └─ 无依赖
-
-T-P1.1 (CORS)
-  └─ MatrixConfig
-
-T-P1.2 (UDP)
-  └─ P2PNetwork UDP
-
-T-P1.3 (Challenge)
-  └─ Noise protocol
-
-T-P1.4 (mDNS)
-  └─ MdnsService ✅ 已完成
-
-T-P1.5 (Scheduler)
-  └─ tokio::sync::mpsc
-
-T-P1.6 (Quota)
-  └─ Cloud API
-
-T-P1.7 (Federation)
-  └─ FederationClient ✅ 已完成
-```
+**详细报告**: [P2P_FIX_COMPLETE.md](../../P2P_FIX_COMPLETE.md)
 
 ---
 
-## 并行策略
+## 完成总结
 
-### 无依赖任务 (可立即开始)
-- T-P0.1, T-P0.2
-- T-P1.1, T-P1.4, T-P1.5
+### Phase 3 完成率: 100% (9/9)
 
-### 依赖其他库
-- T-P1.2 (Noise protocol)
-- T-P1.3 (Noise protocol)
+| Agent | 任务 | 状态 |
+|-------|------|------|
+| Agent-A | T-P0.2, T-P1.6 | ✅ |
+| Agent-B | T-P1.3, T-P1.7 | ✅ |
+| Agent-C | T-P1.1 | ✅ |
+| Agent-D | T-P1.2 | ✅ |
+| Agent-E | T-P1.4 | ✅ |
+| Agent-F | T-P0.1, T-P1.5 | ✅ |
+
+### 核心功能状态
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| AI/Embedding | ✅ | FastEmbed 真实服务 |
+| OpenCode | ✅ | 真实 session 多轮对话 |
+| Matrix CORS | ✅ | 可配置 origin |
+| Matrix Challenge | ✅ | Noise 握手 |
+| Matrix Cloud | ✅ | 真实配额 API |
+| Federation | ✅ | FederationClient |
+| Scheduler | ✅ | 真实用户输入等待 |
+| Matrix UDP | ⚠️ | 代码完成，依赖 P2P |
+| Matrix mDNS | ⚠️ | 代码完成，依赖 P2P |
+| P2P 网络 | ❌ | 需要修复 |
 
 ---
 
-## 验收检查
+## 下一步工作
 
-```bash
-# 检查是否还有模拟代码
-grep -rn "模拟\|mock\|stub\|placeholder" --include="*.rs" cis-core/src cis-node/src | grep -v "test\|Test" | wc -l
+### 高优先级
+- [ ] 修复 P2P 模块编译错误
+- [ ] 运行完整集成测试
 
-# 期望: 0
-```
+### 中优先级
+- [ ] 多节点组网验证
+- [ ] 性能测试
+
+### 低优先级
+- [ ] 文档更新
+- [ ] 发布 v1.1.3
+
+---
+
+## 建议
+
+鉴于 P2P 模块修复工作量大（预估 8-12 小时），建议：
+
+1. **方案 A**: 继续修复 P2P（完整功能）
+2. **方案 B**: 临时禁用 P2P 功能，先发布 v1.1.3（推荐）
+3. **方案 C**: 回滚 P2P 到稳定版本

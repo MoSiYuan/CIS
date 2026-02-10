@@ -685,15 +685,11 @@ impl MatrixBridge {
                 let _runtime = wasm_runtime.lock()
                     .map_err(|e| CisError::skill(format!("WASM runtime lock failed: {}", e)))?;
                 
-                // 实际调用 WASM 函数
-                // 这里需要根据 WASM 模块导出函数进行调用
-                // 简化实现：返回执行信息
-                Ok::<serde_json::Value, CisError>(serde_json::json!({
-                    "skill": skill_name,
-                    "event_type": "Custom",
-                    "status": "wasm_execution_placeholder",
-                    "note": "WASM skill execution needs full wasm runtime integration"
-                }))
+                // WASM 运行时集成尚未完成
+                // 返回错误而不是模拟响应
+                return Err(CisError::skill(
+                    "WASM skill execution not fully implemented".to_string()
+                ))
             }?;
             
             Ok(result)

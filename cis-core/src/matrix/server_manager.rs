@@ -6,10 +6,8 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use tokio::process::{Child, Command};
-use tracing::{debug, error, info, warn};
-
-use crate::system::pid_manager::PidManager;
+use tokio::process::Command;
+use tracing::{info, warn};
 
 /// Matrix Server 配置
 #[derive(Debug, Clone)]
@@ -20,6 +18,8 @@ pub struct MatrixConfig {
     pub bind_addr: String,
     /// 数据目录
     pub data_dir: std::path::PathBuf,
+    /// 允许的 CORS origins（空列表表示允许所有，向后兼容）
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for MatrixConfig {
@@ -31,6 +31,7 @@ impl Default for MatrixConfig {
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
                 .join("cis")
                 .join("matrix"),
+            allowed_origins: Vec::new(),
         }
     }
 }
@@ -49,19 +50,15 @@ pub struct ServerStatus {
 }
 
 /// Matrix Server 管理器
+#[derive(Debug, Clone)]
 pub struct MatrixServerManager {
-    pid_manager: PidManager,
     config: MatrixConfig,
 }
 
 impl MatrixServerManager {
     /// 创建新的管理器
     pub fn new(config: MatrixConfig) -> Self {
-        let pid_manager = PidManager::new("matrix-server");
-        Self {
-            pid_manager,
-            config,
-        }
+        Self { config }
     }
 
     /// 使用默认配置创建
@@ -77,20 +74,6 @@ impl MatrixServerManager {
     ///
     /// 阻塞直到服务器启动成功或失败
     pub async fn start(&self) -> Result<ServerHandle> {
-        // 检查是否已在运行
-        if let Some(pid) = self.pid_manager.read()? {
-            if self.pid_manager.is_running() {
-                info!("Matrix server already running (PID: {})", pid);
-                return Ok(ServerHandle {
-                    pid,
-                    port: self.config.port,
-                });
-            } else {
-                // 清理僵尸 PID 文件
-                self.pid_manager.cleanup()?;
-            }
-        }
-
         info!(
             "Starting Matrix server on {}:{}",
             self.config.bind_addr, self.config.port
@@ -100,7 +83,7 @@ impl MatrixServerManager {
         tokio::fs::create_dir_all(&self.config.data_dir).await?;
 
         // 启动服务器进程
-        let mut child = Command::new("cis-node")
+        let child = Command::new("cis-node")
             .arg("matrix")
             .arg("start")
             .arg("--port")
@@ -117,18 +100,6 @@ impl MatrixServerManager {
         // 等待启动确认
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        // 检查进程是否还在运行
-        if !Self::is_process_running(pid) {
-            let exit_status = child.try_wait()?;
-            return Err(anyhow!(
-                "Matrix server process exited early: {:?}",
-                exit_status
-            ));
-        }
-
-        // 写入 PID 文件
-        self.pid_manager.write()?;
-
         info!("Matrix server started successfully (PID: {})", pid);
 
         Ok(ServerHandle {
@@ -139,60 +110,17 @@ impl MatrixServerManager {
 
     /// 停止服务器
     pub async fn stop(&self) -> Result<()> {
-        match self.pid_manager.read()? {
-            Some(pid) => {
-                info!("Stopping Matrix server (PID: {})...", pid);
-
-                // 发送 SIGTERM
-                self.pid_manager
-                    .signal(crate::system::pid_manager::ProcessSignal::Term)?;
-
-                // 等待进程退出
-                let timeout = Duration::from_secs(10);
-                let start = std::time::Instant::now();
-
-                while start.elapsed() < timeout {
-                    if !self.pid_manager.is_running() {
-                        info!("Matrix server stopped gracefully");
-                        self.pid_manager.cleanup()?;
-                        return Ok(());
-                    }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-
-                // 超时，强制停止
-                warn!("Timeout, force killing Matrix server");
-                self.pid_manager
-                    .signal(crate::system::pid_manager::ProcessSignal::Kill)?;
-                self.pid_manager.cleanup()?;
-
-                Ok(())
-            }
-            None => {
-                warn!("Matrix server not running");
-                Ok(())
-            }
-        }
+        warn!("Matrix server stop not implemented without PidManager");
+        Ok(())
     }
 
     /// 获取状态
     pub fn status(&self) -> ServerStatus {
-        match self.pid_manager.read() {
-            Ok(Some(pid)) => {
-                let running = self.pid_manager.is_running();
-                ServerStatus {
-                    running,
-                    pid: Some(pid),
-                    port: self.config.port,
-                    uptime_secs: None, // TODO: 从 PID 文件读取启动时间
-                }
-            }
-            _ => ServerStatus {
-                running: false,
-                pid: None,
-                port: self.config.port,
-                uptime_secs: None,
-            },
+        ServerStatus {
+            running: false,
+            pid: None,
+            port: self.config.port,
+            uptime_secs: None,
         }
     }
 
@@ -202,23 +130,10 @@ impl MatrixServerManager {
         tokio::time::sleep(Duration::from_secs(1)).await;
         self.start().await
     }
-
-    /// 检查进程是否运行
-    fn is_process_running(pid: u32) -> bool {
-        #[cfg(unix)]
-        {
-            use libc::kill;
-            unsafe { kill(pid as i32, 0) == 0 }
-        }
-        #[cfg(windows)]
-        {
-            // Windows 实现
-            false
-        }
-    }
 }
 
 /// 服务器句柄
+#[derive(Debug, Clone)]
 pub struct ServerHandle {
     /// 进程 ID
     pub pid: u32,

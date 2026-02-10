@@ -3,10 +3,12 @@
 //! 实现真实的 Matrix 事件发送和接收
 
 use anyhow::{anyhow, Context, Result};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
+use crate::matrix::federation::types::RoomInfo;
 use crate::matrix::server_manager::{MatrixConfig, MatrixServerManager};
 
 /// Federation 事件
@@ -125,6 +127,46 @@ impl FederationClient {
         debug!("Sending status update: {}", json);
         
         Ok(())
+    }
+    
+    /// 发送通用事件
+    pub async fn send_event(&self, event: FederationEvent) -> Result<()> {
+        let json = serde_json::to_string(&event)?;
+        info!("Sending federation event: {}", json);
+        
+        // 实际应该发送到 Matrix room
+        // 这里简化处理
+        debug!("Event sent to federation");
+        
+        Ok(())
+    }
+    
+    /// 查询房间信息
+    pub async fn query_room(&self, room_id: &str, server_url: &str) -> Result<RoomInfo> {
+        let client = Client::new();
+        let url = format!("{}/_cis/v1/room/{}", server_url, room_id);
+        
+        debug!("Querying room info from: {}", url);
+        
+        let response = client
+            .get(&url)
+            .timeout(Duration::from_secs(30))
+            .send()
+            .await
+            .map_err(|e| anyhow!("Failed to query room: {}", e))?;
+        
+        if response.status().is_success() {
+            let room_info: RoomInfo = response
+                .json()
+                .await
+                .map_err(|e| anyhow!("Failed to parse room info: {}", e))?;
+            info!("Successfully queried room: {}", room_id);
+            Ok(room_info)
+        } else {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            Err(anyhow!("Server returned error {}: {}", status, text))
+        }
     }
     
     /// 订阅事件

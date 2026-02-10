@@ -3,7 +3,7 @@
 //! 使用 mDNS 在局域网发现节点，DHT 在广域网发现节点。
 
 use crate::error::Result;
-use crate::p2p::NodeInfo;
+use crate::service::node_service::NodeInfo;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -49,7 +49,9 @@ impl DiscoveryService {
     async fn start_mdns_broadcast(&self, local_node: NodeInfo) -> Result<()> {
         let node_id = self.node_id.clone();
         let service_name = SERVICE_NAME.to_string();
-        let did = local_node.did.clone();
+        // 从 NodeInfo 中提取 DID 和 endpoint
+        let did = local_node.summary.did.clone();
+        let addresses = vec![local_node.summary.endpoint.clone()];
         
         tokio::spawn(async move {
             // 使用 mdns-sd 库进行 mDNS 广播
@@ -71,12 +73,12 @@ impl DiscoveryService {
             properties.insert("did".to_string(), did);
             
             // 获取本机地址
-            let addresses: Vec<SocketAddr> = local_node.addresses
+            let socket_addrs: Vec<SocketAddr> = addresses
                 .iter()
                 .filter_map(|addr| addr.parse().ok())
                 .collect();
             
-            let ip_addrs: Vec<std::net::IpAddr> = addresses
+            let ip_addrs: Vec<std::net::IpAddr> = socket_addrs
                 .iter()
                 .map(|a| a.ip())
                 .collect();

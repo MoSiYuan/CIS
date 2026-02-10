@@ -189,10 +189,10 @@ impl FederatedAgent {
         // 这里我们使用一个简化的方式，实际应该通过 FederationManager 或配置获取 peers
         debug!("Sending federation event: {:?}", event.event_type_str());
 
-        // TODO: 实现实际的 Matrix 事件发送
-        // 这需要 FederationClient 支持直接发送事件到 room 或通过 Peers
-
-        Ok(())
+        // Federation 事件发送尚未完全实现
+        Err(CisError::execution(
+            "Federation event sending not fully implemented".to_string()
+        ))
     }
 
     /// 发送注册事件

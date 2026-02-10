@@ -27,11 +27,12 @@ pub struct MatrixServer {
     store: Arc<MatrixStore>,
     social_store: Arc<MatrixSocialStore>,
     bridge: Option<Arc<MatrixBridge>>,
+    allowed_origins: Vec<String>,
 }
 
 impl MatrixServer {
     pub fn new(port: u16, store: Arc<MatrixStore>, social_store: Arc<MatrixSocialStore>) -> Self {
-        Self { port, store, social_store, bridge: None }
+        Self { port, store, social_store, bridge: None, allowed_origins: Vec::new() }
     }
 
     pub fn with_bridge(
@@ -40,7 +41,13 @@ impl MatrixServer {
         social_store: Arc<MatrixSocialStore>,
         bridge: Arc<MatrixBridge>,
     ) -> Self {
-        Self { port, store, social_store, bridge: Some(bridge) }
+        Self { port, store, social_store, bridge: Some(bridge), allowed_origins: Vec::new() }
+    }
+
+    /// Set allowed CORS origins
+    pub fn with_allowed_origins(mut self, origins: Vec<String>) -> Self {
+        self.allowed_origins = origins;
+        self
     }
 
     pub async fn run(&self) -> Result<(), MatrixError> {
@@ -65,11 +72,22 @@ impl MatrixServer {
 
     fn create_router(&self) -> Router {
         // Security: Restrict CORS to prevent CSRF attacks
-        // In production, configure specific origins instead of Any
-        let cors = CorsLayer::new()
-            .allow_origin(Any)  // TODO: Configure specific origins for production
-            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
-            .allow_headers(Any);
+        // If allowed_origins is empty, allow all origins (backward compatible)
+        let cors = if self.allowed_origins.is_empty() {
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
+                .allow_headers(Any)
+        } else {
+            let origins: Vec<axum::http::HeaderValue> = self.allowed_origins
+                .iter()
+                .map(|o| o.parse().expect("Invalid CORS origin"))
+                .collect();
+            CorsLayer::new()
+                .allow_origin(origins)
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
+                .allow_headers(Any)
+        };
 
         // Use the routes module's router with both stores
         super::routes::router(self.store.clone(), self.social_store.clone())
@@ -104,6 +122,7 @@ pub struct MatrixServerBuilder {
     events_db_path: Option<String>,
     social_db_path: Option<String>,
     bridge: Option<Arc<MatrixBridge>>,
+    allowed_origins: Vec<String>,
 }
 
 impl MatrixServerBuilder {
@@ -112,7 +131,8 @@ impl MatrixServerBuilder {
             port: None, 
             events_db_path: None, 
             social_db_path: None, 
-            bridge: None 
+            bridge: None,
+            allowed_origins: Vec::new(),
         } 
     }
     
@@ -147,6 +167,12 @@ impl MatrixServerBuilder {
     
     pub fn bridge(mut self, bridge: Arc<MatrixBridge>) -> Self { self.bridge = Some(bridge); self }
 
+    /// Set allowed CORS origins
+    pub fn allowed_origins(mut self, origins: Vec<String>) -> Self {
+        self.allowed_origins = origins;
+        self
+    }
+
     pub fn build(self) -> Result<MatrixServer, MatrixError> {
         let port = self.port.unwrap_or(MATRIX_HUMAN_PORT);
         
@@ -166,10 +192,12 @@ impl MatrixServerBuilder {
         };
         let social_store = Arc::new(social_store);
         
-        match self.bridge {
-            Some(bridge) => Ok(MatrixServer::with_bridge(port, store, social_store, bridge)),
-            None => Ok(MatrixServer::new(port, store, social_store)),
-        }
+        let mut server = match self.bridge {
+            Some(bridge) => MatrixServer::with_bridge(port, store, social_store, bridge),
+            None => MatrixServer::new(port, store, social_store),
+        };
+        server.allowed_origins = self.allowed_origins;
+        Ok(server)
     }
 }
 

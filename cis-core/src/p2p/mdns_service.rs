@@ -14,7 +14,7 @@ const SERVICE_TYPE: &str = "_cis._tcp.local";
 const DEFAULT_DISCOVERY_TIMEOUT_MS: u64 = 10000;
 
 /// 发现的节点信息
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredNode {
     pub node_id: String,
     pub address: SocketAddr,
@@ -39,7 +39,7 @@ impl DiscoveredNode {
         let did = properties.get("did")?.to_string();
         
         // 获取地址
-        let addresses: Vec<std::net::IpAddr> = info.get_addresses().to_vec();
+        let addresses: Vec<std::net::IpAddr> = info.get_addresses().iter().cloned().collect();
         if addresses.is_empty() {
             warn!("No addresses found for node {}", node_id);
             return None;
@@ -50,9 +50,13 @@ impl DiscoveredNode {
         
         // 收集所有元数据
         let mut metadata = HashMap::new();
-        for (key, value) in properties.iter() {
+        for prop in properties.iter() {
+            let key = prop.key();
+            let val = prop.val();
             if key != "node_id" && key != "did" {
-                metadata.insert(key.to_string(), value.to_string());
+                let val_str = val.map(|v| String::from_utf8_lossy(v).to_string())
+                    .unwrap_or_default();
+                metadata.insert(key.to_string(), val_str);
             }
         }
         
@@ -179,7 +183,7 @@ impl MdnsService {
                         _ => {}
                     }
                 }
-                Err(mdns_sd::Error::Again) => {
+                Err(_) => {
                     // 超时，继续循环检查总超时
                     continue;
                 }
@@ -250,6 +254,69 @@ impl MdnsService {
     /// 获取本节点 ID
     pub fn node_id(&self) -> &str {
         &self.node_id
+    }
+
+    /// 使用指定服务类型发现节点
+    ///
+    /// # Arguments
+    /// * `service_type` - 服务类型（如 "_matrix._tcp.local"）
+    /// * `timeout` - 发现超时时间
+    ///
+    /// # Returns
+    /// 发现的节点列表
+    pub fn discover_with_type(
+        &self,
+        service_type: &str,
+        timeout: Duration,
+    ) -> Result<Vec<DiscoveredNode>> {
+        // 启动浏览
+        let receiver = self
+            .daemon
+            .browse(service_type)
+            .map_err(|e| anyhow!("Failed to browse mDNS: {}", e))?;
+
+        let mut discovered = HashMap::new();
+        let start = std::time::Instant::now();
+
+        // 收集发现的节点
+        while start.elapsed() < timeout {
+            match receiver.recv_timeout(Duration::from_millis(100)) {
+                Ok(event) => {
+                    match event {
+                        mdns_sd::ServiceEvent::ServiceResolved(info) => {
+                            debug!("Discovered service: {}", info.get_fullname());
+
+                            if let Some(node) =
+                                DiscoveredNode::from_service_info(&info, &self.node_id)
+                            {
+                                info!(
+                                    "Discovered peer: {} at {} (DID: {})",
+                                    node.node_id, node.address, node.did
+                                );
+                                discovered.insert(node.node_id.clone(), node);
+                            }
+                        }
+                        mdns_sd::ServiceEvent::ServiceRemoved(_service_type, fullname) => {
+                            debug!("Service removed: {}", fullname);
+                            discovered.retain(|_, node| !fullname.contains(&node.node_id));
+                        }
+                        _ => {}
+                    }
+                }
+                Err(_) => {
+                    continue;
+                }
+            }
+        }
+
+        let nodes: Vec<DiscoveredNode> = discovered.into_values().collect();
+        info!(
+            "Discovery complete for {}: found {} node(s)",
+            service_type,
+            nodes.len()
+        );
+
+        Ok(nodes)
     }
 }
 

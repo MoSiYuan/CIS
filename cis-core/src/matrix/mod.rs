@@ -83,6 +83,7 @@ pub mod events;
 pub mod federation;
 pub mod nucleus;
 pub mod server;
+pub mod server_manager;
 pub mod store;
 pub mod store_social;
 pub mod sync;

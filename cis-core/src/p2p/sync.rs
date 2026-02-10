@@ -144,7 +144,7 @@ impl MemorySyncManager {
         let data = serde_json::to_vec(&message)?;
 
         // 广播到网络（请求节点会接收并处理）
-        self.p2p.broadcast("memory_sync", data).await?;
+        self.p2p.broadcast(&data).await?;
 
         Ok(())
     }
@@ -250,7 +250,7 @@ impl MemorySyncManager {
         let data = serde_json::to_vec(&message)?;
 
         // 广播到网络
-        self.p2p.broadcast("memory_sync", data).await?;
+        self.p2p.broadcast(&data).await?;
 
         Ok(())
     }
@@ -278,7 +278,7 @@ impl MemorySyncManager {
         let data = serde_json::to_vec(&message)?;
 
         // 广播到 P2P 网络
-        self.p2p.broadcast("memory_sync", data).await?;
+        self.p2p.broadcast(&data).await?;
 
         Ok(())
     }
@@ -365,7 +365,7 @@ impl MemorySyncManager {
     async fn get_last_sync_time(&self, node_id: &str) -> Result<Option<DateTime<Utc>>> {
         // 从数据库获取
         // 通过 P2P 网络的 peer_manager 获取
-        if let Some(peer) = self.p2p.get_peer(node_id).await? {
+        if let Some(peer) = self.p2p.get_peer(node_id).await {
             Ok(peer.last_sync_at)
         } else {
             Ok(None)
@@ -457,7 +457,7 @@ impl MemorySyncHandle {
         let data = serde_json::to_vec(&message)?;
 
         // 广播到网络
-        self.p2p.broadcast("memory_sync", data).await?;
+        self.p2p.broadcast(&data).await?;
 
         Ok(())
     }
@@ -584,14 +584,14 @@ impl MemorySyncHandle {
         let message = SyncMessage::Request(request);
         let data = serde_json::to_vec(&message)?;
 
-        self.p2p.broadcast("memory_sync", data).await?;
+        self.p2p.broadcast(&data).await?;
 
         Ok(())
     }
 
     /// 获取上次同步时间
     async fn get_last_sync_time(&self, node_id: &str) -> Result<Option<DateTime<Utc>>> {
-        if let Some(peer) = self.p2p.get_peer(node_id).await? {
+        if let Some(peer) = self.p2p.get_peer(node_id).await {
             Ok(peer.last_sync_at)
         } else {
             Ok(None)
