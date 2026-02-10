@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-02-10
+
+### Phase 3: 全模块真实实现
+
+CIS v1.1.3 完成了 Phase 3 里程碑，将所有模拟实现替换为基于成熟库的真实实现。
+
+#### Added
+- **FastEmbed 向量嵌入** (T-P0.1)
+  - Nomic Embed Text v1.5 模型 (768维)
+  - 完全替代 Mock 哈希向量实现
+  - 本地推理，无需网络
+  
+- **OpenCode 真实会话管理** (T-P0.2)
+  - `opencode continue -c <session_id>` 命令支持
+  - 持久化会话 ID 追踪
+  - 替换模拟的 Prompt 注入
+
+- **矩阵网络层真实实现** (T-P1.1-1.4)
+  - CORS: 可配置的 `allowed_origins` (替换 `Any`)
+  - UDP: P2PNetwork 直接连接同 LAN 节点
+  - Challenge: Noise_XX_25519_ChaChaPoly_BLAKE2s 握手
+  - mDNS: `_matrix._tcp.local` 服务发现
+
+- **调度器真实用户输入** (T-P1.5)
+  - `mpsc::Receiver<UserInput>` 异步通道
+  - 5分钟确认超时，10分钟仲裁超时
+  - 替换 `tokio::time::sleep` 模拟
+
+- **矩阵云服务真实 API** (T-P1.6)
+  - 真实 API 调用
+  - 60秒 TTL 缓存
+  - 替换模拟配额数据
+
+- **联邦通信客户端** (T-P1.7)
+  - FederationClient 结构
+  - 事件发送准备
+  - 替换占位响应
+
+#### Changed
+- **P2P 模块完全重写**
+  - QUIC 传输: `quinn 0.11`
+  - mDNS 发现: `mdns-sd 0.10`
+  - DHT: 真实 TCP 连接
+  - Noise 加密: `snow 0.9`
+
+- **错误处理策略**
+  - 服务不可用返回显式错误 (Err)
+  - 不再返回模拟成功数据 (Ok with mock)
+  - WASM 技能: 明确返回 "not implemented"
+  - 联邦事件: 明确返回 "not implemented"
+
+#### Dependencies
+- Added: `fastembed = "4.0"`
+- Added: `quinn = "0.11"`
+- Added: `mdns-sd = "0.10"`
+- Added: `snow = "0.9"`
+- Added: `stun = "0.5"`
+- Added: `igd = "0.12"`
+
 ## [1.1.2] - 2026-02-09
 
 ### Fixed
