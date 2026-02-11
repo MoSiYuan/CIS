@@ -453,6 +453,9 @@ impl MatrixStore {
         let db = self.db.lock()
             .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
 
+        // 使用设备名（hostname）作为默认显示名称
+        let hostname = gethostname::gethostname().to_string_lossy().to_string();
+
         // Insert user
         db.execute(
             "INSERT INTO matrix_users (user_id, display_name, created_at) 
@@ -460,13 +463,13 @@ impl MatrixStore {
             [user_id],
         ).map_err(|e| MatrixError::Store(format!("Failed to register user: {}", e)))?;
 
-        // Store access token in matrix_devices (add token column if needed)
+        // Store access token in matrix_devices (使用设备名作为默认显示名称)
         db.execute(
             "INSERT INTO matrix_devices (device_id, user_id, display_name, last_seen) 
-             VALUES (?1, ?2, 'Element Client', unixepoch())
+             VALUES (?1, ?2, ?3, unixepoch())
              ON CONFLICT(device_id) DO UPDATE SET
              last_seen = unixepoch()",
-            [device_id, user_id],
+            [device_id, user_id, hostname.as_str()],
         ).map_err(|e| MatrixError::Store(format!("Failed to store device token: {}", e)))?;
 
         Ok(())

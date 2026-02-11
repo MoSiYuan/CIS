@@ -150,11 +150,16 @@ pub async fn login(
             // Generate or use provided device ID
             let device_id = device_id.unwrap_or_else(generate_device_id);
             
+            // 如果没有提供设备显示名称，使用设备名（hostname）作为默认值
+            let device_display_name = initial_device_display_name.unwrap_or_else(|| {
+                gethostname::gethostname().to_string_lossy().to_string()
+            });
+            
             // Register the device using social_store
             social_store.register_device(
                 &device_id, 
                 &user_id, 
-                initial_device_display_name.as_deref(),
+                Some(&device_display_name),
                 None, // ip_address
             )?;
             

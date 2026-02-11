@@ -852,65 +852,128 @@ use crate::memory::{MemoryServiceTrait, MemorySearchItem};
 
 impl MemoryServiceTrait for MemoryService {
     fn get(&self, key: &str) -> Option<Vec<u8>> {
-        // 创建运行时来执行异步调用
-        let rt = tokio::runtime::Handle::try_current()
-            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
-            .ok()?;
-        
-        rt.block_on(async {
-            match self.get(key).await {
-                Ok(Some(item)) => Some(item.value),
-                _ => None,
+        // 尝试获取当前运行时句柄
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                // 在已有运行时中，使用 block_in_place 避免嵌套运行时错误
+                tokio::task::block_in_place(|| {
+                    handle.block_on(async {
+                        match self.get(key).await {
+                            Ok(Some(item)) => Some(item.value),
+                            _ => None,
+                        }
+                    })
+                })
             }
-        })
+            Err(_) => {
+                // 没有运行时，创建新的运行时
+                match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt.block_on(async {
+                        match self.get(key).await {
+                            Ok(Some(item)) => Some(item.value),
+                            _ => None,
+                        }
+                    }),
+                    Err(_) => None,
+                }
+            }
+        }
     }
 
     fn set(&self, key: &str, value: &[u8]) -> crate::error::Result<()> {
-        // 创建运行时来执行异步调用
-        let rt = tokio::runtime::Handle::try_current()
-            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
-            .map_err(|e| crate::error::CisError::Memory(format!("Failed to create runtime: {}", e)))?;
-        
-        rt.block_on(async {
-            self.set(key, value, MemoryDomain::Public, MemoryCategory::Context).await
-        })
+        // 尝试获取当前运行时句柄
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                // 在已有运行时中，使用 block_in_place
+                tokio::task::block_in_place(|| {
+                    handle.block_on(async {
+                        self.set(key, value, MemoryDomain::Public, MemoryCategory::Context).await
+                    })
+                })
+            }
+            Err(_) => {
+                // 没有运行时，创建新的运行时
+                let rt = tokio::runtime::Runtime::new()
+                    .map_err(|e| crate::error::CisError::Memory(format!("Failed to create runtime: {}", e)))?;
+                rt.block_on(async {
+                    self.set(key, value, MemoryDomain::Public, MemoryCategory::Context).await
+                })
+            }
+        }
     }
 
     fn delete(&self, key: &str) -> crate::error::Result<()> {
-        // 创建运行时来执行异步调用
-        let rt = tokio::runtime::Handle::try_current()
-            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
-            .map_err(|e| crate::error::CisError::Memory(format!("Failed to create runtime: {}", e)))?;
-        
-        rt.block_on(async {
-            self.delete(key).await.map(|_| ())
-        })
+        // 尝试获取当前运行时句柄
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                // 在已有运行时中，使用 block_in_place
+                tokio::task::block_in_place(|| {
+                    handle.block_on(async {
+                        self.delete(key).await.map(|_| ())
+                    })
+                })
+            }
+            Err(_) => {
+                // 没有运行时，创建新的运行时
+                let rt = tokio::runtime::Runtime::new()
+                    .map_err(|e| crate::error::CisError::Memory(format!("Failed to create runtime: {}", e)))?;
+                rt.block_on(async {
+                    self.delete(key).await.map(|_| ())
+                })
+            }
+        }
     }
 
     fn search(&self, query: &str, limit: usize) -> crate::error::Result<Vec<MemorySearchItem>> {
-        // 创建运行时来执行异步调用
-        let rt = tokio::runtime::Handle::try_current()
-            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
-            .map_err(|e| crate::error::CisError::Memory(format!("Failed to create runtime: {}", e)))?;
-        
-        rt.block_on(async {
-            let options = SearchOptions::new()
-                .with_limit(limit)
-                .with_threshold(0.5);
-            
-            let results = self.search(query, options).await?;
-            
-            let items = results.into_iter()
-                .map(|item| MemorySearchItem {
-                    key: item.key,
-                    value: item.value,
-                    domain: item.domain,
-                    category: item.category,
+        // 尝试获取当前运行时句柄
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                // 在已有运行时中，使用 block_in_place
+                tokio::task::block_in_place(|| {
+                    handle.block_on(async {
+                        let options = SearchOptions::new()
+                            .with_limit(limit)
+                            .with_threshold(0.5);
+                        
+                        let results = self.search(query, options).await?;
+                        
+                        let items = results.into_iter()
+                            .map(|item| MemorySearchItem {
+                                key: item.key,
+                                value: item.value,
+                                domain: item.domain,
+                                category: item.category,
+                            })
+                            .collect();
+                        
+                        Ok(items)
+                    })
                 })
-                .collect();
-            
-            Ok(items)
-        })
+            }
+            Err(_) => {
+                // 没有运行时，创建新的运行时
+                let rt = tokio::runtime::Runtime::new()
+                    .map_err(|e| crate::error::CisError::Memory(format!("Failed to create runtime: {}", e)))?;
+                rt.block_on(async {
+                    let options = SearchOptions::new()
+                        .with_limit(limit)
+                        .with_threshold(0.5);
+                    
+                    let results = self.search(query, options).await?;
+                    
+                    let items = results.into_iter()
+                        .map(|item| MemorySearchItem {
+                            key: item.key,
+                            value: item.value,
+                            domain: item.domain,
+                            category: item.category,
+                        })
+                        .collect();
+                    
+                    Ok(items)
+                })
+            }
+        }
     }
 }
 
