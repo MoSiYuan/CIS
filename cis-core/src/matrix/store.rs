@@ -481,20 +481,75 @@ impl MatrixStore {
 
     /// Get all rooms a user has joined
     pub fn get_joined_rooms(&self, user_id: &str) -> MatrixResult<Vec<String>> {
+        self.get_rooms_by_membership(user_id, "join")
+    }
+
+    /// Get all rooms by membership status
+    pub fn get_rooms_by_membership(&self, user_id: &str, membership: &str) -> MatrixResult<Vec<String>> {
         let db = self.db.lock()
             .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
 
         let mut stmt = db.prepare(
             "SELECT room_id FROM matrix_room_members 
-             WHERE user_id = ?1 AND membership = 'join'"
+             WHERE user_id = ?1 AND membership = ?2"
         ).map_err(|e| MatrixError::Store(format!("Failed to prepare query: {}", e)))?;
 
         let room_ids: Result<Vec<String>, rusqlite::Error> = stmt
-            .query_map([user_id], |row| row.get(0))
+            .query_map([user_id, membership], |row| row.get(0))
             .map_err(|e| MatrixError::Store(format!("Failed to query rooms: {}", e)))?
             .collect();
 
         room_ids.map_err(|e| MatrixError::Store(format!("Failed to collect rooms: {}", e)))
+    }
+
+    /// Get all invited rooms for a user
+    pub fn get_invited_rooms(&self, user_id: &str) -> MatrixResult<Vec<(String, String)>> {
+        // Returns (room_id, inviter_user_id)
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let mut stmt = db.prepare(
+            "SELECT r.room_id, r.creator 
+             FROM matrix_room_members m
+             JOIN matrix_rooms r ON m.room_id = r.room_id
+             WHERE m.user_id = ?1 AND m.membership = 'invite'"
+        ).map_err(|e| MatrixError::Store(format!("Failed to prepare query: {}", e)))?;
+
+        let rooms: Result<Vec<(String, String)>, rusqlite::Error> = stmt
+            .query_map([user_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .map_err(|e| MatrixError::Store(format!("Failed to query invited rooms: {}", e)))?
+            .collect();
+
+        rooms.map_err(|e| MatrixError::Store(format!("Failed to collect invited rooms: {}", e)))
+    }
+
+    /// Get all left rooms for a user
+    pub fn get_left_rooms(&self, user_id: &str) -> MatrixResult<Vec<String>> {
+        self.get_rooms_by_membership(user_id, "leave")
+    }
+
+    /// Update room membership
+    pub fn update_membership(&self, room_id: &str, user_id: &str, membership: &str) -> MatrixResult<()> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        db.execute(
+            "INSERT INTO matrix_room_members (room_id, user_id, membership, updated_at) 
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(room_id, user_id) DO UPDATE SET
+             membership = excluded.membership,
+             updated_at = excluded.updated_at",
+            rusqlite::params![room_id, user_id, membership, now],
+        ).map_err(|e| MatrixError::Store(format!("Failed to update membership: {}", e)))?;
+
+        Ok(())
     }
 
     /// Get messages for a room since a given timestamp

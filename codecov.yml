@@ -1,0 +1,62 @@
+# CIS Codecov Configuration
+# 
+# 代码覆盖率集成配置
+
+coverage:
+  status:
+    project:
+      default:
+        # 项目整体覆盖率目标
+        target: 70%
+        threshold: 5%
+        base: auto
+        paths:
+          - "cis-core/src"
+        if_ci_failed: error
+        informational: false
+        only_pulls: false
+    patch:
+      default:
+        # 新代码覆盖率目标
+        target: 80%
+        threshold: 5%
+        base: auto
+        paths:
+          - "cis-core/src"
+        if_ci_failed: error
+        informational: false
+        only_pulls: true
+
+# 忽略的文件和目录
+ignore:
+  - "**/tests/**/*"
+  - "**/test/**/*"
+  - "**/benches/**/*"
+  - "**/examples/**/*"
+  - "cis-gui/**/*"
+  - "target/**/*"
+  - "scripts/**/*"
+  - "docs/**/*"
+
+# 代码覆盖率通知
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+
+# 标识不同测试类型的覆盖率
+flags:
+  unit:
+    paths:
+      - "cis-core/src"
+    carryforward: true
+  integration:
+    paths:
+      - "cis-core/src"
+    carryforward: true
+
+# GitHub Checks 集成
+github_checks:
+  annotations: true

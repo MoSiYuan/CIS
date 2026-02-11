@@ -116,18 +116,57 @@ impl AgentProcessDetector {
             // 尝试从工作目录恢复 session_id
             let session_id = Self::extract_session_id(&proc.working_dir);
             
+            // 尝试从 session 文件加载统计信息
+            let (last_active, total_tasks) = Self::load_session_stats(&proc.working_dir);
+            
             sessions.push(AgentSession {
                 session_id,
                 agent_type: proc.agent_type,
                 pid: proc.pid,
                 created_at: proc.start_time,
-                last_active_at: proc.start_time, // TODO: 从 session 文件获取
-                total_tasks: 0, // TODO: 从持久化存储获取
+                last_active_at: last_active.unwrap_or(proc.start_time),
+                total_tasks,
                 work_dir: proc.working_dir,
             });
         }
         
         sessions
+    }
+    
+    /// 从 session 目录加载统计信息
+    fn load_session_stats(work_dir: &PathBuf) -> (Option<SystemTime>, u32) {
+        let stats_file = work_dir.join(".session_stats.json");
+        
+        if let Ok(content) = std::fs::read_to_string(&stats_file) {
+            if let Ok(stats) = serde_json::from_str::<serde_json::Value>(&content) {
+                let last_active = stats.get("last_active")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(|ts| std::time::UNIX_EPOCH + std::time::Duration::from_secs(ts));
+                
+                let total_tasks = stats.get("total_tasks")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+                
+                return (last_active, total_tasks);
+            }
+        }
+        
+        (None, 0)
+    }
+    
+    /// 保存 session 统计信息
+    pub fn save_session_stats(work_dir: &PathBuf, total_tasks: u32) -> Result<(), std::io::Error> {
+        let stats_file = work_dir.join(".session_stats.json");
+        let stats = serde_json::json!({
+            "last_active": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            "total_tasks": total_tasks,
+        });
+        
+        std::fs::write(&stats_file, serde_json::to_string(&stats)?)
     }
     
     /// 检测进程是否监听端口

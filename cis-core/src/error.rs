@@ -106,6 +106,14 @@ pub enum CisError {
     #[error("Matrix error: {0}")]
     Matrix(String),
 
+    /// Federation errors
+    #[error("Federation error: {0}")]
+    Federation(String),
+
+    /// Encryption/E2EE errors
+    #[error("Encryption error: {0}")]
+    Encryption(String),
+
     /// Generic errors with context
     #[error("{0}")]
     Other(String),
@@ -217,6 +225,11 @@ impl CisError {
         Self::Matrix(msg.into())
     }
 
+    /// Create a new federation error
+    pub fn federation(msg: impl Into<String>) -> Self {
+        Self::Federation(msg.into())
+    }
+
     /// Create a new generic/other error
     pub fn other(msg: impl Into<String>) -> Self {
         Self::Other(msg.into())
@@ -225,6 +238,11 @@ impl CisError {
     /// Create a new network error (alias for P2P)
     pub fn network(msg: impl Into<String>) -> Self {
         Self::P2P(msg.into())
+    }
+
+    /// Create a new crypto error
+    pub fn crypto(msg: impl Into<String>) -> Self {
+        Self::Other(format!("Crypto error: {}", msg.into()))
     }
 
     /// Create a new serialization error (manual)
@@ -240,5 +258,10 @@ impl CisError {
     /// Create a new internal error
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::Other(format!("Internal error: {}", msg.into()))
+    }
+
+    /// Create a new encryption error
+    pub fn encryption(msg: impl Into<String>) -> Self {
+        Self::Encryption(msg.into())
     }
 }

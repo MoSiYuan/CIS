@@ -171,6 +171,24 @@ impl MatrixSocialStore {
             [],
         ).map_err(|e| MatrixError::Store(format!("Failed to create index: {}", e)))?;
 
+        // 登录验证码表 - 用于首次登录验证
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS matrix_login_codes (
+                user_id TEXT PRIMARY KEY,
+                code TEXT NOT NULL,
+                attempts INTEGER DEFAULT 0,
+                created_at INTEGER DEFAULT (unixepoch()),
+                expires_at INTEGER NOT NULL,
+                verified INTEGER DEFAULT 0
+            )",
+            [],
+        ).map_err(|e| MatrixError::Store(format!("Failed to create login codes table: {}", e)))?;
+
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_login_codes_expires ON matrix_login_codes(expires_at)",
+            [],
+        ).map_err(|e| MatrixError::Store(format!("Failed to create index: {}", e)))?;
+
         Ok(())
     }
 
@@ -608,6 +626,149 @@ fn generate_device_id() -> String {
         &uuid::Uuid::new_v4().to_string()[..8],
         chrono::Utc::now().timestamp_millis()
     )
+}
+
+/// 生成6位数字验证码
+fn generate_verification_code() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..6)
+        .map(|_| rng.gen_range(0..10).to_string())
+        .collect()
+}
+
+// ==================== Login Verification Code Methods ====================
+
+impl MatrixSocialStore {
+    /// 为用户生成登录验证码（首次登录时需要）
+    /// 
+    /// 返回 (code, is_new_user)
+    pub fn generate_login_code(&self, user_id: &str) -> MatrixResult<(String, bool)> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let is_new_user = !self.user_exists(user_id)?;
+
+        // 生成6位验证码
+        let code = generate_verification_code();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let expires_at = now + 300; // 5分钟过期
+
+        // 插入或更新验证码
+        db.execute(
+            "INSERT INTO matrix_login_codes (user_id, code, attempts, created_at, expires_at, verified)
+             VALUES (?1, ?2, 0, ?3, ?4, 0)
+             ON CONFLICT(user_id) DO UPDATE SET
+             code = excluded.code,
+             attempts = 0,
+             created_at = excluded.created_at,
+             expires_at = excluded.expires_at,
+             verified = 0",
+            rusqlite::params![user_id, code, now, expires_at],
+        ).map_err(|e| MatrixError::Store(format!("Failed to create login code: {}", e)))?;
+
+        Ok((code, is_new_user))
+    }
+
+    /// 验证登录验证码
+    /// 
+    /// 返回 Ok(true) 表示验证成功
+    /// 返回 Ok(false) 表示验证失败但可重试
+    /// 返回 Err 表示验证失败且不可重试（如过期、尝试次数过多）
+    pub fn verify_login_code(&self, user_id: &str, input_code: &str) -> MatrixResult<bool> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        // 获取验证码信息
+        let (stored_code, attempts, expires_at, verified): (String, i32, i64, i32) = db.query_row(
+            "SELECT code, attempts, expires_at, verified FROM matrix_login_codes WHERE user_id = ?1",
+            [user_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i32>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i32>(3)?,
+                ))
+            },
+        ).map_err(|_| MatrixError::NotFound("No verification code found".to_string()))?;
+
+        // 检查是否已验证
+        if verified != 0 {
+            return Err(MatrixError::Forbidden("Code already verified".to_string()));
+        }
+
+        // 检查是否过期
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        if now > expires_at {
+            return Err(MatrixError::Forbidden("Verification code expired".to_string()));
+        }
+
+        // 检查尝试次数
+        if attempts >= 5 {
+            return Err(MatrixError::InvalidParameter("Too many attempts".to_string()));
+        }
+
+        // 增加尝试次数
+        db.execute(
+            "UPDATE matrix_login_codes SET attempts = attempts + 1 WHERE user_id = ?1",
+            [user_id],
+        ).map_err(|e| MatrixError::Store(format!("Failed to update attempts: {}", e)))?;
+
+        // 验证验证码
+        if stored_code == input_code {
+            // 标记为已验证
+            db.execute(
+                "UPDATE matrix_login_codes SET verified = 1 WHERE user_id = ?1",
+                [user_id],
+            ).map_err(|e| MatrixError::Store(format!("Failed to mark code as verified: {}", e)))?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// 检查用户是否需要验证码登录
+    pub fn needs_verification_code(&self, user_id: &str) -> MatrixResult<bool> {
+        // 如果是新用户，需要验证码
+        if !self.user_exists(user_id)? {
+            return Ok(true);
+        }
+
+        // 如果用户存在但没有已验证的记录，需要验证码
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let verified: Option<i32> = db.query_row(
+            "SELECT verified FROM matrix_login_codes WHERE user_id = ?1",
+            [user_id],
+            |row| row.get(0),
+        ).optional().map_err(|e| MatrixError::Store(format!("Failed to check verification: {}", e)))?;
+
+        match verified {
+            Some(1) => Ok(false), // 已验证过
+            _ => Ok(true),        // 未验证或记录不存在
+        }
+    }
+
+    /// 清理过期验证码
+    pub fn cleanup_expired_codes(&self) -> MatrixResult<usize> {
+        let db = self.db.lock()
+            .map_err(|_| MatrixError::Internal("Failed to lock database".to_string()))?;
+
+        let count = db.execute(
+            "DELETE FROM matrix_login_codes WHERE expires_at <= unixepoch()",
+            [],
+        ).map_err(|e| MatrixError::Store(format!("Failed to cleanup codes: {}", e)))?;
+
+        Ok(count)
+    }
 }
 
 #[cfg(test)]

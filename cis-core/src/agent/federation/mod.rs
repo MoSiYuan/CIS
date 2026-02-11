@@ -81,10 +81,18 @@
 //! ```
 
 pub mod agent;
+pub mod manager;
 pub mod protocol;
+
+#[cfg(test)]
+mod manager_tests;
+
+#[cfg(test)]
+mod task_tests;
 
 // Re-export 主要类型
 pub use agent::{FederatedAgent, FederatedRuntime};
+pub use manager::{FederationManager, FederatedAddress, FederationTaskRequest, FederationTaskResult};
 pub use protocol::{
     AgentAddress, AgentFederationEvent, AgentFederationRoom, AgentRoute, AgentRoutingTable,
     TaskRequestPayload, TaskResultPayload,

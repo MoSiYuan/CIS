@@ -1,6 +1,20 @@
-//! DHT 真实操作实现
+//! DHT 操作实现 (已弃用)
 //!
-//! 基于 Kademlia 协议的分布式哈希表操作
+//! ⚠️ **DEPRECATED**: 此模块已被 `crate::p2p::kademlia` 模块替代
+//! 
+//! 新的 Kademlia 实现提供了：
+//! - 完整的路由表 (KBucket, RoutingTable)
+//! - 真实的 XOR 距离计算
+//! - 节点发现 (FindNode)
+//! - 值存储和查找 (Store, FindValue)
+//! - 持久化支持
+//!
+//! 请使用 `crate::p2p::kademlia::KademliaDHT` 替代此模块。
+
+#![deprecated(
+    since = "1.1.5",
+    note = "请使用 crate::p2p::kademlia 模块替代。此模块将在 v1.2.0 中移除。"
+)]
 
 use std::collections::HashMap;
 

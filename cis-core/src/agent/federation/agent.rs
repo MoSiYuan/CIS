@@ -38,7 +38,7 @@ use crate::agent::persistent::{
     TaskResult,
 };
 use crate::error::{CisError, Result};
-use crate::matrix::federation::{CisMatrixEvent, FederationClient};
+use crate::matrix::federation::{CisMatrixEvent, FederationClient, PeerInfo};
 
 /// 联邦 Agent
 ///
@@ -62,6 +62,9 @@ pub struct FederatedAgent {
 
     /// 待处理请求表
     pending_requests: Arc<RwLock<HashMap<String, PendingRequest>>>,
+    
+    /// 已知对等节点列表
+    peers: Arc<RwLock<Vec<PeerInfo>>>,
 }
 
 /// 联邦 Agent 内部状态
@@ -102,9 +105,11 @@ impl FederatedAgent {
         matrix_client: Arc<FederationClient>,
         room_id: String,
     ) -> Result<Self> {
-        // 注意：这里我们使用一个占位符 node_id，实际应该从 matrix_client 获取
+        // 从环境变量或 hostname 获取节点 ID
         let agent_id = local_agent.agent_id().to_string();
-        let node_id = "local".to_string(); // TODO: 从配置或 matrix_client 获取实际节点名
+        let node_id = std::env::var("CIS_NODE_ID")
+            .or_else(|_| gethostname::gethostname().into_string())
+            .unwrap_or_else(|_| "local".to_string());
         let address = AgentAddress::new(agent_id, node_id);
 
         let agent = Self {
@@ -118,6 +123,7 @@ impl FederatedAgent {
                 remote_agents: HashMap::new(),
             })),
             pending_requests: Arc::new(RwLock::new(HashMap::new())),
+            peers: Arc::new(RwLock::new(Vec::new())),
         };
 
         // 发送注册事件
@@ -161,6 +167,7 @@ impl FederatedAgent {
                 remote_agents: HashMap::new(),
             })),
             pending_requests: Arc::new(RwLock::new(HashMap::new())),
+            peers: Arc::new(RwLock::new(Vec::new())),
         })
     }
 
@@ -174,10 +181,10 @@ impl FederatedAgent {
         self.local_agent.is_some()
     }
 
-    /// 发送联邦事件
+    /// 发送联邦事件到所有已知对等节点
     async fn send_federation_event(&self, event: AgentFederationEvent) -> Result<()> {
         // 转换为 CisMatrixEvent
-        let _matrix_event = CisMatrixEvent::new(
+        let matrix_event = CisMatrixEvent::new(
             format!("${}", uuid::Uuid::new_v4()),
             self.room_id.clone(),
             format!("@{}:{}", self.address.agent_id, self.address.node_id),
@@ -185,14 +192,66 @@ impl FederatedAgent {
             serde_json::to_value(&event)?,
         );
 
-        // 注意：FederationClient 需要 PeerInfo 来发送事件
-        // 这里我们使用一个简化的方式，实际应该通过 FederationManager 或配置获取 peers
-        debug!("Sending federation event: {:?}", event.event_type_str());
+        // 获取当前已知的对等节点
+        let peers = self.peers.read().await.clone();
+        
+        if peers.is_empty() {
+            debug!("No peers to send federation event to");
+            return Ok(());
+        }
 
-        // Federation 事件发送尚未完全实现
-        Err(CisError::execution(
-            "Federation event sending not fully implemented".to_string()
-        ))
+        // 向所有对等节点发送事件
+        let mut sent = 0;
+        let mut failed = 0;
+        
+        for peer in peers {
+            match self.matrix_client.send_event(&peer, &matrix_event).await {
+                Ok(response) => {
+                    if response.accepted {
+                        debug!("Event sent to {}: accepted", peer.server_name);
+                        sent += 1;
+                    } else {
+                        warn!("Event rejected by {}: {:?}", peer.server_name, response.error);
+                        failed += 1;
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to send event to {}: {}", peer.server_name, e);
+                    failed += 1;
+                }
+            }
+        }
+        
+        debug!(
+            "Federation event {:?} sent to {}/{} peers ({} failed)",
+            event.event_type_str(),
+            sent,
+            sent + failed,
+            failed
+        );
+        
+        Ok(())
+    }
+    
+    /// 添加对等节点
+    pub async fn add_peer(&self, peer: PeerInfo) {
+        let mut peers = self.peers.write().await;
+        // 检查是否已存在
+        if !peers.iter().any(|p| p.server_name == peer.server_name) {
+            info!("Adding peer: {} at {}:{}", peer.server_name, peer.host, peer.port);
+            peers.push(peer);
+        }
+    }
+    
+    /// 移除对等节点
+    pub async fn remove_peer(&self, server_name: &str) {
+        let mut peers = self.peers.write().await;
+        peers.retain(|p| p.server_name != server_name);
+    }
+    
+    /// 获取已知对等节点列表
+    pub async fn list_peers(&self) -> Vec<PeerInfo> {
+        self.peers.read().await.clone()
     }
 
     /// 发送注册事件
@@ -229,7 +288,8 @@ impl FederatedAgent {
     /// 启动心跳
     fn start_heartbeat(&self) {
         let state = Arc::clone(&self.state);
-        let _matrix_client = Arc::clone(&self.matrix_client);
+        let matrix_client = Arc::clone(&self.matrix_client);
+        let peers = Arc::clone(&self.peers);
         let room_id = self.room_id.clone();
         let address = self.address.clone();
 
@@ -268,8 +328,30 @@ impl FederatedAgent {
                     address.agent_id, address.node_id
                 );
 
-                // TODO: 通过 FederationClient 发送心跳
-                let _ = matrix_event;
+                // 通过 FederationClient 发送心跳到所有对等节点
+                let peer_list = peers.read().await.clone();
+                for peer in peer_list {
+                    let matrix_event = CisMatrixEvent::new(
+                        format!("${}", uuid::Uuid::new_v4()),
+                        room_id.clone(),
+                        format!("@{}:{}", address.agent_id, address.node_id),
+                        matrix_event.event_type.clone(),
+                        matrix_event.content.clone(),
+                    );
+                    
+                    match matrix_client.send_event(&peer, &matrix_event).await {
+                        Ok(response) => {
+                            if response.accepted {
+                                debug!("Heartbeat sent to {}: accepted", peer.server_name);
+                            } else {
+                                debug!("Heartbeat rejected by {}: {:?}", peer.server_name, response.error);
+                            }
+                        }
+                        Err(e) => {
+                            debug!("Failed to send heartbeat to {}: {}", peer.server_name, e);
+                        }
+                    }
+                }
 
                 // 更新最后心跳时间
                 state.write().await.last_heartbeat = Utc::now();
@@ -281,7 +363,7 @@ impl FederatedAgent {
     fn start_event_listener(&self) {
         let state = Arc::clone(&self.state);
         let pending_requests = Arc::clone(&self.pending_requests);
-        let local_agent = self.local_agent.as_ref().map(|_| true).unwrap_or(false);
+        let local_agent = self.local_agent.is_some();
         let address = self.address.clone();
 
         tokio::spawn(async move {
@@ -290,11 +372,11 @@ impl FederatedAgent {
                 address.agent_id, address.node_id
             );
 
-            // TODO: 订阅 Matrix Room 事件
-            // 这需要 FederationManager 提供事件流
+            // 注意：实际的 Matrix Room 事件订阅需要在 FederationManager 或 Matrix Nucleus 中实现
+            // 这里我们启动一个后台任务来处理超时检查
 
             loop {
-                // 模拟事件处理循环
+                // 每秒检查一次超时
                 tokio::time::sleep(Duration::from_secs(1)).await;
 
                 // 处理待处理请求的超时
@@ -314,11 +396,7 @@ impl FederatedAgent {
                         ));
                     }
                 }
-
-                // 如果是本地 Agent，处理接收到的任务请求
-                if local_agent {
-                    // TODO: 处理远程任务请求
-                }
+                drop(pending); // 释放锁
 
                 // 检查 Agent 状态
                 let current_status = state.read().await.status.clone();
@@ -328,6 +406,62 @@ impl FederatedAgent {
                 }
             }
         });
+    }
+    
+    /// 处理接收到的联邦事件
+    /// 
+    /// 此方法由外部事件源（如 FederationManager）调用，将事件传递给 Agent 处理
+    pub async fn process_incoming_event(&self, event: AgentFederationEvent) -> Result<()> {
+        debug!("Processing incoming event: {:?}", event.event_type_str());
+        
+        match &event {
+            AgentFederationEvent::Heartbeat { agent_id, node_id, status, .. } => {
+                debug!("Received heartbeat from {}@{} (status: {:?})", agent_id, node_id, status);
+                // 更新远程 Agent 状态
+                let mut state = self.state.write().await;
+                state.remote_agents.insert(agent_id.clone(), node_id.clone());
+            }
+            AgentFederationEvent::AgentRegistered { agent_id, node_id, .. } => {
+                info!("Agent {}@{} registered", agent_id, node_id);
+                let mut state = self.state.write().await;
+                state.remote_agents.insert(agent_id.clone(), node_id.clone());
+            }
+            AgentFederationEvent::AgentUnregistered { agent_id, node_id, .. } => {
+                info!("Agent {}@{} unregistered", agent_id, node_id);
+                let mut state = self.state.write().await;
+                state.remote_agents.remove(agent_id);
+            }
+            AgentFederationEvent::TaskRequest { .. } => {
+                // 处理任务请求（仅本地 Agent 模式）
+                if self.local_agent.is_some() {
+                    if let Err(e) = self.handle_task_request(event).await {
+                        error!("Failed to handle task request: {}", e);
+                    }
+                }
+            }
+            AgentFederationEvent::TaskResponse { request_id, result, .. } => {
+                // 处理任务响应
+                let mut pending = self.pending_requests.write().await;
+                if let Some(req) = pending.remove(request_id) {
+                    let _ = req.response_tx.send(result.clone());
+                }
+            }
+            AgentFederationEvent::Message { from_agent, payload, .. } => {
+                info!("Received message from {}: {:?}", from_agent, payload);
+                // 可以在这里添加消息处理逻辑
+            }
+            AgentFederationEvent::StatusUpdate { agent_id, node_id, status, .. } => {
+                debug!("Status update from {}@{}: {:?}", agent_id, node_id, status);
+                if agent_id == &self.address.agent_id && node_id == &self.address.node_id {
+                    // 忽略自己的状态更新
+                } else {
+                    let mut state = self.state.write().await;
+                    state.remote_agents.insert(agent_id.clone(), node_id.clone());
+                }
+            }
+        }
+        
+        Ok(())
     }
 
     /// 处理收到的任务请求（本地 Agent 模式）
@@ -508,18 +642,23 @@ impl PersistentAgent for FederatedAgent {
 
         self.send_federation_event(event).await?;
 
-        // 等待响应（带超时）
+        // 等待响应（带超时），并计算执行时间
         let timeout_duration = Duration::from_secs(task.timeout_secs.unwrap_or(300));
+        let start_time = std::time::Instant::now();
+        
         match tokio::time::timeout(timeout_duration, rx).await {
-            Ok(Ok(result)) => Ok(TaskResult {
-                task_id: task.task_id,
-                success: result.success,
-                output: Some(result.output),
-                error: None,
-                duration_ms: 0, // TODO: 计算实际执行时间
-                completed_at: Utc::now(),
-                metadata: result.metadata,
-            }),
+            Ok(Ok(result)) => {
+                let duration_ms = start_time.elapsed().as_millis() as u64;
+                Ok(TaskResult {
+                    task_id: task.task_id,
+                    success: result.success,
+                    output: Some(result.output),
+                    error: None,
+                    duration_ms,
+                    completed_at: Utc::now(),
+                    metadata: result.metadata,
+                })
+            }
             Ok(Err(_)) => Err(CisError::execution("Response channel closed")),
             Err(_) => {
                 // 超时，清理待处理请求

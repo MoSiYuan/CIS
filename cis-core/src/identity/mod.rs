@@ -11,5 +11,7 @@
 //! - Secure key storage
 
 pub mod did;
+pub mod ssh_key;
 
 pub use did::DIDManager;
+pub use ssh_key::SshKeyEncryption;

@@ -1,0 +1,74 @@
+# CIS Code Coverage Configuration
+# 
+# 使用 cargo-tarpaulin 生成代码覆盖率报告
+#
+# 安装: cargo install cargo-tarpaulin
+# 运行: cargo tarpaulin
+
+[default]
+# 目标目录
+target-dir = "target/coverage"
+
+# 输出格式
+out = ["Html", "Xml", "Json"]
+
+# 覆盖率报告输出目录
+output-dir = "target/coverage/reports"
+
+# 排除的文件和目录
+exclude-files = [
+    "target/*",
+    "tests/*",
+    "**/*tests.rs",
+    "**/*_test.rs",
+    "**/*_bench.rs",
+    "cis-core/src/test/**/*",
+    "cis-gui/**/*",
+]
+
+# 排除的函数
+exclude = [
+    "main",
+    "#\[test\]",
+    "#\[cfg\(test\)\]",
+]
+
+# 包含的包
+packages = ["cis-core"]
+
+# 包含的特性
+features = "all-features"
+
+# 并行运行测试
+jobs = 0
+
+# 显示详细输出
+verbose = true
+
+# 失败时继续
+fail-under = 0
+
+# 忽略测试函数
+ignore-tests = true
+
+# 忽略文档测试
+ignore-doc-tests = true
+
+# 清理生成的文件
+clean = true
+
+# 引擎选择 (llvm 或 ptrace)
+engine = "Llvm"
+
+# 超时时间（秒）
+timeout = "5m"
+
+[default.html]
+# HTML 报告标题
+title = "CIS Test Coverage Report"
+
+[ci]
+# CI 环境的特殊配置
+out = ["Xml"]
+output-dir = "target/coverage/ci"
+verbose = false

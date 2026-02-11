@@ -5,21 +5,62 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 
 use crate::agent::{AgentCapabilities, AgentConfig, AgentRequest, AgentResponse, AgentProvider};
-use crate::error::Result;
+use crate::agent::security::CommandWhitelist;
+use crate::error::{CisError, Result};
 
 /// Claude Code Provider
 pub struct ClaudeProvider {
     config: AgentConfig,
+    /// 命令白名单验证器
+    whitelist: CommandWhitelist,
 }
 
 impl ClaudeProvider {
     pub fn new(config: AgentConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            whitelist: CommandWhitelist::default(),
+        }
+    }
+
+    /// 使用自定义白名单创建 Provider
+    pub fn with_whitelist(config: AgentConfig, whitelist: CommandWhitelist) -> Self {
+        Self { config, whitelist }
+    }
+
+    /// 从配置文件加载白名单
+    pub fn with_whitelist_file(config: AgentConfig, path: &str) -> Result<Self> {
+        let whitelist = CommandWhitelist::from_file(path)?;
+        Ok(Self { config, whitelist })
     }
 
     #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Self::new(AgentConfig::default())
+    }
+
+    /// 验证命令是否允许执行
+    fn validate_command(&self, command: &str, args: &[&str]) -> Result<()> {
+        match self.whitelist.validate_with_explanation(command, args) {
+            Ok(result) => {
+                if result.requires_confirmation {
+                    // 危险命令，记录警告日志
+                    tracing::warn!(
+                        "Dangerous command requires confirmation: {} {:?}",
+                        command, args
+                    );
+                }
+                Ok(())
+            }
+            Err(e) => {
+                // 向用户解释拒绝原因
+                tracing::error!("Command rejected by whitelist: {}", e);
+                Err(CisError::execution(format!(
+                    "Security: {}. This command violates the security policy. If you need to execute this command, please contact your administrator to update the command whitelist configuration.",
+                    e
+                )))
+            }
+        }
     }
 
     /// 构建 claude 命令

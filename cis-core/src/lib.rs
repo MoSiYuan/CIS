@@ -37,6 +37,9 @@
 pub mod error;
 pub mod types;
 
+// Configuration module - unified configuration center
+pub mod config;
+
 // Core modules
 pub mod sandbox;
 pub mod scheduler;
@@ -103,11 +106,29 @@ pub mod glm;
 // Service layer - Unified data access for CLI, GUI, API
 pub mod service;
 
+// Dependency injection container
+pub mod container;
+
+// Events module - Domain events for decoupled communication
+pub mod events;
+
+// Event bus module - Event pub/sub mechanism
+pub mod event_bus;
+
+// Service traits - Abstract interfaces for dependency injection
+pub mod traits;
+
 // CLI module - AI-Native CLI framework
 pub mod cli;
 
 // Decision module - Four-tier decision mechanism
 pub mod decision;
+
+// Test framework with mocks (only for testing)
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test;
+#[cfg(any(test, feature = "test-utils"))]
+pub use test::mocks::{MockNetworkService, MockStorageService, MockEventBus, MockAiProvider, MockEmbeddingService, MockSkillExecutor};
 
 pub use error::{CisError, Result};
 pub use identity::DIDManager;

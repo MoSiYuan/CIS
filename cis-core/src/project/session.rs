@@ -82,6 +82,7 @@ impl ProjectSession {
                                 crate::skill::manifest::SkillType::Wasm => crate::skill::types::SkillType::Wasm,
                                 crate::skill::manifest::SkillType::Script => crate::skill::types::SkillType::Native,
                                 crate::skill::manifest::SkillType::Dag => crate::skill::types::SkillType::Dag,
+                                crate::skill::manifest::SkillType::Remote => crate::skill::types::SkillType::Remote,
                             },
                             path: skill_info.path.to_string_lossy().to_string(),
                             db_path: skill_db.lock()

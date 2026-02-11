@@ -206,6 +206,7 @@ impl SkillInfo {
                     crate::skill::manifest::SkillType::Wasm => SkillType::Wasm,
                     crate::skill::manifest::SkillType::Script => SkillType::Native,
                     crate::skill::manifest::SkillType::Dag => SkillType::Dag,
+                    crate::skill::manifest::SkillType::Remote => SkillType::Remote,
                 },
                 path: String::new(),
                 db_path: String::new(),

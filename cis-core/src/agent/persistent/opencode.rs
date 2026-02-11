@@ -564,10 +564,30 @@ impl AgentRuntime for OpenCodeRuntime {
     }
 
     async fn list_agents(&self) -> Vec<AgentInfo> {
-        // 这里可以通过扫描已知端口或进程来实现
-        // 暂时返回空列表
-        // TODO: 实现进程扫描或端口检测
-        vec![]
+        // 使用进程检测器查找 OpenCode 进程
+        use crate::agent::process_detector::{AgentProcessDetector, AgentType};
+        
+        let sessions = AgentProcessDetector::get_sessions(AgentType::OpenCode);
+        
+        sessions
+            .into_iter()
+            .map(|s| AgentInfo {
+                id: s.session_id.clone(),
+                name: format!("opencode-{}", s.pid),
+                runtime_type: RuntimeType::OpenCode,
+                status: AgentStatus::Running,
+                current_task: None,
+                created_at: s.created_at.into(),
+                last_active_at: s.last_active_at.into(),
+                total_tasks: s.total_tasks as u64,
+                work_dir: s.work_dir,
+                metadata: {
+                    let mut m = HashMap::new();
+                    m.insert("pid".to_string(), json!(s.pid));
+                    m
+                },
+            })
+            .collect()
     }
 }
 

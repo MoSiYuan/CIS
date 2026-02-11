@@ -279,7 +279,510 @@ impl HostFunctions {
             Function::new_typed_with_env(store, &ctx, Self::host_config_set),
         );
         
+        // host_http_request: 完整的 HTTP 请求支持
+        imports.define(
+            "env",
+            "host_http_request",
+            Function::new_typed_with_env(store, &ctx, Self::host_http_request),
+        );
+        
         imports
+    }
+    
+    // ==================== CIS Standard Host Functions ====================
+    
+    /// Host function: cis_ai_prompt (标准接口)
+    /// 
+    /// 调用 AI Provider 生成回复（真实实现）
+    /// 
+    /// 参数 (WasmPtr):
+    /// - prompt_ptr: prompt 字符串指针
+    /// - prompt_len: prompt 长度
+    /// - out_ptr: 输出缓冲区指针
+    /// - out_len: 输出缓冲区大小
+    /// 
+    /// 返回值: i32
+    /// - >= 0: 实际返回的字符数
+    /// - < 0: 错误码
+    fn cis_ai_prompt(
+        env: FunctionEnvMut<HostContext>,
+        prompt_ptr: WasmPtr<u8>,
+        prompt_len: i32,
+        out_ptr: WasmPtr<u8>,
+        out_len: i32,
+    ) -> i32 {
+        let ctx = env.data();
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
+        let memory = match &ctx.memory_ref {
+            Some(m) => m.clone(),
+            None => {
+                tracing::error!("[WASM Host] Memory not initialized");
+                return -1;
+            }
+        };
+        
+        // 验证输入参数
+        if !(0..=100 * 1024).contains(&prompt_len) { // 最大 100KB prompt
+            tracing::error!("[WASM Host] Invalid prompt length: {}", prompt_len);
+            return -2;
+        }
+        
+        if !(0..=1024 * 1024).contains(&out_len) { // 最大 1MB 输出
+            tracing::error!("[WASM Host] Invalid output length: {}", out_len);
+            return -2;
+        }
+        
+        // 读取 prompt
+        let view = memory.view(&env);
+        let prompt = match Self::read_string_from_view(&view, prompt_ptr, prompt_len) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to read prompt: {}", e);
+                return -2;
+            }
+        };
+        
+        tracing::debug!("[WASM Host] cis_ai_prompt called with prompt length: {}", prompt.len());
+        
+        // 获取剩余超时时间
+        let timeout = ctx.execution_limits.as_ref()
+            .map(|l| l.remaining_time())
+            .unwrap_or_else(|| Duration::from_secs(30));
+        
+        // 调用真实的 AI Provider
+        let response = match ctx.ai.lock() {
+            Ok(ai) => {
+                // 创建运行时执行异步调用
+                let rt = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        tracing::error!("[WASM Host] Failed to create runtime: {}", e);
+                        return -3;
+                    }
+                };
+                
+                // 使用 timeout 包装 AI 调用
+                match rt.block_on(async {
+                    tokio::time::timeout(timeout, ai.chat(&prompt)).await
+                }) {
+                    Ok(Ok(r)) => r,
+                    Ok(Err(e)) => {
+                        tracing::error!("[WASM Host] AI prompt failed: {}", e);
+                        return -3;
+                    }
+                    Err(_) => {
+                        tracing::error!("[WASM Host] AI prompt timed out after {:?}", timeout);
+                        return -4;
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to lock AI provider: {}", e);
+                return -3;
+            }
+        };
+        
+        tracing::debug!("[WASM Host] AI response length: {}", response.len());
+        
+        // 写入 WASM 内存
+        match Self::write_bytes_to_view(&view, out_ptr, out_len, response.as_bytes()) {
+            Ok(written) => written as i32,
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to write response: {}", e);
+                -5
+            }
+        }
+    }
+    
+    /// Host function: cis_memory_get (标准接口)
+    /// 
+    /// 从记忆服务读取值
+    /// 
+    /// 参数:
+    /// - key_ptr: key 字符串指针
+    /// - key_len: key 长度
+    /// - out_ptr: 输出缓冲区指针
+    /// - out_len: 输出缓冲区大小
+    /// 
+    /// 返回值: i32
+    /// - > 0: 实际返回的字节数
+    /// - = 0: key 不存在
+    /// - < 0: 错误码
+    fn cis_memory_get(
+        env: FunctionEnvMut<HostContext>,
+        key_ptr: WasmPtr<u8>,
+        key_len: i32,
+        out_ptr: WasmPtr<u8>,
+        out_len: i32,
+    ) -> i32 {
+        let ctx = env.data();
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
+        let memory = match &ctx.memory_ref {
+            Some(m) => m.clone(),
+            None => {
+                tracing::error!("[WASM Host] Memory not initialized");
+                return -1;
+            }
+        };
+        
+        // 验证输入参数
+        if !(0..=1024).contains(&key_len) {
+            tracing::error!("[WASM Host] Invalid key length: {}", key_len);
+            return -2;
+        }
+        
+        if !(0..=1024 * 1024).contains(&out_len) { // 最大 1MB 输出
+            tracing::error!("[WASM Host] Invalid output length: {}", out_len);
+            return -2;
+        }
+        
+        // 读取 key
+        let view = memory.view(&env);
+        let key = match Self::read_string_from_view(&view, key_ptr, key_len) {
+            Ok(k) => k,
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to read key: {}", e);
+                return -2;
+            }
+        };
+        
+        // 从记忆服务获取值
+        let value = match ctx.memory.lock() {
+            Ok(svc) => match svc.get(&key) {
+                Some(v) => v,
+                None => return 0, // key 不存在
+            },
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to lock memory service: {}", e);
+                return -3;
+            }
+        };
+        
+        // 检查输出缓冲区大小
+        if value.len() > out_len as usize {
+            tracing::warn!("[WASM Host] Value too large for output buffer: {} > {}", 
+                value.len(), out_len);
+            // 截断写入
+            let truncated = &value[..out_len as usize];
+            match Self::write_bytes_to_view(&view, out_ptr, out_len, truncated) {
+                Ok(written) => -(written as i32), // 返回负数表示截断
+                Err(e) => {
+                    tracing::error!("[WASM Host] Failed to write truncated value: {}", e);
+                    -4
+                }
+            }
+        } else {
+            // 写入 WASM 内存
+            match Self::write_bytes_to_view(&view, out_ptr, out_len, &value) {
+                Ok(written) => written as i32,
+                Err(e) => {
+                    tracing::error!("[WASM Host] Failed to write value: {}", e);
+                    -4
+                }
+            }
+        }
+    }
+    
+    /// Host function: cis_memory_put (标准接口)
+    /// 
+    /// 向记忆服务写入值
+    /// 
+    /// 参数:
+    /// - key_ptr: key 字符串指针
+    /// - key_len: key 长度
+    /// - value_ptr: value 指针
+    /// - value_len: value 长度
+    /// 
+    /// 返回值: i32
+    /// - = 1: 成功
+    /// - < 0: 错误码
+    fn cis_memory_put(
+        env: FunctionEnvMut<HostContext>,
+        key_ptr: WasmPtr<u8>,
+        key_len: i32,
+        value_ptr: WasmPtr<u8>,
+        value_len: i32,
+    ) -> i32 {
+        let ctx = env.data();
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
+        let memory = match &ctx.memory_ref {
+            Some(m) => m.clone(),
+            None => {
+                tracing::error!("[WASM Host] Memory not initialized");
+                return -1;
+            }
+        };
+        
+        // 验证输入参数
+        if !(0..=1024).contains(&key_len) {
+            tracing::error!("[WASM Host] Invalid key length: {}", key_len);
+            return -2;
+        }
+        
+        if !(0..=10 * 1024 * 1024).contains(&value_len) { // 最大 10MB value
+            tracing::error!("[WASM Host] Invalid value length: {}", value_len);
+            return -3;
+        }
+        
+        // 读取 key 和 value
+        let view = memory.view(&env);
+        let key = match Self::read_string_from_view(&view, key_ptr, key_len) {
+            Ok(k) => k,
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to read key: {}", e);
+                return -2;
+            }
+        };
+        
+        let value = match Self::read_bytes_from_view(&view, value_ptr, value_len) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to read value: {}", e);
+                return -3;
+            }
+        };
+        
+        // 写入记忆服务
+        match ctx.memory.lock() {
+            Ok(svc) => match svc.set(&key, &value) {
+                Ok(_) => {
+                    tracing::debug!("[WASM Host] Set memory: {} = {} bytes", key, value.len());
+                    1 // 成功
+                }
+                Err(e) => {
+                    tracing::error!("[WASM Host] Failed to set memory: {}", e);
+                    -4
+                }
+            },
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to lock memory service: {}", e);
+                -4
+            }
+        }
+    }
+    
+    /// Host function: host_http_request (完整 HTTP 请求)
+    /// 
+    /// 执行 HTTP 请求（GET/POST/PUT/DELETE）
+    /// 
+    /// 参数:
+    /// - method_ptr: HTTP 方法字符串指针 ("GET", "POST", etc.)
+    /// - method_len: 方法长度
+    /// - url_ptr: URL 字符串指针
+    /// - url_len: URL 长度
+    /// - headers_ptr: Headers JSON 字符串指针（可选）
+    /// - headers_len: Headers 长度
+    /// - body_ptr: Body 指针（可选）
+    /// - body_len: Body 长度
+    /// - out_ptr: 输出缓冲区指针
+    /// - out_len: 输出缓冲区大小
+    /// 
+    /// 返回值: i32
+    /// - >= 0: 实际返回的字节数
+    /// - < 0: 错误码
+    fn host_http_request(
+        env: FunctionEnvMut<HostContext>,
+        method_ptr: WasmPtr<u8>,
+        method_len: i32,
+        url_ptr: WasmPtr<u8>,
+        url_len: i32,
+        headers_ptr: WasmPtr<u8>,
+        headers_len: i32,
+        body_ptr: WasmPtr<u8>,
+        body_len: i32,
+        out_ptr: WasmPtr<u8>,
+        out_len: i32,
+    ) -> i32 {
+        let ctx = env.data();
+        
+        // 检查网络权限
+        if !ctx.allow_network {
+            tracing::error!("[WASM Host] Network access denied");
+            return -1;
+        }
+        
+        // 检查执行限制
+        if let Err(e) = ctx.check_limits() {
+            tracing::error!("[WASM Host] Execution limit exceeded: {}", e);
+            return -10;
+        }
+        
+        let memory = match &ctx.memory_ref {
+            Some(m) => m.clone(),
+            None => {
+                tracing::error!("[WASM Host] Memory not initialized");
+                return -1;
+            }
+        };
+        
+        // 验证输入参数
+        if !(0..=16).contains(&method_len) { // "GET", "POST", "PUT", "DELETE", etc.
+            tracing::error!("[WASM Host] Invalid method length: {}", method_len);
+            return -2;
+        }
+        
+        if !(0..=8192).contains(&url_len) { // 最大 8KB URL
+            tracing::error!("[WASM Host] Invalid URL length: {}", url_len);
+            return -2;
+        }
+        
+        if !(0..=1024 * 1024).contains(&out_len) { // 最大 1MB 输出
+            tracing::error!("[WASM Host] Invalid output length: {}", out_len);
+            return -2;
+        }
+        
+        // 读取 method 和 URL
+        let view = memory.view(&env);
+        let method = match Self::read_string_from_view(&view, method_ptr, method_len) {
+            Ok(m) => m.to_uppercase(),
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to read method: {}", e);
+                return -2;
+            }
+        };
+        
+        let url = match Self::read_string_from_view(&view, url_ptr, url_len) {
+            Ok(u) => u,
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to read URL: {}", e);
+                return -2;
+            }
+        };
+        
+        // 检查主机是否允许
+        if let Some(host) = url.split("//").nth(1).and_then(|s| s.split('/').next()) {
+            if !ctx.is_host_allowed(host) {
+                tracing::error!("[WASM Host] Host not allowed: {}", host);
+                return -1;
+            }
+        }
+        
+        // 读取 headers（如果提供）
+        let _headers = if headers_len > 0 {
+            match Self::read_string_from_view(&view, headers_ptr, headers_len) {
+                Ok(h) => h,
+                Err(e) => {
+                    tracing::error!("[WASM Host] Failed to read headers: {}", e);
+                    return -3;
+                }
+            }
+        } else {
+            "{}".to_string()
+        };
+        
+        // 读取 body（如果提供）
+        let _body = if body_len > 0 {
+            match Self::read_bytes_from_view(&view, body_ptr, body_len) {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::error!("[WASM Host] Failed to read body: {}", e);
+                    return -3;
+                }
+            }
+        } else {
+            vec![]
+        };
+        
+        tracing::debug!("[WASM Host] HTTP {} {}", method, url);
+        
+        // 获取剩余超时时间
+        let timeout = ctx.execution_limits.as_ref()
+            .map(|l| l.remaining_time())
+            .unwrap_or_else(|| Duration::from_secs(30));
+        
+        // 执行 HTTP 请求（使用 reqwest）
+        let response = {
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    tracing::error!("[WASM Host] Failed to create runtime: {}", e);
+                    return -4;
+                }
+            };
+            
+            rt.block_on(async {
+                let client = reqwest::Client::builder()
+                    .timeout(timeout)
+                    .build()
+                    .map_err(|e| {
+                        tracing::error!("[WASM Host] Failed to create HTTP client: {}", e);
+                        -4i32
+                    })?;
+                
+                let req = match method.as_str() {
+                    "GET" => client.get(&url),
+                    "POST" => client.post(&url),
+                    "PUT" => client.put(&url),
+                    "DELETE" => client.delete(&url),
+                    "PATCH" => client.patch(&url),
+                    "HEAD" => client.head(&url),
+                    _ => {
+                        tracing::error!("[WASM Host] Unsupported HTTP method: {}", method);
+                        return Err(-5i32);
+                    }
+                };
+                
+                // 发送请求
+                let resp = req.send().await.map_err(|e| {
+                    tracing::error!("[WASM Host] HTTP request failed: {}", e);
+                    -6i32
+                })?;
+                
+                // 读取响应
+                let status = resp.status().as_u16();
+                let body = resp.text().await.map_err(|e| {
+                    tracing::error!("[WASM Host] Failed to read response body: {}", e);
+                    -7i32
+                })?;
+                
+                // 构造响应 JSON
+                let response_json = serde_json::json!({
+                    "status": status,
+                    "body": body,
+                });
+                
+                Ok(response_json.to_string())
+            })
+        };
+        
+        let response_str = match response {
+            Ok(r) => r,
+            Err(code) => return code,
+        };
+        
+        // 检查输出缓冲区
+        if response_str.len() > out_len as usize {
+            tracing::warn!("[WASM Host] Output buffer too small for HTTP response: {} > {}",
+                response_str.len(), out_len);
+            return -8;
+        }
+        
+        // 写入 WASM 内存
+        match Self::write_bytes_to_view(&view, out_ptr, out_len, response_str.as_bytes()) {
+            Ok(written) => written as i32,
+            Err(e) => {
+                tracing::error!("[WASM Host] Failed to write HTTP response: {}", e);
+                -9
+            }
+        }
     }
     
     // ==================== Memory Operations ====================
@@ -1088,408 +1591,70 @@ pub struct HttpResponse {
     pub body: String,
 }
 
-/// 创建 Host 函数导入对象（旧版 API）
+/// 创建 Host 函数导入对象（旧版 API - 已弃用，请使用 HostFunctions::create_imports）
 pub fn create_host_imports(
     store: &mut Store,
-    env: &wasmer::FunctionEnv<HostEnv>,
+    env: &wasmer::FunctionEnv<HostContext>,
 ) -> wasmer::Imports {
-    use wasmer::Function;
-    
-    let mut imports = wasmer::Imports::new();
-    
-    // 创建简化版 Host 函数
-    let memory_get_fn = Function::new_typed_with_env(store, env, legacy_host_memory_get);
-    let memory_set_fn = Function::new_typed_with_env(store, env, legacy_host_memory_set);
-    let memory_delete_fn = Function::new_typed_with_env(store, env, legacy_host_memory_delete);
-    let ai_chat_fn = Function::new_typed_with_env(store, env, legacy_host_ai_chat);
-    let log_fn = Function::new_typed_with_env(store, env, legacy_host_log);
-    let http_post_fn = Function::new_typed_with_env(store, env, legacy_host_http_post);
-    
-    // 添加到导入表
-    imports.define("env", "host_memory_get", memory_get_fn);
-    imports.define("env", "host_memory_set", memory_set_fn);
-    imports.define("env", "host_memory_delete", memory_delete_fn);
-    imports.define("env", "host_ai_chat", ai_chat_fn);
-    imports.define("env", "host_log", log_fn);
-    imports.define("env", "host_http_post", http_post_fn);
-    
-    imports
+    // 直接使用新的 HostFunctions 实现
+    HostFunctions::create_imports(store, env.clone())
 }
 
-/// 旧版 host_memory_get（真实实现）
-/// 
-/// 从 WASM 内存中读取 key，从 Host memory 服务获取值，写回 WASM 内存
-pub fn legacy_host_memory_get(
-    mut env: wasmer::FunctionEnvMut<HostContext>,
-    key_ptr: i32,
-    key_len: i32,
-    out_ptr: i32,
-    out_len: i32,
-) -> i64 {
-    let ctx = env.data();
-    
-    // 获取 WASM 内存
-    let memory = match &ctx.memory_ref {
-        Some(m) => m,
-        None => {
-            tracing::error!("[WASM Host] Memory not initialized");
-            return -1;
-        }
-    };
-    
-    // 读取 key
-    let key = {
-        let view = memory.view(&env);
-        let key_ptr = WasmPtr::<u8>::new(key_ptr as u32);
-        match key_ptr.read_utf8_string(&view, key_len as u32) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("[WASM Host] Failed to read key: {}", e);
-                return -1;
-            }
-        }
-    };
-    
-    // 从 memory 服务获取值
-    let value = {
-        let memory_service = ctx.memory.lock().unwrap();
-        match memory_service.get(&key) {
-            Ok(Some(v)) => v,
-            Ok(None) => return 0, // 未找到
-            Err(e) => {
-                tracing::error!("[WASM Host] Failed to get value: {}", e);
-                return -1;
-            }
-        }
-    };
-    
-    // 检查输出缓冲区大小
-    if value.len() > out_len as usize {
-        tracing::warn!("[WASM Host] Output buffer too small: {} > {}", value.len(), out_len);
-        return -2; // 缓冲区不足
+// 注意：所有旧版 host 函数已由 HostFunctions 结构体中的新方法替代
+// 这些函数保留用于向后兼容，但内部实现委托给 HostFunctions
+
+/// 从 FunctionEnvMut 读取字符串的辅助函数
+fn read_string_from_memory_view(
+    view: &wasmer::MemoryView,
+    ptr: i32,
+    len: i32,
+) -> Result<String, crate::error::CisError> {
+    if len < 0 {
+        return Err(crate::error::CisError::invalid_input("Invalid length: negative"));
     }
     
-    // 写回 WASM 内存
-    {
-        let view = memory.view(&env);
-        let out_ptr = WasmPtr::<u8>::new(out_ptr as u32);
-        if let Err(e) = out_ptr.write_utf8(&view, &value) {
-            tracing::error!("[WASM Host] Failed to write output: {}", e);
-            return -1;
-        }
+    let offset = ptr as u64;
+    let length = len as usize;
+    
+    // 验证内存边界
+    let memory_size = view.data_size();
+    if offset + length as u64 > memory_size {
+        return Err(crate::error::CisError::wasm(
+            format!("Read out of bounds: offset {} + len {} > size {}",
+                offset, length, memory_size)
+        ));
     }
     
-    value.len() as i64
+    let mut buffer = vec![0u8; length];
+    view.read(offset, &mut buffer)
+        .map_err(|e| crate::error::CisError::wasm(format!("Memory read error: {}", e)))?;
+    
+    String::from_utf8(buffer)
+        .map_err(|e| crate::error::CisError::wasm(format!("UTF-8 error: {}", e)))
 }
 
-/// 旧版 host_memory_set（真实实现）
-/// 
-/// 从 WASM 内存读取 key 和 value，存储到 Host memory 服务
-pub fn legacy_host_memory_set(
-    mut env: wasmer::FunctionEnvMut<HostContext>,
-    key_ptr: i32,
-    key_len: i32,
-    val_ptr: i32,
-    val_len: i32,
-) -> i32 {
-    let ctx = env.data();
+/// 写入字节到 MemoryView 的辅助函数
+fn write_bytes_to_memory_view(
+    view: &wasmer::MemoryView,
+    ptr: i32,
+    data: &[u8],
+) -> Result<usize, crate::error::CisError> {
+    let offset = ptr as u64;
+    let len = data.len();
     
-    // 获取 WASM 内存
-    let memory = match &ctx.memory_ref {
-        Some(m) => m,
-        None => {
-            tracing::error!("[WASM Host] Memory not initialized");
-            return -1;
-        }
-    };
-    
-    // 读取 key
-    let key = {
-        let view = memory.view(&env);
-        let key_ptr = WasmPtr::<u8>::new(key_ptr as u32);
-        match key_ptr.read_utf8_string(&view, key_len as u32) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("[WASM Host] Failed to read key: {}", e);
-                return -1;
-            }
-        }
-    };
-    
-    // 读取 value
-    let value = {
-        let view = memory.view(&env);
-        let val_ptr = WasmPtr::<u8>::new(val_ptr as u32);
-        match val_ptr.read_utf8_string(&view, val_len as u32) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("[WASM Host] Failed to read value: {}", e);
-                return -1;
-            }
-        }
-    };
-    
-    // 存储到 memory 服务
-    let mut memory_service = ctx.memory.lock().unwrap();
-    match memory_service.set(&key, &value) {
-        Ok(_) => {
-            tracing::debug!("[WASM Host] Set {} = {}", key, value);
-            0 // 成功
-        }
-        Err(e) => {
-            tracing::error!("[WASM Host] Failed to set value: {}", e);
-            -1
-        }
-    }
-}
-
-/// 旧版 host_memory_delete（真实实现）
-/// 
-/// 从 WASM 内存读取 key，从 Host memory 服务删除
-pub fn legacy_host_memory_delete(
-    mut env: wasmer::FunctionEnvMut<HostContext>,
-    key_ptr: i32,
-    key_len: i32,
-) -> i32 {
-    let ctx = env.data();
-    
-    // 获取 WASM 内存
-    let memory = match &ctx.memory_ref {
-        Some(m) => m,
-        None => {
-            tracing::error!("[WASM Host] Memory not initialized");
-            return -1;
-        }
-    };
-    
-    // 读取 key
-    let key = {
-        let view = memory.view(&env);
-        let key_ptr = WasmPtr::<u8>::new(key_ptr as u32);
-        match key_ptr.read_utf8_string(&view, key_len as u32) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("[WASM Host] Failed to read key: {}", e);
-                return -1;
-            }
-        }
-    };
-    
-    // 从 memory 服务删除
-    let mut memory_service = ctx.memory.lock().unwrap();
-    match memory_service.delete(&key) {
-        Ok(_) => {
-            tracing::debug!("[WASM Host] Deleted {}", key);
-            0 // 成功
-        }
-        Err(e) => {
-            tracing::error!("[WASM Host] Failed to delete: {}", e);
-            -1
-        }
-    }
-}
-
-/// 旧版 host_ai_chat（真实实现）
-/// 
-/// 从 WASM 内存读取 prompt，调用 AI Provider，返回结果指针
-pub fn legacy_host_ai_chat(
-    mut env: wasmer::FunctionEnvMut<HostContext>,
-    prompt_ptr: i32,
-    prompt_len: i32,
-    out_ptr: i32,
-    out_len: i32,
-) -> i64 {
-    let ctx = env.data();
-    
-    // 获取 WASM 内存
-    let memory = match &ctx.memory_ref {
-        Some(m) => m,
-        None => {
-            tracing::error!("[WASM Host] Memory not initialized");
-            return -1;
-        }
-    };
-    
-    // 读取 prompt
-    let prompt = {
-        let view = memory.view(&env);
-        let prompt_ptr = WasmPtr::<u8>::new(prompt_ptr as u32);
-        match prompt_ptr.read_utf8_string(&view, prompt_len as u32) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("[WASM Host] Failed to read prompt: {}", e);
-                return -1;
-            }
-        }
-    };
-    
-    tracing::debug!("[WASM Host] AI chat prompt: {}", prompt);
-    
-    // 调用 AI Provider
-    let response = {
-        let ai_provider = ctx.ai.lock().unwrap();
-        match ai_provider.chat(&prompt) {
-            Ok(resp) => resp,
-            Err(e) => {
-                tracing::error!("[WASM Host] AI chat failed: {}", e);
-                format!("Error: {}", e)
-            }
-        }
-    };
-    
-    // 检查输出缓冲区
-    if response.len() > out_len as usize {
-        tracing::warn!("[WASM Host] Output buffer too small for AI response");
-        return -2;
+    // 验证内存边界
+    let memory_size = view.data_size();
+    if offset + len as u64 > memory_size {
+        return Err(crate::error::CisError::wasm(
+            format!("Write out of bounds: offset {} + len {} > size {}",
+                offset, len, memory_size)
+        ));
     }
     
-    // 写回 WASM 内存
-    {
-        let view = memory.view(&env);
-        let out_ptr = WasmPtr::<u8>::new(out_ptr as u32);
-        if let Err(e) = out_ptr.write_utf8(&view, &response) {
-            tracing::error!("[WASM Host] Failed to write AI response: {}", e);
-            return -1;
-        }
-    }
+    view.write(offset, data)
+        .map_err(|e| crate::error::CisError::wasm(format!("Memory write error: {}", e)))?;
     
-    response.len() as i64
-}
-
-/// 旧版 host_log（真实实现）
-/// 
-/// 从 WASM 内存读取日志消息，输出到 tracing
-pub fn legacy_host_log(
-    mut env: wasmer::FunctionEnvMut<HostContext>,
-    level: i32,
-    msg_ptr: i32,
-    msg_len: i32,
-) {
-    let ctx = env.data();
-    
-    // 获取 WASM 内存
-    let memory = match &ctx.memory_ref {
-        Some(m) => m,
-        None => {
-            tracing::error!("[WASM Host] Memory not initialized");
-            return;
-        }
-    };
-    
-    // 读取消息
-    let msg = {
-        let view = memory.view(&env);
-        let msg_ptr = WasmPtr::<u8>::new(msg_ptr as u32);
-        match msg_ptr.read_utf8_string(&view, msg_len as u32) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("[WASM Host] Failed to read log message: {}", e);
-                return;
-            }
-        }
-    };
-    
-    // 输出到 tracing
-    match LogLevel::from_i32(level) {
-        Some(LogLevel::Debug) => tracing::debug!("[WASM Skill] {}", msg),
-        Some(LogLevel::Info) => tracing::info!("[WASM Skill] {}", msg),
-        Some(LogLevel::Warn) => tracing::warn!("[WASM Skill] {}", msg),
-        Some(LogLevel::Error) => tracing::error!("[WASM Skill] {}", msg),
-        None => tracing::info!("[WASM Skill] {}", msg),
-    }
-    
-    // 调用日志回调（如果设置了）
-    if let Some(ref callback) = ctx.log_callback {
-        callback(&format!("[{}] {}", level, msg));
-    }
-}
-
-/// 旧版 host_http_post（真实实现）
-/// 
-/// 从 WASM 内存读取 URL 和 body，执行 HTTP POST 请求
-pub fn legacy_host_http_post(
-    mut env: wasmer::FunctionEnvMut<HostContext>,
-    url_ptr: i32,
-    url_len: i32,
-    body_ptr: i32,
-    body_len: i32,
-    out_ptr: i32,
-    out_len: i32,
-) -> i64 {
-    let ctx = env.data();
-    
-    // 检查网络权限
-    if !ctx.allow_network {
-        tracing::error!("[WASM Host] Network access denied");
-        return -1;
-    }
-    
-    // 获取 WASM 内存
-    let memory = match &ctx.memory_ref {
-        Some(m) => m,
-        None => {
-            tracing::error!("[WASM Host] Memory not initialized");
-            return -1;
-        }
-    };
-    
-    // 读取 URL
-    let url = {
-        let view = memory.view(&env);
-        let url_ptr = WasmPtr::<u8>::new(url_ptr as u32);
-        match url_ptr.read_utf8_string(&view, url_len as u32) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("[WASM Host] Failed to read URL: {}", e);
-                return -1;
-            }
-        }
-    };
-    
-    // 检查主机是否允许
-    if let Some(host) = url.split("//").nth(1).and_then(|s| s.split('/').next()) {
-        if !ctx.is_host_allowed(host) {
-            tracing::error!("[WASM Host] Host not allowed: {}", host);
-            return -1;
-        }
-    }
-    
-    // 读取 body
-    let body = {
-        let view = memory.view(&env);
-        let body_ptr = WasmPtr::<u8>::new(body_ptr as u32);
-        match body_ptr.read_utf8_string(&view, body_len as u32) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("[WASM Host] Failed to read body: {}", e);
-                return -1;
-            }
-        }
-    };
-    
-    tracing::debug!("[WASM Host] HTTP POST {} with {} bytes body", url, body.len());
-    
-    // 注意：实际 HTTP 请求需要异步运行时，这里返回一个模拟响应
-    // 真实实现需要使用异步 HTTP 客户端
-    let response = format!("{{\"status\":\"ok\",\"url\":\"{}\"}}", url);
-    
-    // 检查输出缓冲区
-    if response.len() > out_len as usize {
-        tracing::warn!("[WASM Host] Output buffer too small for HTTP response");
-        return -2;
-    }
-    
-    // 写回 WASM 内存
-    {
-        let view = memory.view(&env);
-        let out_ptr = WasmPtr::<u8>::new(out_ptr as u32);
-        if let Err(e) = out_ptr.write_utf8(&view, &response) {
-            tracing::error!("[WASM Host] Failed to write HTTP response: {}", e);
-            return -1;
-        }
-    }
-    
-    response.len() as i64
+    Ok(len)
 }
 
 #[cfg(test)]

@@ -102,6 +102,7 @@
 
 pub mod client;
 pub mod discovery;
+pub mod federation_discovery;
 pub mod server;
 pub mod types;
 
@@ -171,6 +172,10 @@ impl MatrixDiscovery {
 // Re-export submodules
 pub use client::{FederationClient, FederationClientError, FederationClientResult};
 pub use discovery::PeerDiscovery;
+pub use federation_discovery::{
+    FederationDiscovery, FederationHandshake, ServerEndpoint, WellKnownResponse,
+    FederationVersion, FederationChallenge, FederationChallengeResponse,
+};
 pub use server::{FederationServer, FederationServerBuilder};
 pub use types::{
     CisMatrixEvent, DiscoveredNode, DiscoverySource, EventReceiveResponse, 

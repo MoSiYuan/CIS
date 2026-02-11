@@ -155,6 +155,7 @@ impl Skill for AgentBridgeSkill {
 /// 供外部 Agent（如 Claude）调用 CIS 功能
 pub struct AgentCisClient {
     memory_service: Option<Arc<Mutex<MemoryService>>>,
+    skill_manager: Option<Arc<tokio::sync::Mutex<crate::skill::manager::SkillManager>>>,
 }
 
 impl AgentCisClient {
@@ -172,7 +173,16 @@ impl AgentCisClient {
             }
         };
         
-        Self { memory_service }
+        Self { 
+            memory_service,
+            skill_manager: None,
+        }
+    }
+    
+    /// 创建带 SkillManager 的客户端实例
+    pub fn with_skill_manager(mut self, skill_manager: Arc<tokio::sync::Mutex<crate::skill::manager::SkillManager>>) -> Self {
+        self.skill_manager = Some(skill_manager);
+        self
     }
 
     /// 获取记忆
@@ -213,15 +223,34 @@ impl AgentCisClient {
     }
 
     /// 调用 Skill
-    pub async fn skill_call(&self, skill: &str, method: &str, params: &[u8]) -> Result<Vec<u8>> {
-        // 尝试通过本地 socket 或 HTTP 调用本地 CIS 服务
+    ///
+    /// 如果配置了 SkillManager，直接调用；否则返回错误提示使用 HTTP API
+    pub async fn skill_call(&self, skill_name: &str, method: &str, params: &[u8]) -> Result<Vec<u8>> {
         tracing::info!("AgentCisClient: Calling skill {}::{} ({} bytes params)", 
-            skill, method, params.len());
+            skill_name, method, params.len());
         
-        // 当前实现：直接返回错误，提示使用 HTTP API
+        // 如果 SkillManager 可用，直接调用
+        if let Some(ref sm) = self.skill_manager {
+            let sm = sm.lock().await;
+            
+            // 构造事件
+            let event = Event::Custom {
+                name: method.to_string(),
+                data: serde_json::from_slice(params)
+                    .unwrap_or_else(|_| serde_json::json!({"raw": params.iter().map(|b| format!("{:02x}", b)).collect::<String>()})),
+            };
+            
+            // 发送事件到 Skill
+            sm.send_event(skill_name, event).await
+                .map_err(|e| CisError::skill(format!("Skill call failed: {}", e)))?;
+            
+            return Ok(format!("Skill '{}' method '{}' called successfully", skill_name, method).into_bytes());
+        }
+        
+        // 没有 SkillManager，提示使用 HTTP API
         Err(CisError::skill(format!(
-            "Direct skill call not implemented. Use CIS HTTP API: POST /api/v1/skills/{}/{}",
-            skill, method
+            "SkillManager not configured. Use CIS HTTP API: POST /api/v1/skills/{}/{}",
+            skill_name, method
         )))
     }
 

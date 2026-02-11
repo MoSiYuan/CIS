@@ -668,12 +668,24 @@ mod tests {
     use super::*;
 
     fn create_test_node_info(node_id: &str) -> NodeInfo {
+        use crate::service::node_service::{NodeSummary, NodeStatus};
+        
         NodeInfo {
-            node_id: node_id.to_string(),
-            did: format!("did:cis:{}", node_id),
-            addresses: vec![format!("127.0.0.1:767{}", node_id.len())],
-            capabilities: vec!["memory_sync".to_string()],
-            public_key: vec![1, 2, 3, 4],
+            summary: NodeSummary {
+                id: node_id.to_string(),
+                did: format!("did:cis:{}", node_id),
+                name: node_id.to_string(),
+                status: NodeStatus::Online,
+                endpoint: format!("127.0.0.1:767{}", node_id.len()),
+                version: "1.0.0".to_string(),
+                last_seen: Utc::now(),
+                capabilities: vec!["memory_sync".to_string()],
+            },
+            public_key: "mock_key".to_string(),
+            metadata: HashMap::new(),
+            trust_score: 1.0,
+            is_blacklisted: false,
+            created_at: Utc::now(),
         }
     }
 

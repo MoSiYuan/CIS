@@ -104,6 +104,74 @@ impl CisMatrixEvent {
         self.state_key = Some(state_key.into());
         self
     }
+    
+    /// Sign the event with a private key
+    /// 
+    /// # Arguments
+    /// * `server_name` - The name of the signing server
+    /// * `key_id` - The key identifier (e.g., "ed25519:0")
+    /// * `signing_key` - The Ed25519 signing key
+    /// 
+    /// # Returns
+    /// Ok(()) if signing succeeds, Err with message otherwise
+    pub fn sign(
+        &mut self,
+        server_name: &str,
+        key_id: &str,
+        signing_key: &ed25519_dalek::SigningKey,
+    ) -> Result<(), String> {
+        // Build canonical JSON representation of the event (excluding signatures and hashes)
+        let canonical = serde_json::json!({
+            "event_id": &self.event_id,
+            "room_id": &self.room_id,
+            "sender": &self.sender,
+            "type": &self.event_type,
+            "content": &self.content,
+            "origin_server_ts": self.origin_server_ts,
+            "origin": self.origin.as_deref().unwrap_or(server_name),
+        });
+        
+        let event_bytes = serde_json::to_vec(&canonical)
+            .map_err(|e| format!("Failed to serialize event: {}", e))?;
+        
+        // Sign the event
+        use ed25519_dalek::Signer;
+        let signature = signing_key.sign(&event_bytes);
+        let sig_hex = hex::encode(signature.to_bytes());
+        
+        // Add signature to event
+        let mut signatures = self.signatures.take().unwrap_or_default();
+        let server_sigs = signatures.entry(server_name.to_string()).or_default();
+        server_sigs.insert(key_id.to_string(), sig_hex);
+        self.signatures = Some(signatures);
+        
+        Ok(())
+    }
+    
+    /// Compute and set the event hash
+    pub fn compute_hash(&mut self) -> Result<(), String> {
+        let canonical = serde_json::json!({
+            "event_id": &self.event_id,
+            "room_id": &self.room_id,
+            "sender": &self.sender,
+            "type": &self.event_type,
+            "content": &self.content,
+            "origin_server_ts": self.origin_server_ts,
+        });
+        
+        let event_bytes = serde_json::to_vec(&canonical)
+            .map_err(|e| format!("Failed to serialize event: {}", e))?;
+        
+        use sha2::{Sha256, Digest};
+        let hash = Sha256::digest(&event_bytes);
+        let hash_hex = hex::encode(hash);
+        
+        let mut hashes = self.hashes.take().unwrap_or_default();
+        hashes.insert("sha256".to_string(), hash_hex);
+        self.hashes = Some(hashes);
+        
+        Ok(())
+    }
 }
 
 /// Peer information for known CIS nodes

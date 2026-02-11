@@ -146,15 +146,27 @@ use crate::error::{CisError, Result};
 // 子模块
 pub mod host;
 pub mod runtime;
+pub mod sandbox;
 pub mod skill;
+pub mod validator;
 
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod runtime_tests;
+
+#[cfg(test)]
+mod host_tests;
+
+#[cfg(test)]
+mod skill_tests;
+
 // 公开导出
 pub use host::{HostContext, HostFunctions, HostEnv, ExecutionLimits};
 pub use runtime::{WasmRuntime, WasmModule, WasmSkillInstance};
-pub use skill::{WasmSkill as WasmSkillImpl, WasmSkillBuilder};
+pub use sandbox::{WasiSandbox, AccessType, WasiSandboxSummary};
+pub use skill::{WasmSkill as WasmSkillImpl, WasmSkillBuilder, WasmSkillExecutor};
 
 /// 默认 WASM 内存限制（512MB，以字节为单位）
 pub const DEFAULT_MEMORY_LIMIT_BYTES: usize = 512 * 1024 * 1024;

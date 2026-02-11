@@ -61,7 +61,8 @@ impl Default for TransportConfig {
 /// QUIC 传输层
 pub struct QuicTransport {
     endpoint: Endpoint,
-    listen_addr: SocketAddr,
+    /// 监听地址
+    pub listen_addr: SocketAddr,
     connections: Arc<RwLock<HashMap<String, ConnectionHandle>>>,
     config: TransportConfig,
     /// 关闭信号
@@ -199,7 +200,8 @@ impl QuicTransport {
         connections.write().await.insert(node_id.clone(), handle);
         info!("Accepted connection from {} ({})", node_id, addr);
         
-        // TODO: 启动连接处理循环（读取数据）
+        // 启动连接处理循环（读取数据）
+        Self::spawn_connection_handler(Arc::clone(&connections), node_id.clone());
         
         Ok(())
     }
@@ -245,6 +247,9 @@ impl QuicTransport {
         };
         
         self.connections.write().await.insert(node_id.to_string(), handle);
+        
+        // 启动连接处理循环（读取数据）
+        Self::spawn_connection_handler(Arc::clone(&self.connections), node_id.to_string());
         
         info!("Connected to {} at {}", node_id, addr);
         Ok(())
@@ -341,6 +346,83 @@ impl QuicTransport {
         Ok(())
     }
     
+    /// 启动连接处理循环
+    /// 
+    /// 为每个连接启动一个任务来处理接收到的数据
+    fn spawn_connection_handler(
+        connections: Arc<RwLock<HashMap<String, ConnectionHandle>>>,
+        node_id: String,
+    ) {
+        tokio::spawn(async move {
+            loop {
+                // 获取连接句柄
+                let connection = {
+                    let connections_guard = connections.read().await;
+                    if let Some(handle) = connections_guard.get(&node_id) {
+                        if !handle.connection.is_alive() {
+                            debug!("Connection {} is no longer alive, stopping handler", node_id);
+                            break;
+                        }
+                        // 克隆连接以便在后续使用
+                        // 注意：这里我们需要一种方式来接收数据
+                        // 由于 Connection 没有实现 Clone，我们使用 accept_stream
+                        match handle.connection.accept_stream().await {
+                            Ok(stream) => Some(stream),
+                            Err(e) => {
+                                trace!("No new stream from {}: {}", node_id, e);
+                                None
+                            }
+                        }
+                    } else {
+                        debug!("Connection {} not found, stopping handler", node_id);
+                        break;
+                    }
+                };
+                
+                if let Some(mut stream) = connection {
+                    // 处理流数据
+                    let mut buffer = vec![];
+                    match stream.read_to_end(&mut buffer).await {
+                        Ok(n) if n > 0 => {
+                            trace!("Received {} bytes from {}", n, node_id);
+                            // 更新最后活跃时间
+                            let mut connections_guard = connections.write().await;
+                            if let Some(handle) = connections_guard.get_mut(&node_id) {
+                                handle.last_active = std::time::Instant::now();
+                                handle.info.bytes_received += n as u64;
+                            }
+                            
+                            // 处理心跳请求和响应
+                            if buffer == b"ping" {
+                                trace!("Received heartbeat ping from {}, sending pong", node_id);
+                                // 回复 pong
+                                let connections_guard = connections.read().await;
+                                if let Some(handle) = connections_guard.get(node_id.as_str()) {
+                                    if let Err(e) = handle.connection.send(b"pong".to_vec()).await {
+                                        warn!("Failed to send heartbeat response to {}: {}", node_id, e);
+                                    }
+                                }
+                            } else if buffer == b"pong" {
+                                trace!("Received heartbeat response from {}", node_id);
+                            }
+                        }
+                        Ok(_) => {
+                            trace!("Empty stream from {}", node_id);
+                        }
+                        Err(e) => {
+                            warn!("Error reading from {}: {}", node_id, e);
+                        }
+                    }
+                }
+                
+                // 短暂休眠避免 CPU 占用过高
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            
+            debug!("Connection handler for {} stopped", node_id);
+        });
+    }
+    
     /// 启动心跳任务
     fn start_heartbeat_task(&self) {
         let connections = Arc::clone(&self.connections);
@@ -370,7 +452,15 @@ impl QuicTransport {
                         // 发送心跳（如果到了心跳时间）
                         if inactive_duration >= interval_duration {
                             trace!("Sending heartbeat to {}", node_id);
-                            // TODO: 实现心跳发送
+                            // 实际发送心跳消息
+                            let connections_guard = connections.read().await;
+                            if let Some(handle) = connections_guard.get(node_id.as_str()) {
+                                let heartbeat_msg = b"ping";
+                                if let Err(e) = handle.connection.send(heartbeat_msg.to_vec()).await {
+                                    warn!("Failed to send heartbeat to {}: {}", node_id, e);
+                                    dead_connections.push(node_id.clone());
+                                }
+                            }
                         }
                     }
                 }

@@ -67,9 +67,18 @@ pub enum MatrixError {
     /// Invalid username
     #[error("Invalid username: {0}")]
     InvalidUsername(String),
+
+    /// Federation error
+    #[error("Federation error: {0}")]
+    Federation(String),
 }
 
 impl MatrixError {
+    /// Create a new federation error
+    pub fn federation<S: Into<String>>(msg: S) -> Self {
+        MatrixError::Federation(msg.into())
+    }
+
     /// Get the Matrix error code for this error
     fn error_code(&self) -> &'static str {
         match self {
@@ -86,6 +95,7 @@ impl MatrixError {
             MatrixError::BadRequest(_) => "M_BAD_REQUEST",
             MatrixError::UserInUse(_) => "M_USER_IN_USE",
             MatrixError::InvalidUsername(_) => "M_INVALID_USERNAME",
+            MatrixError::Federation(_) => "M_FEDERATION_ERROR",
         }
     }
 
@@ -105,6 +115,7 @@ impl MatrixError {
             MatrixError::BadRequest(_) => StatusCode::BAD_REQUEST,
             MatrixError::UserInUse(_) => StatusCode::CONFLICT,
             MatrixError::InvalidUsername(_) => StatusCode::BAD_REQUEST,
+            MatrixError::Federation(_) => StatusCode::BAD_GATEWAY,
         }
     }
 }

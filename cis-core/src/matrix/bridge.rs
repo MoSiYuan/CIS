@@ -27,6 +27,60 @@ use crate::skill::{Event, SkillContext};
 use crate::matrix::federation_impl::FederationManager;
 use crate::matrix::federation::types::CisMatrixEvent;
 
+#[cfg(feature = "wasm")]
+use crate::ai::AiProviderFactory;
+#[cfg(feature = "wasm")]
+use crate::memory::MemoryService;
+#[cfg(feature = "wasm")]
+use std::sync::Mutex as StdMutex;
+
+#[cfg(feature = "wasm")]
+use async_trait::async_trait;
+
+/// 包装 Box<dyn AiProvider> 以实现 AiProvider trait
+#[cfg(feature = "wasm")]
+struct BoxedAiProvider(Box<dyn crate::ai::AiProvider>);
+
+#[cfg(feature = "wasm")]
+#[async_trait]
+impl crate::ai::AiProvider for BoxedAiProvider {
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+
+    async fn available(&self) -> bool {
+        self.0.available().await
+    }
+
+    async fn chat(&self, prompt: &str) -> crate::ai::Result<String> {
+        self.0.chat(prompt).await
+    }
+
+    async fn chat_with_context(
+        &self,
+        system: &str,
+        messages: &[crate::ai::Message],
+    ) -> crate::ai::Result<String> {
+        self.0.chat_with_context(system, messages).await
+    }
+
+    async fn chat_with_rag(
+        &self,
+        prompt: &str,
+        ctx: Option<&crate::conversation::ConversationContext>,
+    ) -> crate::ai::Result<String> {
+        self.0.chat_with_rag(prompt, ctx).await
+    }
+
+    async fn generate_json(
+        &self,
+        prompt: &str,
+        schema: &str,
+    ) -> crate::ai::Result<serde_json::Value> {
+        self.0.generate_json(prompt, schema).await
+    }
+}
+
 use super::error::{MatrixError, MatrixResult};
 use super::store::MatrixStore;
 
@@ -619,10 +673,10 @@ impl MatrixBridge {
                 self.execute_wasm_skill(skill_name, ctx, event).await
             }
             crate::skill::types::SkillType::Remote => {
-                Err(CisError::skill("Remote skills not yet supported".to_string()))
+                self.execute_remote_skill(skill_name, ctx, event).await
             }
             crate::skill::types::SkillType::Dag => {
-                Err(CisError::skill("DAG skills not yet supported".to_string()))
+                self.execute_dag_skill(skill_name, ctx, event).await
             }
         }
     }
@@ -634,30 +688,23 @@ impl MatrixBridge {
         _ctx: &BridgeSkillContext,
         event: Event,
     ) -> Result<serde_json::Value> {
-        // Native Skill 通过事件机制执行
-        // 实际实现需要通过 SkillRegistry 获取 Skill 实例并调用 handle_event
+        // 通过 SkillManager 发送事件到 Native Skill
+        self.skill_manager.send_event(skill_name, event.clone()).await
+            .map_err(|e| CisError::skill(format!("Failed to execute native skill '{}': {}", skill_name, e)))?;
         
-        // 序列化事件
-        let _event_data = serde_json::to_vec(&event)
-            .map_err(|e| CisError::skill(format!("Failed to serialize event: {}", e)))?;
-        
-        // 调用 SkillRegistry 处理事件
-        let reg = self.skill_manager.get_registry()
-            .map_err(|e| CisError::skill(format!("Failed to access registry: {}", e)))?;
-        
-        // 尝试查找并调用 Skill 实例
-        // 由于 Native Skill 实现是 trait 对象，需要特定方式调用
-        // 这里简化为返回执行信息
-        if reg.contains(skill_name) {
-            Ok(serde_json::json!({
-                "skill": skill_name,
-                "event": event,
-                "status": "executed",
-                "note": "Native skill execution simulated - actual implementation needs skill instance registry"
-            }))
-        } else {
-            Err(CisError::not_found(format!("Skill '{}' not in registry", skill_name)))
-        }
+        Ok(serde_json::json!({
+            "skill": skill_name,
+            "event_type": match &event {
+                Event::Init { .. } => "init",
+                Event::Shutdown => "shutdown",
+                Event::Tick => "tick",
+                Event::MemoryChange { .. } => "memory_change",
+                Event::Custom { name, .. } => name.as_str(),
+                Event::AgentCall { .. } => "agent_call",
+            },
+            "status": "executed",
+            "result": "success"
+        }))
     }
     
     /// 执行 WASM Skill
@@ -668,29 +715,55 @@ impl MatrixBridge {
         event: Event,
     ) -> Result<serde_json::Value> {
         // WASM Skill 执行
-        // 需要通过 WasmRuntime 调用
+        // 通过 WasmRuntime 调用
         
         #[cfg(feature = "wasm")]
         {
-            // 获取 WASM runtime
+            // 1. 获取 WASM runtime
             let wasm_runtime = self.skill_manager.get_wasm_runtime()
                 .map_err(|e| CisError::skill(format!("Failed to access WASM runtime: {}", e)))?;
             
-            // 序列化事件
-            let _event_data = serde_json::to_vec(&event)
+            // 2. 从 registry 获取 skill 元数据以找到 WASM 文件路径
+            let skill_info = {
+                let registry = self.skill_manager.get_registry()
+                    .map_err(|e| CisError::skill(format!("Failed to access registry: {}", e)))?;
+                registry.get(skill_name)
+                    .ok_or_else(|| CisError::not_found(format!("Skill '{}' not found in registry", skill_name)))?
+                    .clone()
+            };
+            
+            // 3. 读取 WASM 文件
+            let wasm_path = std::path::Path::new(&skill_info.meta.path);
+            let wasm_bytes = tokio::fs::read(wasm_path).await
+                .map_err(|e| CisError::skill(format!("Failed to read WASM file for '{}': {}", skill_name, e)))?;
+            
+            // 验证 WASM 魔术数字
+            if wasm_bytes.len() < 8 || wasm_bytes[0..4] != [0x00, 0x61, 0x73, 0x6d] {
+                return Err(CisError::wasm(format!("Invalid WASM file for skill '{}'", skill_name)));
+            }
+            
+            // 4. 创建必要的服务
+            let memory_service: Arc<StdMutex<dyn crate::memory::MemoryServiceTrait>> = 
+                Arc::new(StdMutex::new(MemoryService::open_default(skill_name)?));
+            let ai_provider: Arc<StdMutex<dyn crate::ai::AiProvider>> = 
+                Arc::new(StdMutex::new(BoxedAiProvider(AiProviderFactory::default_provider())));
+            
+            // 5. 锁定 runtime 并执行 skill
+            let runtime_guard = wasm_runtime.lock()
+                .map_err(|e| CisError::skill(format!("WASM runtime lock failed: {}", e)))?;
+            
+            // 6. 调用 WASM skill
+            let event_data = serde_json::to_value(&event)
                 .map_err(|e| CisError::skill(format!("Failed to serialize event: {}", e)))?;
             
-            // 调用 WASM skill
-            let result = {
-                let _runtime = wasm_runtime.lock()
-                    .map_err(|e| CisError::skill(format!("WASM runtime lock failed: {}", e)))?;
-                
-                // WASM 运行时集成尚未完成
-                // 返回错误而不是模拟响应
-                return Err(CisError::skill(
-                    "WASM skill execution not fully implemented".to_string()
-                ))
-            }?;
+            let result = runtime_guard.execute_skill(
+                skill_name,
+                &wasm_bytes,
+                event_data,
+                memory_service,
+                ai_provider,
+            ).await
+            .map_err(|e| CisError::skill(format!("WASM skill execution failed: {}", e)))?;
             
             Ok(result)
         }
@@ -699,6 +772,321 @@ impl MatrixBridge {
         {
             let _ = (skill_name, event);
             Err(CisError::skill("WASM support not compiled".to_string()))
+        }
+    }
+    
+    /// 执行 Remote Skill（跨节点调用）
+    async fn execute_remote_skill(
+        &self,
+        skill_name: &str,
+        _ctx: &BridgeSkillContext,
+        event: Event,
+    ) -> Result<serde_json::Value> {
+        use std::time::Duration;
+        
+        // 1. 获取 Skill 元数据中的 Remote 配置
+        let skill_info = self.skill_manager
+            .get_registry()
+            .map_err(|e| CisError::skill(format!("Failed to access registry: {}", e)))?
+            .get(skill_name)
+            .cloned()
+            .ok_or_else(|| CisError::not_found(format!("Skill '{}' not found in registry", skill_name)))?;
+        
+        // 2. 从 manifest 解析 remote 配置
+        let manifest_path = std::path::Path::new(&skill_info.meta.path).join("skill.toml");
+        let manifest_content = tokio::fs::read_to_string(&manifest_path).await
+            .map_err(|e| CisError::skill(format!("Failed to read manifest for '{}': {}", skill_name, e)))?;
+        
+        let manifest: crate::skill::manifest::SkillManifest = toml::from_str(&manifest_content)
+            .map_err(|e| CisError::skill(format!("Failed to parse manifest for '{}': {}", skill_name, e)))?;
+        
+        let remote_config = manifest.remote
+            .ok_or_else(|| CisError::skill(format!("Remote config not found for skill '{}'", skill_name)))?;
+        
+        if remote_config.target_nodes.is_empty() {
+            return Err(CisError::skill(format!("No target nodes configured for remote skill '{}'", skill_name)));
+        }
+        
+        // 3. 选择目标节点（简单轮询策略）
+        let target_node = &remote_config.target_nodes[0];
+        
+        // 4. 序列化事件
+        let event_data = serde_json::to_value(&event)
+            .map_err(|e| CisError::skill(format!("Failed to serialize event: {}", e)))?;
+        
+        // 5. 构建远程调用请求
+        let request = serde_json::json!({
+            "skill": skill_name,
+            "event": event_data,
+            "source_node": "local", // 当前节点标识
+        });
+        
+        // 6. 发送 HTTP 请求到远程节点
+        let client = reqwest::Client::new();
+        let url = format!("{}/_cis/v1/skill/execute", target_node);
+        let timeout = Duration::from_secs(remote_config.timeout_secs);
+        
+        info!(
+            skill = skill_name,
+            target = target_node,
+            "Executing remote skill"
+        );
+        
+        // 7. 执行带重试的请求
+        let mut last_error = None;
+        for attempt in 1..=remote_config.retry {
+            match client
+                .post(&url)
+                .json(&request)
+                .timeout(timeout)
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        let result: serde_json::Value = response.json().await
+                            .map_err(|e| CisError::skill(format!("Failed to parse remote response: {}", e)))?;
+                        
+                        info!(
+                            skill = skill_name,
+                            target = target_node,
+                            attempt,
+                            "Remote skill executed successfully"
+                        );
+                        
+                        return Ok(result);
+                    } else {
+                        let status = response.status();
+                        let text = response.text().await.unwrap_or_default();
+                        last_error = Some(format!("HTTP {}: {}", status, text));
+                    }
+                }
+                Err(e) => {
+                    last_error = Some(e.to_string());
+                }
+            }
+            
+            if attempt < remote_config.retry {
+                let backoff = Duration::from_millis(100 * attempt as u64);
+                tokio::time::sleep(backoff).await;
+                warn!(
+                    skill = skill_name,
+                    attempt,
+                    retry = remote_config.retry,
+                    "Remote skill call failed, retrying..."
+                );
+            }
+        }
+        
+        Err(CisError::skill(format!(
+            "Remote skill '{}' failed after {} attempts: {:?}",
+            skill_name, remote_config.retry, last_error
+        )))
+    }
+    
+    /// 执行 DAG Skill（工作流编排）
+    async fn execute_dag_skill(
+        &self,
+        skill_name: &str,
+        _ctx: &BridgeSkillContext,
+        event: Event,
+    ) -> Result<serde_json::Value> {
+        // 1. 获取 Skill 信息
+        let skill_info = self.skill_manager
+            .get_registry()
+            .map_err(|e| CisError::skill(format!("Failed to access registry: {}", e)))?
+            .get(skill_name)
+            .cloned()
+            .ok_or_else(|| CisError::not_found(format!("Skill '{}' not found in registry", skill_name)))?;
+        
+        // 2. 加载 DAG 定义
+        let manifest_path = std::path::Path::new(&skill_info.meta.path).join("skill.toml");
+        let manifest_content = tokio::fs::read_to_string(&manifest_path).await
+            .map_err(|e| CisError::skill(format!("Failed to read manifest for '{}': {}", skill_name, e)))?;
+        
+        let manifest: crate::skill::manifest::SkillManifest = toml::from_str(&manifest_content)
+            .map_err(|e| CisError::skill(format!("Failed to parse manifest for '{}': {}", skill_name, e)))?;
+        
+        let dag_def = manifest.dag
+            .ok_or_else(|| CisError::skill(format!("DAG definition not found for skill '{}'", skill_name)))?;
+        
+        // 3. 转换为 TaskDag 并执行
+        let mut task_dag = dag_def.to_dag()
+            .map_err(|e| CisError::skill(format!("Failed to parse DAG: {}", e)))?;
+        
+        info!(
+            skill = skill_name,
+            tasks = dag_def.tasks.len(),
+            policy = ?dag_def.policy,
+            "Executing DAG skill"
+        );
+        
+        // 4. 执行 DAG 任务
+        let start_time = std::time::Instant::now();
+        let mut results = Vec::new();
+        let mut failed_tasks = Vec::new();
+        
+        // 按拓扑排序顺序执行任务
+        let execution_order: Vec<String> = dag_def.tasks.iter().map(|t| t.id.clone()).collect();
+        
+        for task_def in &dag_def.tasks {
+            let task_start = std::time::Instant::now();
+            
+            // 检查依赖是否都成功
+            let deps_satisfied = task_def.deps.iter().all(|dep_id| {
+                !failed_tasks.contains(dep_id)
+            });
+            
+            if !deps_satisfied {
+                info!(
+                    task_id = %task_def.id,
+                    "Skipping task due to failed dependencies"
+                );
+                failed_tasks.push(task_def.id.clone());
+                continue;
+            }
+            
+            // 执行任务
+            let task_result = if !task_def.command.is_empty() {
+                // 执行 shell 命令
+                self.execute_dag_command(&task_def.command, &task_def.id).await
+            } else if !task_def.skill.is_empty() {
+                // 执行子 skill - 通过 skill_manager 直接发送事件，避免递归
+                let sub_event = Event::Custom {
+                    name: "dag_task".to_string(),
+                    data: serde_json::json!({
+                        "task_id": &task_def.id,
+                        "parent_event": &event,
+                    }),
+                };
+                self.execute_dag_sub_skill(&task_def.skill, sub_event).await
+            } else {
+                Err(CisError::skill(format!("Task '{}' has neither command nor skill", task_def.id)))
+            };
+            
+            let task_elapsed = task_start.elapsed().as_millis() as u64;
+            
+            match task_result {
+                Ok(result) => {
+                    info!(
+                        task_id = %task_def.id,
+                        elapsed_ms = task_elapsed,
+                        "DAG task completed successfully"
+                    );
+                    results.push(serde_json::json!({
+                        "task_id": &task_def.id,
+                        "success": true,
+                        "result": result,
+                        "elapsed_ms": task_elapsed,
+                    }));
+                }
+                Err(e) => {
+                    warn!(
+                        task_id = %task_def.id,
+                        error = %e,
+                        elapsed_ms = task_elapsed,
+                        "DAG task failed"
+                    );
+                    failed_tasks.push(task_def.id.clone());
+                    results.push(serde_json::json!({
+                        "task_id": &task_def.id,
+                        "success": false,
+                        "error": e.to_string(),
+                        "elapsed_ms": task_elapsed,
+                    }));
+                    
+                    // 根据策略决定是否继续
+                    match dag_def.policy {
+                        crate::skill::manifest::DagPolicy::AllSuccess => {
+                            return Err(CisError::skill(format!(
+                                "DAG task '{}' failed and policy is AllSuccess", task_def.id
+                            )));
+                        }
+                        crate::skill::manifest::DagPolicy::FirstSuccess => {
+                            // 继续尝试其他任务
+                        }
+                        crate::skill::manifest::DagPolicy::AllowDebt => {
+                            // 允许失败，继续
+                        }
+                    }
+                }
+            }
+        }
+        
+        let total_elapsed = start_time.elapsed().as_millis() as u64;
+        
+        info!(
+            skill = skill_name,
+            total_tasks = dag_def.tasks.len(),
+            failed = failed_tasks.len(),
+            elapsed_ms = total_elapsed,
+            "DAG skill execution completed"
+        );
+        
+        Ok(serde_json::json!({
+            "skill": skill_name,
+            "status": if failed_tasks.is_empty() { "success" } else { "partial_failure" },
+            "results": results,
+            "failed_tasks": failed_tasks,
+            "elapsed_ms": total_elapsed,
+        }))
+    }
+    
+    /// 执行 DAG 中的子 Skill（非递归版本）
+    async fn execute_dag_sub_skill(&self, skill_name: &str, event: Event) -> Result<serde_json::Value> {
+        // 检查 skill 类型，只支持 Native 和 WASM，不支持 Remote 和 DAG（避免嵌套复杂性）
+        let skill_info = self.skill_manager
+            .get_info(skill_name)
+            .map_err(|e| CisError::skill(format!("Failed to get skill info: {}", e)))?
+            .ok_or_else(|| CisError::not_found(format!("Skill '{}' not found", skill_name)))?;
+        
+        match skill_info.meta.skill_type {
+            crate::skill::types::SkillType::Native => {
+                self.skill_manager.send_event(skill_name, event).await
+                    .map_err(|e| CisError::skill(format!("Failed to execute native skill '{}': {}", skill_name, e)))?;
+                Ok(serde_json::json!({"status": "executed"}))
+            }
+            crate::skill::types::SkillType::Wasm => {
+                // WASM 执行需要更多上下文，DAG 中暂不支持
+                Err(CisError::skill(format!("WASM skill '{}' not supported in DAG (yet)", skill_name)))
+            }
+            crate::skill::types::SkillType::Remote => {
+                Err(CisError::skill(format!("Remote skill '{}' not supported in DAG (avoid nested remote)", skill_name)))
+            }
+            crate::skill::types::SkillType::Dag => {
+                Err(CisError::skill(format!("Nested DAG skill '{}' not supported", skill_name)))
+            }
+        }
+    }
+    
+    /// 执行 DAG 中的 shell 命令
+    async fn execute_dag_command(&self, command: &str, task_id: &str) -> Result<serde_json::Value> {
+        use tokio::process::Command;
+        
+        info!(task_id, command, "Executing DAG shell command");
+        
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .output()
+            .await
+            .map_err(|e| CisError::skill(format!("Failed to execute command '{}': {}", command, e)))?;
+        
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        
+        if output.status.success() {
+            Ok(serde_json::json!({
+                "stdout": stdout,
+                "stderr": stderr,
+                "exit_code": 0,
+            }))
+        } else {
+            let exit_code = output.status.code().unwrap_or(-1);
+            Err(CisError::skill(format!(
+                "Command failed with exit code {}: {}",
+                exit_code, stderr
+            )))
         }
     }
 }

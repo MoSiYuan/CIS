@@ -6,6 +6,19 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use chrono::{DateTime, Utc};
 
+/// P2P 消息类型
+#[derive(Debug, Clone)]
+pub enum Message {
+    /// 心跳消息
+    Ping,
+    /// 心跳响应
+    Pong,
+    /// 数据消息
+    Data(Vec<u8>),
+    /// 文本消息
+    Text(String),
+}
+
 /// 对等节点信息
 #[derive(Debug, Clone)]
 pub struct PeerInfo {

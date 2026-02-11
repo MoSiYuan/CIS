@@ -5,9 +5,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use wasmer::{Engine, Module, Store, Instance, Memory, MemoryType};
+use wasmparser::{Validator, WasmFeatures};
 
 use crate::wasm::host::{HostContext, HostFunctions};
 use crate::wasm::WasmSkillConfig;
+use crate::wasm::sandbox::WasiSandbox;
 use crate::memory::MemoryServiceTrait;
 use crate::ai::AiProvider;
 use crate::error::{CisError, Result};
@@ -32,6 +34,8 @@ pub struct WasmRuntime {
     engine: Engine,
     store: Arc<Mutex<Store>>,
     config: WasmSkillConfig,
+    /// WASI 沙箱配置
+    sandbox: Option<WasiSandbox>,
 }
 
 impl WasmRuntime {
@@ -64,7 +68,46 @@ impl WasmRuntime {
             engine,
             store: Arc::new(Mutex::new(store)),
             config,
+            sandbox: None,
         })
+    }
+
+    /// 添加沙箱配置到运行时
+    ///
+    /// # 参数
+    ///
+    /// - `sandbox`: WASI 沙箱配置
+    ///
+    /// # 返回
+    ///
+    /// 返回自身以支持链式调用
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use cis_core::wasm::{WasmRuntime, WasiSandbox};
+    ///
+    /// let runtime = WasmRuntime::new()
+    ///     .expect("Failed to create runtime")
+    ///     .with_sandbox(
+    ///         WasiSandbox::new()
+    ///             .with_readonly_path("/data")
+    ///             .with_writable_path("/tmp")
+    ///     );
+    /// ```
+    pub fn with_sandbox(mut self, sandbox: WasiSandbox) -> Self {
+        self.sandbox = Some(sandbox);
+        self
+    }
+
+    /// 获取沙箱配置的引用
+    pub fn sandbox(&self) -> Option<&WasiSandbox> {
+        self.sandbox.as_ref()
+    }
+
+    /// 检查是否配置了沙箱
+    pub fn has_sandbox(&self) -> bool {
+        self.sandbox.is_some()
     }
 
     /// 计算内存页数限制
@@ -85,6 +128,52 @@ impl WasmRuntime {
             .unwrap_or_else(|| Duration::from_millis(DEFAULT_EXECUTION_TIMEOUT_MS))
     }
     
+    /// 验证 WASM 模块
+    ///
+    /// 使用 wasmparser 进行深度验证，检查：
+    /// - 魔数和版本
+    /// - 模块结构完整性
+    /// - 不安全的特性（如异常、内存64等）
+    fn validate_wasm(&self, wasm_bytes: &[u8]) -> Result<()> {
+        // 1. 基本检查：魔数和版本
+        if wasm_bytes.len() < 8 {
+            return Err(CisError::wasm("WASM module too small"));
+        }
+        if wasm_bytes[0..4] != [0x00, 0x61, 0x73, 0x6d] {
+            return Err(CisError::wasm("Invalid WASM magic number"));
+        }
+        if wasm_bytes[4..8] != [0x01, 0x00, 0x00, 0x00] {
+            return Err(CisError::wasm("Unsupported WASM version"));
+        }
+
+        // 2. 使用 wasmparser 进行深度验证
+        let mut validator = Validator::new_with_features(WasmFeatures {
+            memory64: false,           // 禁用 64 位内存
+            exceptions: false,         // 禁用异常
+            threads: false,            // 禁用线程
+            multi_memory: false,       // 禁用多内存
+            simd: true,                // 允许 SIMD（常用）
+            bulk_memory: true,         // 允许批量内存操作
+            reference_types: true,     // 允许引用类型
+            // 其他特性使用默认值
+            ..WasmFeatures::default()
+        });
+
+        validator.validate_all(wasm_bytes)
+            .map_err(|e| CisError::wasm(format!("WASM validation failed: {}", e)))?;
+
+        // 3. 检查模块大小限制（最大 100MB）
+        const MAX_MODULE_SIZE: usize = 100 * 1024 * 1024;
+        if wasm_bytes.len() > MAX_MODULE_SIZE {
+            return Err(CisError::wasm(
+                format!("WASM module size {} exceeds maximum {}", 
+                    wasm_bytes.len(), MAX_MODULE_SIZE)
+            ));
+        }
+
+        Ok(())
+    }
+
     /// 加载 WASM 模块
     ///
     /// # 参数
@@ -104,16 +193,8 @@ impl WasmRuntime {
     /// // let instance = runtime.load_module(&wasm_bytes).unwrap();
     /// ```
     pub fn load_module(&self, wasm_bytes: &[u8]) -> Result<WasmModule> {
-        // 验证 WASM 魔数和版本
-        if wasm_bytes.len() < 8 {
-            return Err(CisError::wasm("WASM module too small"));
-        }
-        if wasm_bytes[0..4] != [0x00, 0x61, 0x73, 0x6d] {
-            return Err(CisError::wasm("Invalid WASM magic number"));
-        }
-        if wasm_bytes[4..8] != [0x01, 0x00, 0x00, 0x00] {
-            return Err(CisError::wasm("Unsupported WASM version"));
-        }
+        // 完整验证 WASM
+        self.validate_wasm(wasm_bytes)?;
 
         let module = Module::from_binary(&self.engine, wasm_bytes)
             .map_err(|e| CisError::wasm(format!("Failed to load module: {}", e)))?;
@@ -123,6 +204,7 @@ impl WasmRuntime {
             store: Arc::clone(&self.store),
             max_memory_pages: self.get_max_memory_pages(),
             execution_timeout: self.get_execution_timeout(),
+            sandbox: self.sandbox.clone(),
         })
     }
     
@@ -147,6 +229,65 @@ impl WasmRuntime {
         module.instantiate(memory_service, ai_provider)
     }
     
+    /// 执行 WASM Skill
+    ///
+    /// 加载、实例化并执行 WASM Skill，返回执行结果。
+    ///
+    /// # 参数
+    ///
+    /// - `skill_name`: Skill 名称（用于日志和错误信息）
+    /// - `wasm_bytes`: WASM 字节码
+    /// - `event_data`: 事件数据（JSON）
+    /// - `memory_service`: 记忆服务
+    /// - `ai_provider`: AI Provider (Arc<Mutex<dyn AiProvider>>)
+    ///
+    /// # 返回
+    ///
+    /// - `Ok(serde_json::Value)`: 执行结果
+    /// - `Err(CisError)`: 执行失败
+    pub async fn execute_skill(
+        &self,
+        skill_name: &str,
+        wasm_bytes: &[u8],
+        event_data: serde_json::Value,
+        memory_service: Arc<Mutex<dyn MemoryServiceTrait>>,
+        ai_provider: Arc<Mutex<dyn AiProvider>>,
+    ) -> Result<serde_json::Value> {
+        tracing::info!("Executing WASM skill '{}' ({} bytes)", skill_name, wasm_bytes.len());
+        
+        // 1. 加载并实例化 WASM 模块
+        let instance = self.load_skill(wasm_bytes, memory_service, ai_provider)
+            .map_err(|e| CisError::wasm(format!("Failed to load WASM skill '{}': {}", skill_name, e)))?;
+        
+        // 2. 初始化 Skill
+        instance.init()
+            .map_err(|e| CisError::wasm(format!("Failed to initialize WASM skill '{}': {}", skill_name, e)))?;
+        
+        // 3. 序列化事件数据
+        let event_json = serde_json::to_string(&event_data)
+            .map_err(|e| CisError::wasm(format!("Failed to serialize event data: {}", e)))?;
+        
+        // 4. 调用事件处理函数
+        let result_code = instance.on_event("execute", event_json.as_bytes())
+            .map_err(|e| CisError::wasm(format!("WASM skill '{}' execution failed: {}", skill_name, e)))?;
+        
+        // 5. 构造执行结果
+        let result = serde_json::json!({
+            "success": result_code >= 0,
+            "code": result_code,
+            "skill": skill_name,
+        });
+        
+        // 6. 关闭 Skill
+        if let Err(e) = instance.shutdown() {
+            tracing::warn!("Failed to shutdown WASM skill '{}': {}", skill_name, e);
+        }
+        
+        tracing::info!("WASM skill '{}' executed successfully (code: {})", skill_name, result_code);
+        
+        Ok(result)
+    }
+
     /// 获取引擎的引用
     pub fn engine(&self) -> &Engine {
         &self.engine
@@ -171,6 +312,8 @@ pub struct WasmModule {
     store: Arc<Mutex<Store>>,
     pub(crate) max_memory_pages: u32,
     pub(crate) execution_timeout: Duration,
+    /// WASI 沙箱配置
+    pub(crate) sandbox: Option<WasiSandbox>,
 }
 
 impl WasmModule {

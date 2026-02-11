@@ -657,7 +657,12 @@ impl WorkerService {
             // 检查 Worker 进程是否仍在运行
             let pid = info.summary.pid;
             let mut last_size = lines.len();
-            let timeout = tokio::time::Duration::from_secs(30);
+            // 使用配置的超时值，默认为 30 秒
+            let timeout_secs = std::env::var("CIS_WORKER_LOG_TIMEOUT_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(30);
+            let timeout = tokio::time::Duration::from_secs(timeout_secs);
             let start_time = tokio::time::Instant::now();
             
             // 持续监控文件变化，直到进程结束或超时
