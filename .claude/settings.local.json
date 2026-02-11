@@ -1,0 +1,103 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo clean:*)",
+      "Bash(cargo test:*)",
+      "Bash(chmod:*)",
+      "Bash(bash:*)",
+      "Bash(cargo build:*)",
+      "Bash(pkill:*)",
+      "Bash(grep:*)",
+      "Bash(cargo run:*)",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(curl:*)",
+      "Bash(opencode --help:*)",
+      "Bash(opencode run --help:*)",
+      "Bash(opencode:*)",
+      "Bash(./target/release/cis:*)",
+      "Bash(./bin/cis-node:*)",
+      "Bash(docker container prune:*)",
+      "Bash(docker image ls:*)",
+      "Bash(docker:*)",
+      "Bash(claude config set:*)",
+      "Bash(npx skills add:*)",
+      "Bash(npx skills find:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(rm -rf target/debug:*)",
+      "Bash(mkdir -p:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(tee:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(touch:*)",
+      "Bash(tree:*)",
+      "ReadFile(*)",
+      "WriteFile(*)",
+      "StrReplaceFile(*)"
+    ]
+  },
+  "project": {
+    "name": "CIS (Cluster of Independent Systems)",
+    "version": "1.1.5",
+    "language": "Rust",
+    "architecture": "Distributed Agent System with P2P networking, DAG orchestration, and semantic memory"
+  },
+  "documentation": {
+    "claude_guide": ".claude/CLAUDE.md",
+    "readme": "Readme.md",
+    "changelog": "CHANGELOG.md"
+  },
+  "development": {
+    "current_phase": "v1.1.5 release",
+    "strict_mode": true,
+    "shame_list_tracking": true,
+    "no_mock_in_production": true,
+    "test_coverage_target": 75
+  },
+  "cis_capabilities": {
+    "memory": {
+      "private": "本地加密，永不同步，存储敏感信息",
+      "public": "明文存储，P2P同步，存储共享配置",
+      "semantic_search": "支持自然语言搜索记忆"
+    },
+    "dag": {
+      "description": "有向无环图任务编排",
+      "levels": ["Mechanical", "Recommended", "Confirmed", "Arbitrated"],
+      "use_case": "多步骤workflow，依赖管理，并行执行"
+    },
+    "p2p": {
+      "modes": ["单机", "局域网mDNS", "P2P公网", "混合模式"],
+      "features": ["自动发现", "NAT穿透", "记忆同步", "联邦网络"]
+    },
+    "matrix": {
+      "description": "Matrix联邦网关",
+      "features": ["Element兼容", "端到端加密", "跨节点消息"]
+    }
+  },
+  "rules": [
+    "Never use simplified/mock implementations without recording in SHAME_LIST.md",
+    "Every function must have error handling",
+    "Every module must have tests",
+    "No hardcoded values - use config abstraction",
+    "No global state - use dependency injection",
+    "Document all public APIs",
+    "Check SHAME_LIST.md before marking task complete",
+    "When user mentions CIS memory/DAG/network, refer to .claude/CLAUDE.md for usage patterns",
+    "Always ask user preference before storing sensitive data to Public memory",
+    "Use semantic search (set_with_embedding) for important memories that need natural language retrieval"
+  ]
+}
