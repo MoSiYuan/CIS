@@ -1,4 +1,23 @@
-# CIS 安装和配置指南
+# CIS v1.1.5 安装和配置指南
+
+> 📦 **最新版本**: v1.1.5
+> 
+> 🔗 [更新日志](../CHANGES_v1.1.5.md) | [测试报告](../TEST_REPORT_v1.1.5.md) | [代码统计](../CODE_STATISTICS.md)
+
+## 系统要求
+
+| 平台 | 最低版本 | 架构 |
+|------|---------|------|
+| macOS | 12.0+ | arm64 (Apple Silicon), x86_64 |
+| Linux | Ubuntu 20.04+ / Debian 11+ | arm64, x86_64 |
+| Windows | Windows 10/11 | x86_64 |
+
+## 依赖项
+
+- **Rust**: 1.70+ (从源码构建时需要)
+- **SQLite**: 3.35+ (通常系统自带)
+- **OpenSSL**: 1.1+ (Linux/macOS)
+- **Docker**: 20.10+ (可选，用于容器化部署)
 
 ## 📦 安装方式
 
@@ -25,11 +44,46 @@ cd cis
 ./scripts/install/setup-dev.sh
 ```
 
-### 方式三：手动安装
+### 方式三：Docker 部署（v1.1.5 新增）
+
+使用预构建的 Docker 镜像快速部署：
 
 ```bash
-# 构建 Release 版本
-cargo build --release --bin cis-node
+# 1. 克隆仓库
+git clone https://github.com/MoSiYuan/CIS.git
+cd CIS/test-network
+
+# 2. 启动 3 节点测试网络
+docker-compose -f docker-compose.cis-updated.yml up -d
+
+# 3. 查看节点状态
+docker logs cis-node1
+docker logs cis-node2
+docker logs cis-node3
+
+# 4. 进入节点执行命令
+docker exec -it cis-node1 sh
+cis-node --version
+```
+
+Docker 镜像包含：
+- CIS 内核 (placeholder，等待 Linux 构建)
+- Python3 + fastembed 向量引擎
+- Node.js + Claude CLI
+- 网络工具 (ping, nc, dig, iperf3)
+
+### 方式四：手动安装
+
+```bash
+# 克隆仓库
+git clone https://github.com/MoSiYuan/CIS.git
+cd CIS
+
+# 构建 Release 版本（需要 Rust 1.70+）
+cargo build --release -p cis-node
+
+# 验证构建
+./target/release/cis-node --version
 
 # 创建符号链接（可选）
 ln -sf $(pwd)/target/release/cis-node ~/.local/bin/cis
@@ -127,12 +181,36 @@ cis init --skip-checks
 
 参见 `config.example.toml` 获取完整配置说明。
 
-快速配置示例：
+### v1.1.5 新增配置
 
 ```toml
 [node]
 id = "自动生成"
 name = "my-node"
+
+# WASM 沙箱配置（v1.1.5 新增）
+[wasm]
+max_memory_mb = 128
+max_execution_seconds = 30
+enable_wasi = true
+
+# DHT 配置（v1.1.5 新增）
+[p2p.dht]
+enabled = true
+bootstrap_nodes = ["node1.example.com:7677", "node2.example.com:7677"]
+routing_table_size = 100
+
+# Remote Skill 配置（v1.1.5 新增）
+[[skill.remote]]
+name = "analysis-service"
+endpoint = "https://api.example.com/analyze"
+timeout_seconds = 30
+retry_count = 3
+
+# DAG 工作流配置（v1.1.5 新增）
+[[skill.dag]]
+name = "data-pipeline"
+config_file = "./workflows/pipeline.yaml"
 
 [ai]
 default_provider = "claude"
@@ -141,6 +219,8 @@ default_provider = "claude"
 model = "claude-sonnet-4-20250514"
 max_tokens = 4096
 ```
+
+### 快速配置示例
 
 ---
 
@@ -180,6 +260,50 @@ cis status --paths
 ```
 
 ### 常见问题
+
+**Q: v1.1.5 新功能无法使用？**
+```bash
+# 检查版本
+cis-node --version
+# 应显示 v1.1.5 或更高
+
+# 检查功能支持
+cis-node features
+# 查看 WASM/Remote/DAG/DHT 是否启用
+```
+
+**Q: WASM Skill 执行失败？**
+```bash
+# 检查 WASM 文件格式
+wasm-validate ./my-skill.wasm
+
+# 检查沙箱权限
+cis wasm check --file ./my-skill.wasm
+
+# 查看详细错误日志
+cis skill execute --wasm ./my-skill.wasm --verbose
+```
+
+**Q: DHT 公共记忆同步失败？**
+```bash
+# 检查 P2P 网络状态
+cis network status
+
+# 检查 DHT 路由表
+cis p2p dht status
+
+# 手动同步测试
+cis memory sync-public --key "test" --value "hello" --force
+```
+
+**Q: Matrix 登录验证码不显示？**
+```bash
+# 检查服务器日志
+cis logs --filter matrix
+
+# 验证码会发送到注册时配置的邮箱/手机
+# 在密码字段输入格式: otp:123456
+```
 
 **Q: CIS 找不到配置文件？**
 ```bash

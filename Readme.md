@@ -1,12 +1,18 @@
-# CIS / 独联体
+# CIS / 独联体 v1.1.5
 
 **单机 LLM Agent 记忆本地化辅助工具**
 
 [![CI](https://github.com/MoSiYuan/CIS/actions/workflows/ci.yml/badge.svg)](https://github.com/MoSiYuan/CIS/actions/workflows/ci.yml)
 [![Release](https://github.com/MoSiYuan/CIS/actions/workflows/release.yml/badge.svg)](https://github.com/MoSiYuan/CIS/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-1104%2F1135-brightgreen.svg)](./TEST_REPORT_v1.1.5.md)
+[![Code](https://img.shields.io/badge/code-166k%20lines-blue.svg)](./CODE_STATISTICS.md)
 
 **基于独联体型网络架构（CIS: Cluster of Independent Systems），实现 0 Token 互联的 Agent 阵列**
+
+> 📦 **v1.1.5 已发布**: Matrix 登录验证码、Remote/DAG Skill 调用、联邦请求签名、DHT 公共记忆同步
+> 
+> 🔗 [v1.1.5 更新日志](./CHANGES_v1.1.5.md) | [测试报告](./TEST_REPORT_v1.1.5.md) | [代码审查](./CODE_REVIEW_v1.1.5.md)
 
 ---
 
@@ -63,7 +69,24 @@
 - **节点间零 Token**：节点间使用 Protobuf 二进制协议通信，**不消耗 LLM Token**（注意：调用 LLM 生成内容仍需消耗相应 Token）
 - **联邦同步**：基于 Matrix 协议的 Room 联邦机制，任务/记忆跨节点安全流转
 
-### 7. 独联体架构（去中心化）
+### 7. WASM Skill 沙箱执行（v1.1.5 新增）
+- **WASM 运行时**: Wasmer 引擎，支持多种编程语言编写的 Skill
+- **安全沙箱**: WASI 沙箱，限制文件系统、网络、系统调用访问
+- **资源限制**: 内存限制 (128MB)、执行时间限制、指令数限制
+- **原生/远程/DAG 技能**: 支持 Native、WASM、Remote HTTP、DAG 工作流四种技能类型
+
+### 8. Matrix 联邦增强（v1.1.5 新增）
+- **登录验证码**: Matrix 首次登录 6 位 OTP 验证码机制
+- **联邦请求签名**: Ed25519 签名验证，确保联邦事件可信
+- **完整 Sync 实现**: 支持 joined rooms、invites、left rooms 的完整同步
+- **Bridge 执行**: Matrix 指令真实执行（Native/WASM/Remote/DAG），非模拟
+
+### 9. DHT 公共记忆（v1.1.5 新增）
+- **Kademlia DHT**: 分布式哈希表，支持节点发现和路由
+- **公共记忆同步**: `sync_public_memory`, `get_public_memory`, `list_keys`
+- **Agent→Skill 直接调用**: AgentCisClient 支持 skill_manager 直接调用
+
+### 10. 独联体架构（去中心化）
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    CIS Agent 阵列                           │
@@ -168,7 +191,45 @@ cis skill do "分析今天的代码提交并生成报告"
 # 5. 语义搜索本地记忆（向量检索，sqlite-vec，无需 LLM）
 cis memory search "暗黑模式相关的配置"
 
-# 6. 网络 ACL 管理（新增）
+# 6. 网络 ACL 管理
+cis network allow did:cis:abc123... --reason "信任的工作站"
+cis network mode whitelist
+cis network list
+
+# 7. WASM Skill 执行（v1.1.5 新增）
+cis skill execute --wasm ./my-skill.wasm --input '{"task": "analyze"}'
+
+# 8. Remote Skill 调用（v1.1.5 新增）
+cis skill call-remote https://api.example.com/skill --endpoint analyze
+
+# 9. DAG 工作流执行（v1.1.5 新增）
+cis skill run-dag ./workflow.yaml --input data.json
+
+# 10. DHT 公共记忆操作（v1.1.5 新增）
+cis memory sync-public --key "shared-config" --value '{"theme": "dark"}'
+cis memory get-public --key "shared-config"
+
+# 11. 启动 GUI（新增）
+cis-gui
+```
+
+### v1.1.5 新增功能演示
+
+```bash
+# Matrix 首次登录验证码（安全增强）
+# 登录时会收到 6 位 OTP 验证码，需在密码中输入 otp:XXXXXX
+
+# Agent → Skill 直接调用
+# Agent 可以通过 AgentCisClient 直接调用 Skill，无需通过 Matrix
+
+# 联邦请求签名
+# 所有联邦事件自动使用 Ed25519 签名，确保可信传输
+
+# 公共记忆同步到 DHT
+# 节点间可以通过 DHT 共享公共配置和数据
+```
+
+### 更多命令
 cis network allow did:cis:abc123... --reason "信任的工作站"
 cis network mode whitelist
 cis network list
@@ -605,6 +666,47 @@ CIS Node Architecture
 - [Matrix Federation Implementation](docs/MATRIX_FEDERATION_IMPROVEMENT_PLAN.md)
 - [Production Readiness](docs/PRODUCTION_READINESS.md)
 - [Developer Docs](docs/STORAGE_DESIGN.md)
+
+---
+
+## 🆕 v1.1.5 更新亮点
+
+### 1. Matrix 登录验证码 (Security Enhancement)
+- 首次登录需要 6 位 OTP 验证码
+- 防止暴力破解和未授权访问
+- 验证码通过安全通道发送
+
+### 2. WASM Skill 沙箱执行
+- 完整的 WASM 运行时（Wasmer）
+- WASI 沙箱限制系统调用
+- 资源限制：128MB 内存、30 秒执行时间
+
+### 3. Remote/DAG Skill 调用
+- **Remote Skill**: HTTP 远程调用其他 CIS 节点技能
+- **DAG Skill**: 复杂工作流编排，支持条件分支、并行执行
+- **Native Skill**: 本地 Rust 原生执行
+
+### 4. 联邦请求签名 (Ed25519)
+- 所有联邦事件使用 Ed25519 签名
+- 基于 DID 的公钥验证
+- 防止中间人攻击和消息篡改
+
+### 5. DHT 公共记忆同步
+- Kademlia DHT 分布式存储
+- `sync_public_memory`: 同步公共配置
+- `get_public_memory`: 检索公共数据
+- `list_keys`: 列出所有公共键
+
+### 6. Agent → Skill 直接调用
+- AgentCisClient 支持 skill_manager
+- 绕过 Matrix，直接本地调用
+- 更低的延迟和更高的效率
+
+### 测试状态
+- ✅ 1104/1135 测试通过
+- ✅ 16.6 万行 Rust 代码
+- ✅ 65% 测试代码覆盖率
+- 📊 [详细测试报告](./TEST_REPORT_v1.1.5.md)
 
 ---
 
