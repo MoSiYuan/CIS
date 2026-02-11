@@ -1,6 +1,6 @@
 [package]
 name = "cis-skill-sdk"
-version = "1.1.3"
+version = "1.1.5"
 edition = "2021"
 description = "CIS Skill SDK - 统一 Skill 开发框架"
 license = "MIT"

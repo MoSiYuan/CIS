@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-02-11
+
+### Matrix 联邦增强
+
+- **Matrix 首次登录验证码机制**
+  - 6位 OTP 验证码防止暴力破解
+  - 验证码通过安全通道发送
+  - 密码格式: `otp:XXXXXX`
+
+- **联邦请求签名 (Ed25519)**
+  - 所有联邦事件使用 Ed25519 签名
+  - 基于 DID 的公钥验证
+  - 防止中间人攻击和消息篡改
+
+- **完整 Sync 实现**
+  - Joined rooms 完整同步
+  - Invited rooms 状态同步
+  - Left rooms 历史记录
+
+- **Bridge 真实执行**
+  - Matrix 指令真实执行（非模拟）
+  - 支持 Native/WASM/Remote/DAG 技能
+
+### WASM Skill 沙箱执行
+
+- **WASM 运行时 (Wasmer)**
+  - 支持多种编程语言编写的 Skill
+  - WASI 沙箱限制系统调用
+  - 内存限制 (128MB)
+  - 执行时间限制 (30秒)
+
+- **四种技能类型**
+  - Native: Rust 原生执行
+  - WASM: WebAssembly 沙箱执行
+  - Remote: HTTP 远程调用
+  - DAG: 工作流编排
+
+### DHT 公共记忆同步
+
+- **Kademlia DHT 实现**
+  - 分布式哈希表存储
+  - 节点发现和路由
+  - XOR 距离度量
+
+- **公共记忆 API**
+  - `sync_public_memory`: 同步公共配置
+  - `get_public_memory`: 检索公共数据
+  - `list_public_memory_keys`: 列出所有键
+
+### Agent → Skill 直接调用
+
+- **AgentCisClient**
+  - 支持 skill_manager 直接调用
+  - 绕过 Matrix，本地执行
+  - 更低延迟和更高效率
+
+### 测试和代码质量
+
+- **测试覆盖**: 1104/1135 测试通过
+- **代码量**: 16.6 万行 Rust 代码
+- **测试代码**: 65% 覆盖率
+- **Docker 测试环境**: 3 节点组网测试
+
+
 ## [1.1.3] - 2026-02-10
 
 ### Phase 3: 全模块真实实现
