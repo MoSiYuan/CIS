@@ -1,0 +1,27 @@
+# Update existing image with working components
+FROM cis-test-full:latest
+
+# Remove the macOS binary
+RUN rm -f /usr/local/bin/cis-node
+
+# Create a placeholder cis-node script
+RUN echo '#!/bin/sh' > /usr/local/bin/cis-node && \
+    echo '# CIS Node placeholder - Linux binary needs to be built' >> /usr/local/bin/cis-node && \
+    echo 'echo "CIS Node v1.1.5 (placeholder)"' >> /usr/local/bin/cis-node && \
+    echo 'echo "WARNING: This is a placeholder. The actual Linux binary needs to be built."' >> /usr/local/bin/cis-node && \
+    chmod +x /usr/local/bin/cis-node
+
+# Update entrypoint
+RUN echo '#!/bin/sh' > /entrypoint.sh && \
+    echo 'echo "CIS Node Container"' >> /entrypoint.sh && \
+    echo 'echo "=================="' >> /entrypoint.sh && \
+    echo 'echo "Node ID: $${CIS_NODE_ID:-unknown}"' >> /entrypoint.sh && \
+    echo 'cis-node --version' >> /entrypoint.sh && \
+    echo 'tail -f /dev/null' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+# Verify
+RUN cis-node --version
+
+EXPOSE 7676 7677/udp 6767 6768
+ENTRYPOINT ["/entrypoint.sh"]

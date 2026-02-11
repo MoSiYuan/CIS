@@ -6,6 +6,14 @@
 //!
 //! 登录逻辑使用 `MatrixSocialStore`（matrix-social.db）进行用户验证和令牌管理，
 //! 与协议事件存储分离。
+//!
+//! ## Verification Code Flow
+//!
+//! 首次登录的用户需要验证码（类似节点配对）：
+//! 1. 用户在 Element 客户端输入用户名和任意密码
+//! 2. 后端检测到是新用户/需要验证，在日志中输出验证码
+//! 3. 用户再次登录，密码字段输入特殊格式 `otp:123456` 传递验证码
+//! 4. 验证通过后，用户后续登录不再需要验证码（密码任意）
 
 use axum::{extract::State, Json};
 use rand::RngCore;
@@ -82,12 +90,57 @@ pub async fn login(
         LoginRequest::Password {
             identifier,
             user,
-            password: _,
+            password,
             device_id,
             initial_device_display_name,
         } => {
             // Extract user ID from identifier or direct user field
             let user_id = extract_user_id(identifier, user)?;
+            
+            // Check if user needs verification code
+            let needs_verification = social_store.needs_verification_code(&user_id)?;
+            
+            if needs_verification {
+                // Check if password contains verification code (format: "otp:123456")
+                if let Some(code) = extract_otp_code(&password) {
+                    // Verify the code
+                    match social_store.verify_login_code(&user_id, &code) {
+                        Ok(true) => {
+                            tracing::info!(user_id, "Login verification code accepted");
+                        }
+                        Ok(false) => {
+                            return Err(MatrixError::Forbidden(
+                                "Invalid verification code".to_string()
+                            ));
+                        }
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    }
+                } else {
+                    // User needs verification but didn't provide code
+                    // Generate a new code and return error
+                    let (code, is_new) = social_store.generate_login_code(&user_id)?;
+                    
+                    if is_new {
+                        tracing::info!(
+                            user_id,
+                            code = %code,
+                            "New user login - verification code generated (expires in 5 minutes)"
+                        );
+                    } else {
+                        tracing::info!(
+                            user_id,
+                            code = %code,
+                            "User login requires verification - code generated (expires in 5 minutes)"
+                        );
+                    }
+                    
+                    return Err(MatrixError::Forbidden(
+                        "Login requires verification code. Please check server logs for the 6-digit code and retry with password 'otp:XXXXXX'".to_string()
+                    ));
+                }
+            }
             
             // Ensure user exists (create if not) using social_store
             if !social_store.user_exists(&user_id)? {
@@ -107,6 +160,8 @@ pub async fn login(
             
             // Generate and store access token using social_store
             let access_token = social_store.create_token(&user_id, Some(&device_id), None)?;
+            
+            tracing::info!(user_id, device_id, "User logged in successfully");
             
             Ok(Json(LoginResponse {
                 access_token,
@@ -134,6 +189,23 @@ pub async fn login(
             }
         }
     }
+}
+
+/// Extract OTP code from password field
+/// Format: "otp:123456" or "OTP:123456"
+fn extract_otp_code(password: &str) -> Option<String> {
+    let password = password.trim();
+    if password.len() == 10 {
+        // Check for "otp:123456" format (case insensitive)
+        if password[..4].eq_ignore_ascii_case("otp:") {
+            let code = &password[4..];
+            // Verify it's exactly 6 digits
+            if code.len() == 6 && code.chars().all(|c| c.is_ascii_digit()) {
+                return Some(code.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// Extract user ID from identifier or user field

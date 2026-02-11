@@ -46,6 +46,7 @@ pub mod embedding;
 pub mod embedding_fastembed;
 pub mod embedding_download;
 pub mod embedding_init;
+pub mod embedding_service;
 
 pub use claude::{ClaudeCliProvider, ClaudeConfig};
 pub use embedding::{
@@ -65,8 +66,10 @@ pub use embedding_init::{
     interactive_init, auto_init, needs_init,
     EmbeddingInitConfig, EmbeddingInitOption, ModelDownloadConfig,
 };
+#[cfg(feature = "vector")]
+pub use embedding_service::EmbeddingService;
 pub use kimi::{KimiCodeProvider, KimiConfig};
-pub use opencode::{OpenCodeProvider, OpenCodeConfig};
+pub use opencode::{OpenCodeProvider, OpenCodeConfig, OpenCodeSession};
 
 /// AI Provider 错误
 #[derive(Error, Debug)]

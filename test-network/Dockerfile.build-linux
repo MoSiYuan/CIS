@@ -1,0 +1,48 @@
+# 在 Docker 中构建 Linux 版本的 cis-node
+FROM rust:1.84-slim-bookworm AS builder
+
+WORKDIR /build
+
+# 安装依赖
+RUN apt-get update && apt-get install -y \
+    pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制 Cargo 文件
+COPY Cargo.toml Cargo.lock ./
+COPY cis-core/Cargo.toml cis-core/
+COPY cis-node/Cargo.toml cis-node/
+COPY cis-skill-sdk/Cargo.toml cis-skill-sdk/
+COPY cis-skill-sdk/cis-skill-sdk-derive/Cargo.toml cis-skill-sdk/cis-skill-sdk-derive/
+COPY crates/cis-capability/Cargo.toml crates/cis-capability/
+COPY crates/cis-mcp-adapter/Cargo.toml crates/cis-mcp-adapter/
+COPY cis-gui/Cargo.toml cis-gui/
+COPY skills/*/Cargo.toml skills/*/
+
+# 创建虚拟源文件
+RUN mkdir -p cis-core/src cis-node/src cis-skill-sdk/src cis-skill-sdk/cis-skill-sdk-derive/src \
+    crates/cis-capability/src crates/cis-mcp-adapter/src cis-gui/src \
+    skills/*/src && \
+    echo "fn main(){}" > cis-node/src/main.rs && \
+    echo "" > cis-core/src/lib.rs
+
+# 预编译依赖
+RUN cargo build --release -p cis-node 2>/dev/null || true
+
+# 复制真实源码
+COPY cis-core/src cis-core/src
+COPY cis-node/src cis-node/src
+COPY cis-skill-sdk/src cis-skill-sdk/src
+COPY cis-skill-sdk/cis-skill-sdk-derive/src cis-skill-sdk/cis-skill-sdk-derive/src
+COPY crates/cis-capability/src crates/cis-capability/src
+COPY crates/cis-mcp-adapter/src crates/cis-mcp-adapter/src
+COPY cis-gui/src cis-gui/src
+COPY skills/*/src skills/*/
+
+# 构建
+RUN touch cis-node/src/main.rs && \
+    cargo build --release -p cis-node && \
+    strip target/release/cis-node
+
+# 输出到 /output
+RUN mkdir -p /output && cp target/release/cis-node /output/

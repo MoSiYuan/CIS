@@ -9,6 +9,7 @@
 //! - Whitelist-based admission control
 //! - Solitary mode for complete isolation
 //! - DNS-style ACL propagation
+//! - Certificate Pinning (TOFU / Strict mode)
 //!
 //! ## Architecture
 //!
@@ -33,7 +34,9 @@ pub mod acl;
 pub mod acl_rules;
 pub mod agent_session;
 pub mod audit;
+pub mod cert_pinning;
 pub mod did_verify;
+pub mod rate_limiter;
 pub mod session_manager;
 pub mod pairing;
 pub mod simple_discovery;
@@ -44,6 +47,8 @@ pub mod websocket_integration;
 
 #[cfg(test)]
 mod acl_tests;
+
+
 
 pub use acl::{NetworkAcl, NetworkMode, AclEntry, AclResult};
 pub use acl_rules::{
@@ -58,6 +63,11 @@ pub use agent_session::{
     SessionState,
     SessionId,
     AGENT_SESSION_PORT,
+};
+pub use cert_pinning::{
+    CertificatePinning, MemoryPinStore, SqlitePinStore, PinStore,
+    PinEntry, PinningPolicy, PinVerification, HashAlgorithm,
+    compute_fingerprint,
 };
 pub use session_manager::{
     EnhancedSessionManager,
@@ -84,6 +94,14 @@ pub use websocket_auth::{
     WsAuthMessage,
     WebSocketAuthMiddleware,
     check_acl_for_peer,
+};
+pub use rate_limiter::{
+    RateLimiter,
+    TokenBucket,
+    RateLimitConfig,
+    LimitConfig,
+    BanConfig,
+    LimitType,
 };
 pub use websocket::{
     WsClient,
@@ -150,6 +168,18 @@ pub enum NetworkError {
     
     #[error("Network IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// Certificate pinning mismatch detected
+    #[error("Certificate pinning mismatch for {domain}: {message}")]
+    CertificatePinMismatch { domain: String, message: String },
+
+    /// Certificate pin not found
+    #[error("No certificate pin found for {0}")]
+    CertificatePinNotFound(String),
+
+    /// Certificate pin expired
+    #[error("Certificate pin expired for {0}")]
+    CertificatePinExpired(String),
 }
 
 impl From<NetworkError> for CisError {

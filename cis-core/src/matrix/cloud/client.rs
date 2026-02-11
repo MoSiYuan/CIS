@@ -3,14 +3,15 @@
 use super::{
     CloudAnchorConfig, CloudAnchorError, CloudAnchorResult, DiscoveredPeer, HolePunchInfo,
     HolePunchRequest, HolePunchResponse, NatType, NodeRegistration, PunchCoordination,
-    RegistrationResponse, RelayMessage, types::{HeartbeatRequest, HeartbeatResponse},
+    RegistrationResponse, RelayMessage, QuotaInfo,
+    types::{HeartbeatRequest, HeartbeatResponse},
 };
 use reqwest::{Client, ClientBuilder, Response, StatusCode};
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock as AsyncRwLock;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
@@ -38,6 +39,10 @@ pub struct CloudAnchorClient {
     quota_used: AtomicU64,
     /// 统计信息
     stats: Arc<RwLock<ClientStats>>,
+    /// 配额信息缓存
+    quota_cache: AsyncRwLock<Option<(QuotaInfo, Instant)>>,
+    /// 配额缓存有效期（秒）
+    quota_cache_ttl: Duration,
 }
 
 /// 客户端统计信息
@@ -80,6 +85,8 @@ impl CloudAnchorClient {
             heartbeat_handle: AsyncRwLock::new(None),
             quota_used: AtomicU64::new(0),
             stats: Arc::new(RwLock::new(ClientStats::default())),
+            quota_cache: AsyncRwLock::new(None),
+            quota_cache_ttl: Duration::from_secs(60),
         })
     }
 
@@ -588,10 +595,38 @@ impl CloudAnchorClient {
         Ok(messages)
     }
 
-    /// 获取配额信息
-    pub async fn get_quota(&self) -> CloudAnchorResult<QuotaResponse> {
+    /// 获取配额信息（带缓存）
+    pub async fn get_quota(&self) -> CloudAnchorResult<QuotaInfo> {
+        // 检查缓存是否有效
+        {
+            let cache = self.quota_cache.read().await;
+            if let Some((quota_info, timestamp)) = cache.as_ref() {
+                if timestamp.elapsed() < self.quota_cache_ttl {
+                    return Ok(quota_info.clone());
+                }
+            }
+        }
+
+        // 缓存无效或过期，从 API 获取
+        self.fetch_quota_from_api().await
+    }
+
+    /// 强制刷新配额信息
+    pub async fn refresh_quota(&self) -> CloudAnchorResult<QuotaInfo> {
+        self.fetch_quota_from_api().await
+    }
+
+    /// 从 API 获取配额信息
+    async fn fetch_quota_from_api(&self) -> CloudAnchorResult<QuotaInfo> {
         let node_id = self
             .node_id
+            .read()
+            .await
+            .clone()
+            .ok_or(CloudAnchorError::NotInitialized)?;
+
+        let token = self
+            .token
             .read()
             .await
             .clone()
@@ -602,11 +637,34 @@ impl CloudAnchorClient {
         let response = self
             .http_client
             .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
             .map_err(CloudAnchorError::from)?;
 
-        self.handle_response::<QuotaResponse>(response).await
+        let quota_response: QuotaResponse = self.handle_response(response).await?;
+        
+        let quota_info = QuotaInfo {
+            total_bytes: quota_response.total_bytes,
+            used_bytes: quota_response.used_bytes,
+            remaining_bytes: quota_response.remaining_bytes,
+            reset_at: quota_response.reset_at,
+        };
+
+        // 更新缓存
+        *self.quota_cache.write().await = Some((quota_info.clone(), Instant::now()));
+
+        Ok(quota_info)
+    }
+
+    /// 获取配额使用情况（实时查询）
+    pub async fn get_quota_usage(&self) -> CloudAnchorResult<QuotaInfo> {
+        self.fetch_quota_from_api().await
+    }
+
+    /// 清除配额缓存
+    pub async fn clear_quota_cache(&self) {
+        *self.quota_cache.write().await = None;
     }
 
     // ==================== 辅助方法 ====================

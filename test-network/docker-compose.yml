@@ -19,6 +19,8 @@ services:
       - CIS_DID=did:cis:node1:test
       - GLM_API_KEY=${GLM_API_KEY:-}
       - GLM_MODEL=${GLM_MODEL:-code-plan-glm4.7}
+      - HF_HOME=/root/.cache/huggingface
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 
   node2:
     build: { context: ., dockerfile: Dockerfile.test }
@@ -35,6 +37,8 @@ services:
       - CIS_DID=did:cis:node2:test
       - GLM_API_KEY=${GLM_API_KEY:-}
       - GLM_MODEL=${GLM_MODEL:-code-plan-glm4.7}
+      - HF_HOME=/root/.cache/huggingface
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     depends_on: [node1]
 
   node3:
@@ -52,6 +56,8 @@ services:
       - CIS_DID=did:cis:node3:test
       - GLM_API_KEY=${GLM_API_KEY:-}
       - GLM_MODEL=${GLM_MODEL:-code-plan-glm4.7}
+      - HF_HOME=/root/.cache/huggingface
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     depends_on: [node1]
 
   # 可选调试容器

@@ -77,12 +77,14 @@
 pub mod anchor;
 pub mod bridge;
 pub mod broadcast;
+pub mod e2ee;
 pub mod element_detect;
 pub mod error;
 pub mod events;
 pub mod federation;
 pub mod nucleus;
 pub mod server;
+pub mod server_manager;
 pub mod store;
 pub mod store_social;
 pub mod sync;

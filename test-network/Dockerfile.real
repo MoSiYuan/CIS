@@ -57,11 +57,22 @@ RUN touch cis-node/src/main.rs && \
     cargo build --release -p cis-node && \
     strip target/release/cis-node
 
+# 预下载 fastembed 向量模型 (~130MB)
+# 使用相同的 builder 镜像来运行下载
+RUN mkdir -p /tmp/model-cache && \
+    cd /build && \
+    cargo test --package cis-core test_embedding -- --ignored --test-threads=1 2>&1 || true && \
+    cp -r ~/.cache/huggingface/fastembed* /tmp/model-cache/ 2>/dev/null || true
+
 # 运行镜像 - 使用 alpine 减小体积
 FROM alpine:3.18
 RUN apk add --no-cache ca-certificates curl sqlite-libs libgcc bash
 
 WORKDIR /app
+
+# 复制预下载的向量模型
+COPY --from=builder /tmp/model-cache /root/.cache/huggingface/
+
 COPY --from=builder /build/target/release/cis-node /usr/local/bin/
 RUN mkdir -p /var/lib/cis/data /etc/cis /var/log/cis
 

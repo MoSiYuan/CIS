@@ -106,6 +106,8 @@ pub mod client;
 #[cfg(feature = "p2p")]
 pub mod hole_punching;
 pub mod noise;
+#[cfg(feature = "p2p")]
+pub mod p2p_utils;
 pub mod protocol;
 pub mod server;
 pub mod tunnel;

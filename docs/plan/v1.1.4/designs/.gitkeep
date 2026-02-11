@@ -1,0 +1,10 @@
+# Designs Directory
+
+This directory will contain detailed design documents for v1.1.4 features:
+
+- WASM_EXECUTION.md - WASM runtime integration design
+- P2P_PROTOCOL.md - P2P network protocol specification
+- FEDERATION_PROTOCOL.md - Agent federation protocol
+- NAT_TRAVERSAL.md - NAT traversal strategies
+
+These documents will be created during the design phase of each task.

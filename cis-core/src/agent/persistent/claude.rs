@@ -527,6 +527,50 @@ impl ClaudeRuntime {
     pub fn with_manager(manager: &'static SessionManager) -> Self {
         Self { session_manager: manager }
     }
+    
+    /// 从 session 目录加载统计信息（异步）
+    async fn load_session_stats(work_dir: &std::path::PathBuf) -> (Option<chrono::DateTime<Utc>>, u32) {
+        let stats_file = work_dir.join(".session_stats.json");
+        
+        if let Ok(content) = tokio::fs::read_to_string(&stats_file).await {
+            if let Ok(stats) = serde_json::from_str::<serde_json::Value>(&content) {
+                let last_active = stats.get("last_active")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&Utc));
+                
+                let total_tasks = stats.get("total_tasks")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+                
+                return (last_active, total_tasks);
+            }
+        }
+        
+        (None, 0)
+    }
+    
+    /// 从 session 目录加载统计信息（同步版本）
+    fn load_session_stats_sync(work_dir: &std::path::PathBuf) -> (Option<chrono::DateTime<Utc>>, u32) {
+        let stats_file = work_dir.join(".session_stats.json");
+        
+        if let Ok(content) = std::fs::read_to_string(&stats_file) {
+            if let Ok(stats) = serde_json::from_str::<serde_json::Value>(&content) {
+                let last_active: Option<chrono::DateTime<Utc>> = stats.get("last_active")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&Utc));
+                
+                let total_tasks = stats.get("total_tasks")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+                
+                return (last_active, total_tasks);
+            }
+        }
+        
+        (None, 0)
+    }
 }
 
 impl Default for ClaudeRuntime {
@@ -567,6 +611,12 @@ impl AgentRuntime for ClaudeRuntime {
                     _ => AgentStatus::Running,
                 };
                 
+                // 从 work_dir 推断统计信息
+                let work_dir = std::env::temp_dir().join(&s.id);
+                
+                // 尝试从 session 文件加载统计信息（同步）
+                let (last_active, total_tasks) = Self::load_session_stats_sync(&work_dir);
+                
                 AgentInfo {
                     id: s.id.clone(),
                     name: s.task_id.clone(), // 使用 task_id 作为名称
@@ -574,9 +624,9 @@ impl AgentRuntime for ClaudeRuntime {
                     status,
                     current_task: None,
                     created_at: s.created_at,
-                    last_active_at: s.created_at, // TODO: 从 session 获取最后活动时间
-                    total_tasks: 0, // TODO: 从持久化存储获取
-                    work_dir: std::env::temp_dir().into(), // TODO: 从 session 获取
+                    last_active_at: last_active.unwrap_or(s.created_at),
+                    total_tasks: total_tasks as u64,
+                    work_dir,
                     metadata: {
                         let mut m = HashMap::new();
                         m.insert("short_id".to_string(), json!(s.short_id));

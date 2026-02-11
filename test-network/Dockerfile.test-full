@@ -1,0 +1,85 @@
+# CIS Test Node with Model Support
+# 
+# 此镜像在容器内构建 Linux 二进制
+# 注意: 首次构建需要 10-15 分钟（下载依赖 + 编译）
+# 后续构建会使用缓存
+
+FROM rust:1.84-slim-bookworm AS builder
+
+WORKDIR /build
+
+# 只复制 Cargo 文件先编译依赖（利用缓存）
+COPY Cargo.toml Cargo.lock ./
+COPY cis-core/Cargo.toml cis-core/
+COPY cis-node/Cargo.toml cis-node/
+COPY cis-skill-sdk/Cargo.toml cis-skill-sdk/
+COPY cis-skill-sdk/cis-skill-sdk-derive/Cargo.toml cis-skill-sdk/cis-skill-sdk-derive/
+COPY crates/cis-capability/Cargo.toml crates/cis-capability/
+COPY crates/cis-mcp-adapter/Cargo.toml crates/cis-mcp-adapter/
+COPY cis-gui/Cargo.toml cis-gui/
+COPY skills/init-wizard/Cargo.toml skills/init-wizard/
+COPY skills/push-client/Cargo.toml skills/push-client/
+COPY skills/memory-organizer/Cargo.toml skills/memory-organizer/
+COPY skills/ai-executor/Cargo.toml skills/ai-executor/
+COPY skills/im/Cargo.toml skills/im/
+COPY skills/dag-executor/Cargo.toml skills/dag-executor/
+COPY skills/matrix-register-skill/Cargo.toml skills/matrix-register-skill/
+
+# 创建虚拟源文件用于依赖缓存
+RUN mkdir -p cis-core/src cis-node/src cis-skill-sdk/src cis-skill-sdk/cis-skill-sdk-derive/src \
+    crates/cis-capability/src crates/cis-mcp-adapter/src cis-gui/src \
+    skills/init-wizard/src skills/push-client/src skills/memory-organizer/src \
+    skills/ai-executor/src skills/im/src skills/dag-executor/src skills/matrix-register-skill/src && \
+    echo "fn main(){}" > cis-node/src/main.rs && \
+    echo "" > cis-core/src/lib.rs
+
+# 预编译依赖
+RUN cargo build --release -p cis-node 2>/dev/null || true
+
+# 复制真实源码
+COPY cis-core/src cis-core/src
+COPY cis-node/src cis-node/src
+COPY cis-skill-sdk/src cis-skill-sdk/src
+COPY cis-skill-sdk/cis-skill-sdk-derive/src cis-skill-sdk/cis-skill-sdk-derive/src
+COPY crates/cis-capability/src crates/cis-capability/src
+COPY crates/cis-mcp-adapter/src crates/cis-mcp-adapter/src
+COPY cis-gui/src cis-gui/src
+COPY skills/init-wizard/src skills/init-wizard/src
+COPY skills/push-client/src skills/push-client/src
+COPY skills/memory-organizer/src skills/memory-organizer/src
+COPY skills/ai-executor/src skills/ai-executor/src
+COPY skills/im/src skills/im/src
+COPY skills/dag-executor/src skills/dag-executor/src
+COPY skills/matrix-register-skill/src skills/matrix-register-skill/src
+
+# 构建真实二进制
+RUN touch cis-node/src/main.rs && \
+    cargo build --release -p cis-node && \
+    strip target/release/cis-node
+
+# 运行镜像
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl sqlite3 libssl3 && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 复制构建好的二进制
+COPY --from=builder /build/target/release/cis-node /usr/local/bin/
+RUN chmod +x /usr/local/bin/cis-node
+
+RUN mkdir -p /var/lib/cis/data /etc/cis /var/log/cis /root/.cache/huggingface
+
+# 复制配置脚本
+COPY test-network/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# 设置环境变量
+ENV HF_HOME=/root/.cache/huggingface
+ENV RUST_LOG=info
+
+EXPOSE 7676 7677/udp 6767 6768
+
+ENTRYPOINT ["/entrypoint.sh"]

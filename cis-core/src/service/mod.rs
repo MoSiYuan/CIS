@@ -39,11 +39,13 @@ pub mod worker_service;
 pub mod node_service;
 pub mod dag_service;
 pub mod task_service;
+pub mod skill_executor_impl;
 
 pub use worker_service::WorkerService;
 pub use node_service::NodeService;
 pub use dag_service::DagService;
 pub use task_service::TaskService;
+pub use skill_executor_impl::SkillExecutorImpl;
 
 /// 通用列表选项
 #[derive(Debug, Clone, Default)]

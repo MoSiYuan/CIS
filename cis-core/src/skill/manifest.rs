@@ -44,6 +44,43 @@ use crate::agent::AgentConfig;
 use crate::error::{CisError, Result};
 use crate::scheduler::RuntimeType;
 
+/// Remote Skill 配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteConfig {
+    /// 目标节点地址（支持多个，逗号分隔）
+    pub target_nodes: Vec<String>,
+    /// 调用超时（秒）
+    #[serde(default = "default_remote_timeout")]
+    pub timeout_secs: u64,
+    /// 重试次数
+    #[serde(default = "default_remote_retry")]
+    pub retry: u8,
+    /// 负载均衡策略
+    #[serde(default)]
+    pub load_balance: LoadBalanceStrategy,
+}
+
+fn default_remote_timeout() -> u64 {
+    30
+}
+
+fn default_remote_retry() -> u8 {
+    3
+}
+
+/// 负载均衡策略
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoadBalanceStrategy {
+    /// 轮询
+    #[default]
+    RoundRobin,
+    /// 随机
+    Random,
+    /// 第一个可用
+    FirstAvailable,
+}
+
 /// Skill Manifest
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillManifest {
@@ -64,6 +101,9 @@ pub struct SkillManifest {
     /// DAG 定义（仅当 skill_type = Dag 时有效）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dag: Option<DagDefinition>,
+    /// Remote 配置（仅当 skill_type = Remote 时有效）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote: Option<RemoteConfig>,
 }
 
 /// Skill 基本信息
@@ -109,6 +149,8 @@ pub enum SkillType {
     Script,
     /// DAG 编排 Skill
     Dag,
+    /// 远程 Skill（调用其他节点）
+    Remote,
 }
 
 /// Skill 权限
@@ -462,6 +504,7 @@ impl SkillManifest {
             config: SkillConfigSchema::default(),
             dependencies: Vec::new(),
             dag: Some(dag_def),
+            remote: None,
         })
     }
 
@@ -504,6 +547,7 @@ impl SkillManifest {
             config: SkillConfigSchema::default(),
             dependencies: vec![],
             dag: None,
+            remote: None,
         }
     }
 
@@ -521,6 +565,20 @@ impl SkillManifest {
             events: vec![],
             commands: vec![],
         };
+        manifest
+    }
+
+    /// 生成 Remote Skill 默认 Manifest
+    pub fn default_remote(name: impl Into<String>, target_nodes: Vec<String>) -> Self {
+        let mut manifest = Self::default_native(name);
+        manifest.skill.skill_type = SkillType::Remote;
+        manifest.skill.entry = String::new(); // Remote skill 无本地入口
+        manifest.remote = Some(RemoteConfig {
+            target_nodes,
+            timeout_secs: default_remote_timeout(),
+            retry: default_remote_retry(),
+            load_balance: LoadBalanceStrategy::RoundRobin,
+        });
         manifest
     }
 

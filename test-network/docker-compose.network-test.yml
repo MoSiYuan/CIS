@@ -1,0 +1,77 @@
+# 简单的 Docker 网络测试
+version: '3.8'
+
+services:
+  node1:
+    image: alpine:3.19
+    container_name: cis-node1
+    hostname: cis-node1
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.11
+    command: ["sh", "-c", "echo 'Node 1 ready' && tail -f /dev/null"]
+
+  node2:
+    image: alpine:3.19
+    container_name: cis-node2
+    hostname: cis-node2
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.12
+    command: ["sh", "-c", "echo 'Node 2 ready' && tail -f /dev/null"]
+
+  node3:
+    image: alpine:3.19
+    container_name: cis-node3
+    hostname: cis-node3
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.13
+    command: ["sh", "-c", "echo 'Node 3 ready' && tail -f /dev/null"]
+
+  tester:
+    image: alpine:3.19
+    container_name: cis-tester
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.10
+    depends_on: [node1, node2, node3]
+    command: >
+      sh -c "
+        apk add --no-cache iputils bind-tools 2>/dev/null &&
+        echo '' &&
+        echo '========================================' &&
+        echo 'CIS Docker Network Test' &&
+        echo '========================================' &&
+        echo '' &&
+        echo 'Tester IP: $$(hostname -i)' &&
+        echo '' &&
+        sleep 2 &&
+        echo '[1/3] Testing ping to all nodes...' &&
+        ping -c 3 -W 2 172.30.1.11 && echo '✓ node1 reachable' || echo '✗ node1 unreachable' &&
+        echo '' &&
+        ping -c 3 -W 2 172.30.1.12 && echo '✓ node2 reachable' || echo '✗ node2 unreachable' &&
+        echo '' &&
+        ping -c 3 -W 2 172.30.1.13 && echo '✓ node3 reachable' || echo '✗ node3 unreachable' &&
+        echo '' &&
+        echo '[2/3] Testing hostname resolution...' &&
+        ping -c 2 -W 2 node1 && echo '✓ node1 DNS works' || echo '✗ node1 DNS failed' &&
+        ping -c 2 -W 2 node2 && echo '✓ node2 DNS works' || echo '✗ node2 DNS failed' &&
+        ping -c 2 -W 2 node3 && echo '✓ node3 DNS works' || echo '✗ node3 DNS failed' &&
+        echo '' &&
+        echo '[3/3] Network info...' &&
+        echo 'IP addresses:' &&
+        hostname -i &&
+        echo '' &&
+        echo '========================================' &&
+        echo 'Network tests completed!' &&
+        echo '========================================'
+      "
+
+networks:
+  cis-net:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

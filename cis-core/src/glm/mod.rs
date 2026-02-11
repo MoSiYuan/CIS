@@ -238,8 +238,8 @@ impl RoomBroadcastClient {
             info!("DAG {} broadcast to room {}, event_id: {}", dag.dag_id, room_id, event_id);
             Ok(event_id)
         } else {
-            warn!("Matrix client not available, DAG not broadcasted");
-            Ok("mock_event_id".to_string())
+            error!("Matrix client not available, DAG broadcast failed");
+            Err(anyhow::anyhow!("Matrix client not available, cannot broadcast DAG"))
         }
     }
 }
@@ -706,10 +706,9 @@ impl GlmApiState {
             let run_id = format!("dag-run-{}-{}", dag.dag_id, uuid::Uuid::new_v4());
             Ok(run_id)
         } else {
-            // 如果没有 SkillManager，记录警告并返回模拟的 run_id
-            warn!("SkillManager not available, DAG execution skipped");
-            let run_id = format!("dag-run-mock-{}-{}", dag.dag_id, uuid::Uuid::new_v4());
-            Ok(run_id)
+            // 如果没有 SkillManager，返回错误
+            error!("SkillManager not available, cannot execute DAG");
+            Err(anyhow::anyhow!("SkillManager not available, DAG execution failed"))
         }
     }
 

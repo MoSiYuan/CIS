@@ -14,6 +14,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
   # 代码检查和测试
@@ -49,6 +50,111 @@ jobs:
         run: cargo test --lib --all-features
         env:
           RUST_BACKTRACE: 1
+
+  # Mock 验证测试
+  mock-tests:
+    name: Mock Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+      
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Run Mock tests
+        run: cargo test --package cis-core --lib test::mocks --all-features -- --nocapture
+        env:
+          RUST_BACKTRACE: 1
+
+  # 测试覆盖率
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+      
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin || true
+      
+      - name: Generate coverage report
+        run: |
+          cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml --output-dir target/coverage
+        continue-on-error: true
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: target/coverage/cobertura.xml
+          flags: unit
+          name: cis-coverage
+          fail_ci_if_error: false
+          verbose: true
+        continue-on-error: true
+
+  # 使用 cargo-llvm-cov 的覆盖率（备用）
+  coverage-llvm:
+    name: Code Coverage (LLVM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      
+      - name: Generate coverage report
+        run: |
+          cargo llvm-cov --all-features --workspace --lcov --output-path target/lcov.info
+        continue-on-error: true
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: target/lcov.info
+          flags: unit
+          name: cis-coverage-llvm
+          fail_ci_if_error: false
+          verbose: true
+        continue-on-error: true
 
   # 跨平台构建测试
   build:
@@ -104,3 +210,27 @@ jobs:
       - name: Run cargo audit
         uses: actions-rust-lang/audit@v1
         continue-on-error: true
+
+  # 文档测试
+  doc-tests:
+    name: Documentation Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+      
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Run doc tests
+        run: cargo test --doc --all-features

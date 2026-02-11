@@ -1,7 +1,21 @@
 //! # Session Manager
 //!
-//! Global singleton manager for all Agent Cluster sessions.
+//! Manager for all Agent Cluster sessions.
 //! Supports CLI/GUI/API layers through shared state and event broadcasting.
+//!
+//! ## 废弃警告
+//!
+//! `SessionManager::global()` 全局单例方法已废弃。
+//! 请使用 `ServiceContainer` 进行依赖注入。
+//!
+//! ```rust
+//! // ❌ 废弃的方式
+//! let manager = SessionManager::global();
+//!
+//! // ✅ 推荐的方式
+//! let container = ServiceContainer::production(config).await?;
+//! // 通过容器获取 SessionManager 实例
+//! ```
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -20,9 +34,19 @@ use crate::error::{CisError, Result};
 
 /// Default configuration values
 const DEFAULT_MAX_BUFFER_LINES: usize = 10000;
-const DEFAULT_SOCKET_DIR: &str = "/tmp/cis/sessions";
 const DEFAULT_BLOCKAGE_CHECK_INTERVAL_MS: u64 = 500;
 const DEFAULT_MAX_SESSIONS: usize = 100;
+
+/// Get default socket directory from environment or use default
+fn default_socket_dir() -> std::path::PathBuf {
+    std::env::var("CIS_SOCKET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("TMPDIR")
+                .map(|tmp| std::path::PathBuf::from(tmp).join("cis").join("sessions"))
+                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/cis/sessions"))
+        })
+}
 
 /// Session manager configuration
 #[derive(Debug, Clone)]
@@ -46,7 +70,7 @@ pub struct SessionManagerConfig {
 impl Default for SessionManagerConfig {
     fn default() -> Self {
         Self {
-            socket_dir: std::path::PathBuf::from(DEFAULT_SOCKET_DIR),
+            socket_dir: default_socket_dir(),
             max_buffer_lines: DEFAULT_MAX_BUFFER_LINES,
             blockage_keywords: vec![
                 "?".to_string(),
@@ -71,7 +95,9 @@ impl Default for SessionManagerConfig {
     }
 }
 
-/// Session Manager - global singleton for managing agent sessions
+/// Session Manager - for managing agent sessions
+///
+/// ⚠️ 注意: `global()` 方法已废弃，请使用依赖注入。
 #[derive(Debug)]
 pub struct SessionManager {
     /// Active sessions (Mutex for thread-safety with non-Sync AgentSession)
@@ -97,7 +123,15 @@ impl SessionManager {
         }
     }
 
-    /// Get global singleton instance
+    /// Get global singleton instance (DEPRECATED)
+    ///
+    /// ⚠️ 警告: 此方法已废弃，将在 v1.2.0 中移除。
+    /// 请使用 `ServiceContainer` 进行依赖注入。
+    #[deprecated(
+        since = "1.1.4",
+        note = "全局单例已废弃，请使用 ServiceContainer 进行依赖注入"
+    )]
+    #[allow(deprecated)]
     pub fn global() -> &'static Self {
         use std::sync::OnceLock;
         static INSTANCE: OnceLock<SessionManager> = OnceLock::new();

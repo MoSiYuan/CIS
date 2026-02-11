@@ -16,8 +16,11 @@ pub mod bridge;
 pub mod cluster;
 pub mod config;
 pub mod federation;
+pub mod federation_client;
 pub mod persistent;
+pub mod process_detector;
 pub mod providers;
+pub mod security;
 
 pub use bridge::AgentBridgeSkill;
 pub use cluster::{SessionManager, SessionId, SessionEvent, SessionState};

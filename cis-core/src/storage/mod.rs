@@ -25,6 +25,7 @@ pub mod room_manager;
 pub mod room_store;
 pub mod room_types;
 pub mod safety;
+pub mod sqlite_storage;
 pub mod unified_paths;
 pub mod wal;
 
@@ -39,4 +40,5 @@ pub use pool::{ConnectionPool, PoolConfig, PoolConnectionGuard};
 pub use room_manager::RoomStoreManager;
 pub use room_store::RoomStore;
 pub use room_types::{EventFilter, PaginatedEvents, Pagination, RoomEvent, RoomInfo, RoomMetadata, RoomStats, StoredEvent, SyncPosition};
+pub use sqlite_storage::SqliteStorage;
 pub use wal::{checkpoint, checkpoint_passive, set_wal_mode, SynchronousMode, WALConfig};

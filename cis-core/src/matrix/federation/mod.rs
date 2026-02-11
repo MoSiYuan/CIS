@@ -46,7 +46,7 @@
 //! - ✅ Matrix-compatible event format
 //! - ✅ Manual peer configuration
 //! - ✅ Event forwarding to multiple peers
-//! - ✅ Optional mDNS discovery (placeholder)
+//! - ✅ Optional mDNS discovery via `MatrixDiscovery`
 //! - ✅ Optional mTLS support
 //! - ✅ Connection pooling and retries
 //! - ✅ Automatic reconnection with exponential backoff
@@ -102,12 +102,80 @@
 
 pub mod client;
 pub mod discovery;
+pub mod federation_discovery;
 pub mod server;
 pub mod types;
+
+#[cfg(feature = "p2p")]
+use crate::p2p::{MdnsService, DiscoveredNode as MdnsDiscoveredNode};
+#[cfg(feature = "p2p")]
+use std::time::Duration;
+
+/// Matrix 局域网发现服务
+///
+/// 使用 mDNS 发现本地网络中的 Matrix homeserver。
+/// 服务类型: `_matrix._tcp.local`
+#[cfg(feature = "p2p")]
+pub struct MatrixDiscovery {
+    mdns: MdnsService,
+}
+
+#[cfg(feature = "p2p")]
+impl MatrixDiscovery {
+    /// 创建新的 Matrix 发现服务
+    ///
+    /// # Arguments
+    /// * `node_id` - 本节点唯一标识
+    /// * `port` - 服务端口
+    /// * `did` - 去中心化身份标识
+    pub fn new(
+        node_id: &str,
+        port: u16,
+        did: &str,
+    ) -> anyhow::Result<Self> {
+        let metadata = std::collections::HashMap::new();
+        let mdns = MdnsService::new(node_id, port, did, metadata)?;
+        Ok(Self { mdns })
+    }
+
+    /// 发现本地网络中的 Matrix homeserver
+    ///
+    /// 搜索 `_matrix._tcp.local` 服务类型的节点。
+    /// 默认超时时间为 10 秒。
+    ///
+    /// # Returns
+    /// 发现的节点列表
+    pub fn discover_local_homeservers(&self) -> anyhow::Result<Vec<MdnsDiscoveredNode>> {
+        let service_type = "_matrix._tcp.local";
+        let timeout = Duration::from_secs(10);
+        self.mdns.discover_with_type(service_type, timeout)
+    }
+
+    /// 使用自定义超时发现本地 homeserver
+    ///
+    /// # Arguments
+    /// * `timeout` - 发现超时时间
+    pub fn discover_with_timeout(
+        &self,
+        timeout: Duration,
+    ) -> anyhow::Result<Vec<MdnsDiscoveredNode>> {
+        let service_type = "_matrix._tcp.local";
+        self.mdns.discover_with_type(service_type, timeout)
+    }
+
+    /// 停止发现服务
+    pub fn shutdown(self) -> anyhow::Result<()> {
+        self.mdns.shutdown()
+    }
+}
 
 // Re-export submodules
 pub use client::{FederationClient, FederationClientError, FederationClientResult};
 pub use discovery::PeerDiscovery;
+pub use federation_discovery::{
+    FederationDiscovery, FederationHandshake, ServerEndpoint, WellKnownResponse,
+    FederationVersion, FederationChallenge, FederationChallengeResponse,
+};
 pub use server::{FederationServer, FederationServerBuilder};
 pub use types::{
     CisMatrixEvent, DiscoveredNode, DiscoverySource, EventReceiveResponse, 

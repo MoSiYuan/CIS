@@ -84,17 +84,25 @@ pub enum FederationClientError {
 
 impl FederationClient {
     /// Create a new federation client with default configuration
+    /// 
+    /// Uses default timeouts from `NetworkConfig`:
+    /// - timeout: 30s (DEFAULT_CONNECTION_TIMEOUT_SECS)
+    /// - pool_idle_timeout: 60s
+    /// - max_retries: 3
     pub fn new() -> FederationClientResult<Self> {
+        let timeout_secs = crate::config::DEFAULT_CONNECTION_TIMEOUT_SECS;
+        let pool_idle_secs = crate::config::DEFAULT_REQUEST_TIMEOUT_SECS;
+        
         let client = ClientBuilder::new()
-            .timeout(Duration::from_secs(30))
-            .pool_idle_timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(timeout_secs))
+            .pool_idle_timeout(Duration::from_secs(pool_idle_secs))
             .pool_max_idle_per_host(10)
             .build()
             .map_err(FederationClientError::HttpError)?;
         
         Ok(Self {
             client,
-            timeout: Duration::from_secs(30),
+            timeout: Duration::from_secs(timeout_secs),
             max_retries: 3,
         })
     }
@@ -111,13 +119,16 @@ impl FederationClient {
         key_path: &str,
         ca_path: Option<&str>,
     ) -> FederationClientResult<Self> {
+        let timeout_secs = crate::config::DEFAULT_CONNECTION_TIMEOUT_SECS;
+        let pool_idle_secs = crate::config::DEFAULT_REQUEST_TIMEOUT_SECS;
+        
         // Load identity (client cert + key)
         let identity = Self::load_identity(cert_path, key_path)
             .map_err(|e| FederationClientError::TlsError(e.to_string()))?;
         
         let mut builder = ClientBuilder::new()
-            .timeout(Duration::from_secs(30))
-            .pool_idle_timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(timeout_secs))
+            .pool_idle_timeout(Duration::from_secs(pool_idle_secs))
             .pool_max_idle_per_host(10)
             .identity(identity);
         
@@ -134,7 +145,7 @@ impl FederationClient {
         
         Ok(Self {
             client,
-            timeout: Duration::from_secs(30),
+            timeout: Duration::from_secs(timeout_secs),
             max_retries: 3,
         })
     }
@@ -303,6 +314,34 @@ impl FederationClient {
             .collect();
         
         join_all(futures).await.into_iter().collect()
+    }
+    
+    /// Send a signed event to a peer
+    ///
+    /// # Arguments
+    /// * `peer` - The peer to send to
+    /// * `event` - The event to send (will be signed before sending)
+    /// * `server_name` - The name of the signing server
+    /// * `key_id` - The key identifier
+    /// * `signing_key` - The Ed25519 signing key
+    pub async fn send_signed_event(
+        &self,
+        peer: &PeerInfo,
+        mut event: super::types::CisMatrixEvent,
+        server_name: &str,
+        key_id: &str,
+        signing_key: &ed25519_dalek::SigningKey,
+    ) -> FederationClientResult<EventReceiveResponse> {
+        // Sign the event
+        event.sign(server_name, key_id, signing_key)
+            .map_err(|e| FederationClientError::InvalidResponse(format!("Failed to sign event: {}", e)))?;
+        
+        // Compute hash
+        event.compute_hash()
+            .map_err(|e| FederationClientError::InvalidResponse(format!("Failed to hash event: {}", e)))?;
+        
+        // Send the signed event
+        self.send_event(peer, &event).await
     }
     
     /// Fetch server key from a peer

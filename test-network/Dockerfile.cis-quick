@@ -1,0 +1,30 @@
+# Quick build using cargo-zigbuild for cross compilation
+FROM rustlang/rust:nightly-slim AS builder
+
+# Install cargo-zigbuild and zig
+RUN apt-get update && apt-get install -y curl && \
+    curl -L https://ziglang.org/download/0.11.0/zig-linux-aarch64-0.11.0.tar.xz | tar -xJ -C /tmp && \
+    mv /tmp/zig-linux-aarch64-0.11.0 /usr/local/zig && \
+    ln -s /usr/local/zig/zig /usr/local/bin/zig && \
+    cargo install cargo-zigbuild && \
+    rustup target add aarch64-unknown-linux-musl
+
+WORKDIR /build
+
+# Copy project
+COPY . .
+
+# Build with zig for Linux MUSL target
+RUN cargo zigbuild --release -p cis-node --target aarch64-unknown-linux-musl 2>&1 | tee /tmp/build.log || \
+    (echo "Build failed, see /tmp/build.log" && exit 1)
+
+# Check if binary exists
+RUN ls -lh target/aarch64-unknown-linux-musl/release/cis-node && \
+    cp target/aarch64-unknown-linux-musl/release/cis-node /output/cis-node
+
+# Final stage - minimal alpine
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates curl sqlite-libs libgcc
+COPY --from=builder /output/cis-node /usr/local/bin/
+RUN chmod +x /usr/local/bin/cis-node
+CMD ["cis-node", "--version"]

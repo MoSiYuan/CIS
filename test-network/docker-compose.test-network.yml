@@ -1,0 +1,131 @@
+# CIS 网络测试环境
+# 用于在 Docker 中运行网络相关测试
+
+version: '3.8'
+
+services:
+  # 测试运行器 - 执行网络测试
+  test-runner:
+    build:
+      context: ..
+      dockerfile: test-network/Dockerfile.test
+    image: cis-network-test:latest
+    container_name: cis-test-runner
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.10
+    environment:
+      - CIS_NODE_ID=test-runner
+      - CIS_NODE_NAME=test-runner
+      - CIS_NODE_ROLE=coordinator
+      - CIS_DID=did:cis:test-runner
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+    volumes:
+      - ../:/app/source:ro
+      - test-results:/tmp/test-results
+    command: >
+      sh -c "
+        echo '=== CIS Network Test Environment ===' &&
+        echo 'Node IP: $$(hostname -i)' &&
+        echo '' &&
+        echo 'Available network tools:' &&
+        which ping nc dig iperf3 &&
+        echo '' &&
+        echo 'Network interfaces:' &&
+        ip addr show &&
+        echo '' &&
+        echo 'Testing connectivity to other nodes...' &&
+        ping -c 3 172.30.1.11 || true &&
+        ping -c 3 172.30.1.12 || true &&
+        ping -c 3 172.30.1.13 || true &&
+        echo '' &&
+        echo 'Waiting for CIS nodes to start...' &&
+        sleep 10 &&
+        echo 'Tests completed!'
+      "
+    profiles: ["test"]
+
+  # 3 个 CIS 节点
+  node1:
+    build:
+      context: ..
+      dockerfile: test-network/Dockerfile.test
+    image: cis-network-test:latest
+    container_name: cis-node1
+    hostname: cis-node1
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.11
+    environment:
+      - CIS_NODE_ID=node1
+      - CIS_NODE_NAME=node1-coordinator
+      - CIS_NODE_ROLE=coordinator
+      - CIS_DID=did:cis:node1:test
+      - GLM_API_KEY=${GLM_API_KEY:-}
+      - GLM_MODEL=${GLM_MODEL:-code-plan-glm4.7}
+      - HF_HOME=/root/.cache/huggingface
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+
+  node2:
+    build:
+      context: ..
+      dockerfile: test-network/Dockerfile.test
+    image: cis-network-test:latest
+    container_name: cis-node2
+    hostname: cis-node2
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.12
+    environment:
+      - CIS_NODE_ID=node2
+      - CIS_NODE_NAME=node2-worker
+      - CIS_NODE_ROLE=worker
+      - CIS_DID=did:cis:node2:test
+      - GLM_API_KEY=${GLM_API_KEY:-}
+      - GLM_MODEL=${GLM_MODEL:-code-plan-glm4.7}
+      - HF_HOME=/root/.cache/huggingface
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    depends_on: [node1]
+
+  node3:
+    build:
+      context: ..
+      dockerfile: test-network/Dockerfile.test
+    image: cis-network-test:latest
+    container_name: cis-node3
+    hostname: cis-node3
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.13
+    environment:
+      - CIS_NODE_ID=node3
+      - CIS_NODE_NAME=node3-worker
+      - CIS_NODE_ROLE=worker
+      - CIS_DID=did:cis:node3:test
+      - GLM_API_KEY=${GLM_API_KEY:-}
+      - GLM_MODEL=${GLM_MODEL:-code-plan-glm4.7}
+      - HF_HOME=/root/.cache/huggingface
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    depends_on: [node1]
+
+  # 调试容器
+  debug:
+    image: alpine:3.19
+    container_name: cis-debug
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.100
+    command: sleep infinity
+    profiles: [debug]
+
+networks:
+  cis-net:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+
+volumes:
+  test-results:

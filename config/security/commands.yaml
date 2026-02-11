@@ -1,0 +1,276 @@
+# CIS Agent 命令白名单配置
+# 
+# 命令分类：
+# - safe: 只读命令，安全执行
+# - dangerous: 修改操作，需要用户确认
+# - forbidden: 禁止执行
+
+allowed:
+  # 文件查看类（安全）
+  - pattern: "ls *"
+    class: safe
+    description: "List directory contents"
+  - pattern: "cat *"
+    class: safe
+    description: "Display file contents"
+  - pattern: "grep *"
+    class: safe
+    description: "Search text patterns"
+  - pattern: "find *"
+    class: safe
+    description: "Find files and directories"
+  - pattern: "head *"
+    class: safe
+    description: "Output first part of files"
+  - pattern: "tail *"
+    class: safe
+    description: "Output last part of files"
+  - pattern: "less *"
+    class: safe
+    description: "View file contents"
+  - pattern: "more *"
+    class: safe
+    description: "View file contents"
+  - pattern: "file *"
+    class: safe
+    description: "Determine file type"
+  - pattern: "stat *"
+    class: safe
+    description: "Display file or file system status"
+
+  # 开发工具类（安全）
+  - pattern: "cargo *"
+    class: safe
+    description: "Rust build tool"
+  - pattern: "git *"
+    class: safe
+    description: "Git version control"
+  - pattern: "rustc *"
+    class: safe
+    description: "Rust compiler"
+  - pattern: "make *"
+    class: safe
+    description: "Build automation tool"
+  - pattern: "cmake *"
+    class: safe
+    description: "Cross-platform build system"
+
+  # 系统信息类（安全）
+  - pattern: "pwd"
+    class: safe
+    description: "Print working directory"
+  - pattern: "echo *"
+    class: safe
+    description: "Print text"
+  - pattern: "which *"
+    class: safe
+    description: "Locate a command"
+  - pattern: "whereis *"
+    class: safe
+    description: "Locate binary, source, and manual page files"
+  - pattern: "du *"
+    class: safe
+    description: "Estimate file space usage"
+  - pattern: "df *"
+    class: safe
+    description: "Report file system disk space usage"
+  - pattern: "ps *"
+    class: safe
+    description: "Report process status"
+  - pattern: "top"
+    class: safe
+    description: "Display processes"
+  - pattern: "htop"
+    class: safe
+    description: "Interactive process viewer"
+  - pattern: "uptime"
+    class: safe
+    description: "Show system uptime"
+  - pattern: "whoami"
+    class: safe
+    description: "Print effective username"
+  - pattern: "id"
+    class: safe
+    description: "Print user and group information"
+  - pattern: "uname *"
+    class: safe
+    description: "Print system information"
+  - pattern: "date"
+    class: safe
+    description: "Print system date and time"
+  - pattern: "cal"
+    class: safe
+    description: "Display calendar"
+  - pattern: "clear"
+    class: safe
+    description: "Clear terminal screen"
+  - pattern: "history"
+    class: safe
+    description: "Show command history"
+  - pattern: "man *"
+    class: safe
+    description: "Open manual pages"
+  - pattern: "help"
+    class: safe
+    description: "Display help information"
+
+  # 修改操作类（危险，需要确认）
+  - pattern: "mkdir *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Create directories"
+  - pattern: "rmdir *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Remove empty directories"
+  - pattern: "cp *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Copy files and directories"
+  - pattern: "mv *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Move/rename files and directories"
+  - pattern: "touch *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Create empty files or update timestamps"
+  - pattern: "ln *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Create links between files"
+  - pattern: "chmod *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Change file permissions"
+  - pattern: "chown *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Change file owner and group"
+  - pattern: "chgrp *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Change group ownership"
+  - pattern: "rm *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Remove files or directories"
+  - pattern: "truncate *"
+    class: dangerous
+    requires_confirmation: true
+    description: "Shrink or extend file size"
+
+denied:
+  # 特权提升类
+  - pattern: "sudo *"
+    reason: "Privilege escalation not allowed for security reasons"
+  - pattern: "su *"
+    reason: "User switching not allowed for security reasons"
+  - pattern: "pkexec *"
+    reason: "PolicyKit execution not allowed"
+  - pattern: "doas *"
+    reason: "Alternative privilege escalation not allowed"
+
+  # 破坏性命令类
+  - pattern: "rm -rf /"
+    reason: "Destructive command that can destroy the system"
+  - pattern: "rm -rf /*"
+    reason: "Destructive command that can destroy the system"
+  - pattern: "rm -rf / --no-preserve-root"
+    reason: "Destructive command that can destroy the system"
+  - pattern: ":(){ :|:& };:"
+    reason: "Fork bomb that can crash the system"
+  - pattern: "mkfs *"
+    reason: "Filesystem creation can destroy data"
+  - pattern: "mkfs.ext* *"
+    reason: "Filesystem creation can destroy data"
+  - pattern: "dd *"
+    reason: "Low-level disk operations can destroy data"
+  - pattern: "fdisk *"
+    reason: "Disk partitioning can destroy data"
+  - pattern: "cfdisk *"
+    reason: "Disk partitioning can destroy data"
+  - pattern: "parted *"
+    reason: "Disk partitioning can destroy data"
+  - pattern: "format *"
+    reason: "Formatting can destroy data"
+  - pattern: "> /dev/*"
+    reason: "Direct device writes can destroy data"
+  - pattern: ":> /dev/*"
+    reason: "Direct device writes can destroy data"
+
+  # 不安全权限类
+  - pattern: "chmod 777 *"
+    reason: "Insecure permissions that grant full access to everyone"
+  - pattern: "chmod -R 777 *"
+    reason: "Insecure recursive permissions that grant full access to everyone"
+  - pattern: "chmod 666 *"
+    reason: "Insecure permissions that grant write access to everyone"
+
+  # 远程执行类
+  - pattern: "wget * | sh"
+    reason: "Piping remote content directly to shell is dangerous"
+  - pattern: "wget * | bash"
+    reason: "Piping remote content directly to shell is dangerous"
+  - pattern: "curl * | sh"
+    reason: "Piping remote content directly to shell is dangerous"
+  - pattern: "curl * | bash"
+    reason: "Piping remote content directly to shell is dangerous"
+  - pattern: "fetch * | sh"
+    reason: "Piping remote content directly to shell is dangerous"
+
+  # 网络工具类
+  - pattern: "nc *"
+    reason: "Netcat can be used for unauthorized network access"
+  - pattern: "netcat *"
+    reason: "Netcat can be used for unauthorized network access"
+  - pattern: "ncat *"
+    reason: "Ncat can be used for unauthorized network access"
+  - pattern: "telnet *"
+    reason: "Telnet transmits data in plain text"
+  - pattern: "ftp *"
+    reason: "FTP transmits data in plain text"
+  - pattern: "tftp *"
+    reason: "TFTP has no authentication"
+
+  # 远程连接类
+  - pattern: "ssh *"
+    reason: "SSH connections require explicit user authorization"
+  - pattern: "scp *"
+    reason: "Secure copy requires explicit user authorization"
+  - pattern: "sftp *"
+    reason: "SFTP requires explicit user authorization"
+  - pattern: "rsync *"
+    reason: "Remote sync requires explicit user authorization"
+
+  # 代码执行类
+  - pattern: "eval *"
+    reason: "Eval can execute arbitrary code"
+  - pattern: "exec *"
+    reason: "Exec replaces the current process and can be dangerous"
+  - pattern: "bash *"
+    reason: "Explicit shell execution requires explicit authorization"
+  - pattern: "sh *"
+    reason: "Explicit shell execution requires explicit authorization"
+  - pattern: "zsh *"
+    reason: "Explicit shell execution requires explicit authorization"
+  - pattern: "fish *"
+    reason: "Explicit shell execution requires explicit authorization"
+  - pattern: "csh *"
+    reason: "Explicit shell execution requires explicit authorization"
+  - pattern: "source *"
+    reason: "Sourcing arbitrary files can execute malicious code"
+  - pattern: ". *"
+    reason: "Sourcing arbitrary files can execute malicious code"
+
+  # 内核/系统修改类
+  - pattern: "insmod *"
+    reason: "Loading kernel modules can compromise system security"
+  - pattern: "rmmod *"
+    reason: "Removing kernel modules can compromise system stability"
+  - pattern: "modprobe *"
+    reason: "Modifying kernel modules requires explicit authorization"
+  - pattern: "sysctl -w *"
+    reason: "Modifying kernel parameters requires explicit authorization"
+  - pattern: "sysfs *"
+    reason: "Direct sysfs manipulation can compromise system"

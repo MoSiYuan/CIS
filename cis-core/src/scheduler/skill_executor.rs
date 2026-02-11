@@ -5,11 +5,13 @@
 //! - 复合 Skill（DAG）递归执行
 //! - 四级决策检查
 //! - 债务累积
+//! - 真实用户输入等待（确认、仲裁）
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::Value;
+use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::decision::{DecisionEngine, DecisionResult};
@@ -19,6 +21,38 @@ use crate::skill::manifest::DagDefinition;
 use crate::skill::types::SkillType;
 use crate::skill::SkillManager;
 use crate::types::{Action, FailureType, SkillExecutionResult, Task, TaskLevel};
+
+/// 用户输入类型
+/// 
+/// 用于在任务执行过程中接收外部用户输入
+#[derive(Debug, Clone)]
+pub enum UserInput {
+    /// 确认任务继续执行
+    Confirm { task_id: String },
+    /// 取消任务
+    Cancel { task_id: String, reason: String },
+    /// 仲裁投票
+    ArbitrationVote { 
+        task_id: String, 
+        stakeholder: String, 
+        approve: bool,
+        comment: Option<String>,
+    },
+    /// 跳过任务
+    Skip { task_id: String },
+}
+
+impl UserInput {
+    /// 获取关联的任务 ID
+    pub fn task_id(&self) -> &str {
+        match self {
+            UserInput::Confirm { task_id } => task_id,
+            UserInput::Cancel { task_id, .. } => task_id,
+            UserInput::ArbitrationVote { task_id, .. } => task_id,
+            UserInput::Skip { task_id } => task_id,
+        }
+    }
+}
 
 /// Skill DAG 执行器
 #[allow(dead_code)]
@@ -31,18 +65,27 @@ pub struct SkillDagExecutor {
     context: HashMap<String, Value>,
     /// 决策引擎（四级决策机制）
     decision_engine: DecisionEngine,
+    /// 用户输入接收器（用于确认、仲裁等交互）
+    input_rx: mpsc::Receiver<UserInput>,
+    /// 用户输入发送器（克隆用于外部发送输入）
+    input_tx: mpsc::Sender<UserInput>,
 }
 
 #[allow(dead_code)]
 #[allow(clippy::await_holding_lock)]
 impl SkillDagExecutor {
     /// 创建新的执行器
+    /// 
+    /// 默认创建容量为 32 的输入通道
     pub fn new(scheduler: DagScheduler, skill_manager: Arc<SkillManager>) -> Self {
+        let (input_tx, input_rx) = mpsc::channel(32);
         Self {
             scheduler,
             skill_manager,
             context: HashMap::new(),
             decision_engine: DecisionEngine::new(),
+            input_rx,
+            input_tx,
         }
     }
 
@@ -52,12 +95,46 @@ impl SkillDagExecutor {
         skill_manager: Arc<SkillManager>,
         decision_engine: DecisionEngine,
     ) -> Self {
+        let (input_tx, input_rx) = mpsc::channel(32);
         Self {
             scheduler,
             skill_manager,
             context: HashMap::new(),
             decision_engine,
+            input_rx,
+            input_tx,
         }
+    }
+
+    /// 获取输入发送器（用于外部发送用户输入）
+    pub fn input_sender(&self) -> mpsc::Sender<UserInput> {
+        self.input_tx.clone()
+    }
+
+    /// 等待用户输入（带超时）
+    /// 
+    /// # Arguments
+    /// * `task_id` - 任务 ID，用于过滤输入
+    /// * `timeout_secs` - 超时时间（秒）
+    /// 
+    /// # Returns
+    /// - `Ok(UserInput)` - 收到匹配的用户输入
+    /// - `Err(CisError)` - 超时或通道关闭
+    async fn wait_for_input(&mut self, task_id: &str, timeout_secs: u64) -> Result<UserInput> {
+        let timeout = tokio::time::Duration::from_secs(timeout_secs);
+        
+        tokio::time::timeout(timeout, async {
+            while let Some(input) = self.input_rx.recv().await {
+                if input.task_id() == task_id {
+                    return Ok(input);
+                }
+                // 忽略不匹配的输入（可能是其他任务的）
+                warn!("Received input for different task: {}", input.task_id());
+            }
+            Err(CisError::execution("Input channel closed"))
+        })
+        .await
+        .map_err(|_| CisError::execution(format!("Timeout waiting for input on task '{}'", task_id)))?
     }
 
     /// 执行单个 Skill（入口方法）
@@ -307,56 +384,161 @@ impl SkillDagExecutor {
     /// 等待用户确认
     /// 
     /// 实现方式：
-    /// 1. 在 Matrix Room 中发送确认请求消息
-    /// 2. 等待用户回复（有超时）
-    /// 3. 根据用户回复决定继续或取消
+    /// 1. 等待用户输入（通过 input_rx 通道）
+    /// 2. 支持 Confirm、Cancel、Skip 三种操作
+    /// 3. 超时后自动继续（默认行为）
     /// 
-    /// 注意：当前实现为简化版，直接继续。
-    /// 完整实现需要集成 Matrix 客户端来收发确认消息。
-    async fn wait_confirmation(&self, task: &Task) -> Result<()> {
-        info!("Task '{}' requires user confirmation", task.id);
+    /// # Arguments
+    /// * `task` - 需要确认的任务
+    /// * `timeout_secs` - 超时时间（默认 300 秒 = 5 分钟）
+    /// 
+    /// # Returns
+    /// - `Ok(())` - 用户确认或超时默认继续
+    /// - `Err(CisError)` - 用户取消或发生错误
+    async fn wait_confirmation(&mut self, task: &Task, timeout_secs: Option<u64>) -> Result<()> {
+        let timeout = timeout_secs.unwrap_or(300); // 默认 5 分钟超时
+        info!("Task '{}' requires user confirmation (timeout: {}s)", task.id, timeout);
         
-        // 在实际实现中，这里应该：
-        // 1. 发送确认请求到 Matrix Room
-        // 2. 设置超时等待用户响应
-        // 3. 根据响应决定继续或取消
-        
-        warn!("Confirmation mechanism simplified - auto-approving task '{}'", task.id);
-        warn!("Full implementation requires Matrix integration for interactive confirmation");
-        
-        // 模拟等待时间（实际应用中这里会等待用户输入）
-        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        
-        info!("Auto-approved task '{}' after waiting period", task.id);
-        Ok(())
+        match self.wait_for_input(&task.id, timeout).await {
+            Ok(UserInput::Confirm { .. }) => {
+                info!("Task '{}' confirmed by user", task.id);
+                Ok(())
+            }
+            Ok(UserInput::Cancel { reason, .. }) => {
+                warn!("Task '{}' cancelled by user: {}", task.id, reason);
+                Err(CisError::execution(format!("Task cancelled: {}", reason)))
+            }
+            Ok(UserInput::Skip { .. }) => {
+                info!("Task '{}' skipped by user", task.id);
+                Err(CisError::execution("Task skipped by user"))
+            }
+            Ok(UserInput::ArbitrationVote { .. }) => {
+                warn!("Received arbitration vote for task '{}' in confirmation phase, treating as confirm", task.id);
+                Ok(())
+            }
+            Err(e) => {
+                // 超时 - 默认继续执行
+                warn!("Confirmation timeout for task '{}', auto-continuing: {}", task.id, e);
+                Ok(())
+            }
+        }
     }
 
     /// 等待仲裁
     /// 
     /// 实现方式：
-    /// 1. 向多个利益相关者发送仲裁请求
+    /// 1. 等待利益相关者投票（通过 input_rx 通道）
     /// 2. 收集各方投票/意见
-    /// 3. 根据仲裁规则决定结果
+    /// 3. 根据多数决规则决定结果（简单多数通过）
     /// 
-    /// 注意：当前实现为简化版，直接继续。
-    /// 完整实现需要多方投票机制。
-    async fn wait_arbitration(&self, task: &Task, stakeholders: Vec<String>) -> Result<()> {
-        info!("Task '{}' requires arbitration from {:?}", task.id, stakeholders);
+    /// # Arguments
+    /// * `task` - 需要仲裁的任务
+    /// * `stakeholders` - 利益相关者列表
+    /// * `timeout_secs` - 超时时间（默认 600 秒 = 10 分钟）
+    /// 
+    /// # Returns
+    /// - `Ok(())` - 多数通过或超时默认继续
+    /// - `Err(CisError)` - 多数反对或发生错误
+    async fn wait_arbitration(
+        &mut self, 
+        task: &Task, 
+        stakeholders: Vec<String>,
+        timeout_secs: Option<u64>,
+    ) -> Result<()> {
+        let timeout = timeout_secs.unwrap_or(600); // 默认 10 分钟超时
+        info!(
+            "Task '{}' requires arbitration from {:?} (timeout: {}s)", 
+            task.id, stakeholders, timeout
+        );
         
-        // 在实际实现中，这里应该：
-        // 1. 向所有 stakeholders 发送仲裁请求
-        // 2. 收集投票/意见
-        // 3. 根据多数决或其他规则决定
+        let mut approvals = 0u32;
+        let mut rejections = 0u32;
+        let total = stakeholders.len() as u32;
+        let majority_threshold = (total / 2) + 1; // 简单多数
         
-        warn!("Arbitration mechanism simplified - auto-approving task '{}'", task.id);
-        warn!("Stakeholders: {:?}", stakeholders);
-        warn!("Full implementation requires voting protocol");
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(timeout);
         
-        // 模拟等待时间
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        // 循环收集投票直到超时或形成决议
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            
+            if remaining.is_zero() {
+                info!("Arbitration timeout for task '{}'", task.id);
+                break;
+            }
+            
+            match tokio::time::timeout(remaining, self.input_rx.recv()).await {
+                Ok(Some(input)) => {
+                    if input.task_id() != task.id {
+                        warn!("Received input for different task: {}", input.task_id());
+                        continue;
+                    }
+                    
+                    match input {
+                        UserInput::ArbitrationVote { stakeholder, approve, comment, .. } => {
+                            if !stakeholders.contains(&stakeholder) {
+                                warn!("Vote from non-stakeholder '{}' ignored", stakeholder);
+                                continue;
+                            }
+                            
+                            if approve {
+                                approvals += 1;
+                                info!("Stakeholder '{}' approved task '{}' {:?}", 
+                                    stakeholder, task.id, comment);
+                            } else {
+                                rejections += 1;
+                                warn!("Stakeholder '{}' rejected task '{}' {:?}", 
+                                    stakeholder, task.id, comment);
+                            }
+                            
+                            // 检查是否已形成决议
+                            if approvals >= majority_threshold {
+                                info!("Task '{}' approved by majority ({} approvals)", 
+                                    task.id, approvals);
+                                return Ok(());
+                            }
+                            if rejections >= majority_threshold {
+                                return Err(CisError::execution(
+                                    format!("Task rejected by majority ({} rejections)", rejections)
+                                ));
+                            }
+                        }
+                        UserInput::Cancel { reason, .. } => {
+                            warn!("Task '{}' cancelled during arbitration: {}", task.id, reason);
+                            return Err(CisError::execution(format!("Cancelled: {}", reason)));
+                        }
+                        _ => {
+                            warn!("Unexpected input type for arbitration on task '{}'", task.id);
+                        }
+                    }
+                }
+                Ok(None) => {
+                    // 通道关闭
+                    warn!("Input channel closed during arbitration for task '{}'", task.id);
+                    break;
+                }
+                Err(_) => {
+                    // 超时
+                    info!("Arbitration timeout for task '{}'", task.id);
+                    break;
+                }
+            }
+        }
         
-        info!("Auto-approved task '{}' after arbitration period", task.id);
-        Ok(())
+        // 超时后根据已收集的投票决定
+        info!(
+            "Arbitration ended for task '{}': {} approvals, {} rejections out of {} stakeholders",
+            task.id, approvals, rejections, total
+        );
+        
+        if approvals >= rejections {
+            info!("Task '{}' auto-approved (more approvals than rejections)", task.id);
+            Ok(())
+        } else {
+            Err(CisError::execution(
+                format!("Task rejected ({} approvals vs {} rejections)", approvals, rejections)
+            ))
+        }
     }
 
     /// 注入输入到 DAG
