@@ -86,6 +86,18 @@
     "matrix": {
       "description": "Matrix联邦网关",
       "features": ["Element兼容", "端到端加密", "跨节点消息"]
+    },
+    "project": {
+      "description": "客户项目接入管理",
+      "config_file": ".cis/project.toml",
+      "features": ["项目级配置", "本地Skill", "记忆命名空间", "双向绑定"],
+      "use_case": "将CIS能力集成到客户项目，提供项目级记忆和Skill管理"
+    },
+    "persistent_agent": {
+      "description": "持久化运行的AI Agent",
+      "features": ["前后台切换", "自动重启", "状态保持", "多Runtime支持"],
+      "runtimes": ["Claude", "OpenCode", "Kimi", "Aider"],
+      "use_case": "后台持续运行，随时attach交互，自动执行任务"
     }
   },
   "rules": [

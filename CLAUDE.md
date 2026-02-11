@@ -25,6 +25,413 @@
 | "执行这个 workflow" / "按步骤执行" | **DAG 编排** | `dag.execute` |
 | "与其他设备同步" / "分享给团队" | **P2P 网络** | `p2p.sync` |
 | "用 Element 登录" / "Matrix 消息" | **联邦网关** | `matrix.*` |
+| "接入我的项目" / "管理这个项目" | **项目接入** | `project.init` |
+| "保持 Agent 运行" / "后台 Agent" | **持久化 Agent** | `agent.persist` |
+
+---
+
+## 客户项目接入指南
+
+### 什么是 CIS 项目接入
+
+CIS 项目接入允许将 CIS 的能力集成到客户项目中，提供：
+- **项目级配置**: 项目特定的 AI 配置、记忆命名空间
+- **本地 Skill**: 项目专属的 Skill 管理
+- **双向绑定**: CIS ↔ Agent 的无缝集成
+- **记忆隔离**: 项目记忆与全局记忆分离
+
+### 项目目录结构
+
+```
+客户项目/
+├── .cis/
+│   ├── project.toml          # 项目配置
+│   ├── skills/               # 本地 Skill 目录
+│   │   ├── my-linter/
+│   │   └── custom-deploy/
+│   └── data/                 # 项目级数据
+├── src/
+└── ...
+```
+
+### 项目配置模板 (project.toml)
+
+```toml
+[project]
+name = "my-awesome-project"
+id = "proj-abc-123"
+
+[ai]
+# 项目级 AI 配置
+guide = """
+You are working on my-awesome-project.
+Tech stack: Rust + React + PostgreSQL
+Coding standards: Follow the project's CONVENTIONS.md
+"""
+provider = "claude"
+model = "claude-3-sonnet"
+
+# 本地 Skills
+[[skills]]
+name = "custom-linter"
+path = "./skills/custom-linter"
+auto_load = true  # 项目启动时自动加载
+
+[[skills]]
+name = "project-deploy"
+path = "./skills/project-deploy"
+auto_load = false  # 按需手动加载
+
+[memory]
+# 记忆命名空间 (默认: project/{project-name})
+namespace = "project/my-awesome-project"
+# 共享记忆键 (跨项目访问)
+shared_keys = ["conventions", "architecture", "api-contracts"]
+```
+
+### Claude 如何帮助客户接入项目
+
+#### 场景 1: 新项目接入 CIS
+
+**用户**: "帮我将这个项目接入 CIS"
+
+**Claude 应该**:
+```bash
+# 1. 进入项目目录
+cd /path/to/user-project
+
+# 2. 初始化 CIS 项目配置
+cis project init --name "user-project"
+
+# 3. 或手动创建配置文件
+mkdir -p .cis/skills
+cat > .cis/project.toml << 'EOF'
+[project]
+name = "user-project"
+id = "proj-$(uuidgen | head -c 8)"
+
+[ai]
+provider = "claude"
+guide = """
+You are working on the user-project.
+Please follow the project's coding conventions and architecture decisions.
+Check CIS memory for project context before making changes.
+"""
+
+[memory]
+namespace = "project/user-project"
+shared_keys = ["conventions", "architecture"]
+EOF
+```
+
+**回复**:
+"已为你初始化 CIS 项目配置：
+- 配置文件: `.cis/project.toml`
+- 记忆命名空间: `project/user-project`
+- 本地 Skill 目录: `.cis/skills/`
+
+现在你可以：
+1. 创建本地 Skill: `mkdir .cis/skills/my-skill`
+2. 存储项目记忆: `cis memory set project/user-project/conventions "..."`
+3. 运行项目级 DAG: `cis dag run --project .`
+"
+
+#### 场景 2: 使用项目级记忆
+
+**用户**: "记住这个项目的架构决策"
+
+**Claude 应该**:
+```rust
+// 1. 检测当前是否在项目中
+let project = ProjectManager::find_project(std::env::current_dir()?);
+
+// 2. 使用项目命名空间存储记忆
+match project {
+    Some(proj) => {
+        let key = proj.memory_key("architecture/microservices");
+        service.set_with_embedding(
+            &key,
+            b"采用微服务架构，服务间通过 gRPC 通信...",
+            MemoryDomain::Public,
+            MemoryCategory::Context
+        ).await?;
+        
+        // 同时添加到共享键，方便其他项目引用
+        proj.config.memory.shared_keys.push("architecture/microservices".to_string());
+        proj.save()?;
+    }
+    None => {
+        // 不在项目中，使用全局记忆
+        service.set_with_embedding(
+            "global/architecture/microservices",
+            b"...",
+            MemoryDomain::Public,
+            MemoryCategory::Context
+        ).await?;
+    }
+}
+```
+
+#### 场景 3: 项目级 Skill 自动加载
+
+**用户**: "每次进入项目时自动加载自定义 linter"
+
+**Claude 应该**:
+```toml
+# 编辑 .cis/project.toml
+[[skills]]
+name = "custom-linter"
+path = "./skills/custom-linter"
+auto_load = true  # ← 启用自动加载
+```
+
+```bash
+# 创建本地 Skill 目录结构
+mkdir -p .cis/skills/custom-linter
+cat > .cis/skills/custom-linter/skill.toml << 'EOF'
+[skill]
+name = "custom-linter"
+version = "1.0.0"
+type = "native"
+description = "项目特定的代码检查规则"
+
+[permissions]
+filesystem = true
+command = true
+EOF
+
+# Skill 可执行文件
+cat > .cis/skills/custom-linter/run.sh << 'EOF'
+#!/bin/bash
+# 自定义检查逻辑
+echo "Running project-specific linting..."
+EOF
+chmod +x .cis/skills/custom-linter/run.sh
+```
+
+### 项目会话启动流程
+
+```rust
+use cis_core::project::{ProjectManager, ProjectSession};
+
+// 1. 查找并加载项目
+let mut manager = ProjectManager::new();
+if let Some(project) = ProjectManager::find_project(&current_dir) {
+    // 2. 创建项目会话
+    let session = ProjectSession::new(project);
+    
+    // 3. 启动会话 (自动完成以下操作)
+    session.start().await?;
+    // - 加载项目配置
+    // - 设置记忆命名空间
+    // - 加载 auto_load = true 的 Skills
+    // - 建立 Agent 双向绑定
+    
+    // 4. 获取 AI 引导上下文
+    let ai_guide = session.project.build_ai_guide();
+    // 包含项目信息、共享记忆、可用 Skills
+}
+```
+
+---
+
+## 自启动 Agent 指南
+
+### 什么是持久化 Agent
+
+CIS 支持持久化运行的 AI Agent，特点：
+- **前后台切换**: 随时 attach/detach
+- **自动重启**: 崩溃后自动恢复 (配置 `auto_restart`)
+- **状态保持**: 长期保持运行状态
+- **多 Runtime**: 支持 Claude / OpenCode / Kimi / Aider
+
+### Agent 生命周期
+
+```
+┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
+│  创建    │───▶│  运行    │───▶│  忙碌    │───▶│  空闲    │
+│ Created │    │ Running │    │  Busy   │    │  Idle   │
+└─────────┘    └─────────┘    └─────────┘    └────┬────┘
+     ▲                                             │
+     └─────────────────────────────────────────────┘
+                    │ 错误/关闭
+                    ▼
+              ┌─────────┐
+              │  关闭    │
+              │Shutdown │
+              └─────────┘
+```
+
+### 配置自启动 Agent
+
+#### 方式 1: 配置文件
+
+```toml
+# ~/.cis/config.toml
+
+[agent]
+# 默认 Agent Provider
+default_agent = "claude"
+
+# 持久化 Agent 配置
+[persistent_agent]
+# 是否启用自启动
+auto_start = true
+
+# 自动启动的 Agents
+[[persistent_agent.agents]]
+name = "default-worker"
+runtime = "claude"
+work_dir = "~"
+auto_restart = true
+max_concurrent_tasks = 3
+default_timeout_secs = 300
+
+# 系统提示词
+system_prompt = """
+You are a persistent CIS Agent.
+Always check project memory before making decisions.
+Use available skills when appropriate.
+"""
+
+[[persistent_agent.agents]]
+name = "project-helper"
+runtime = "opencode"
+work_dir = "~/projects"
+auto_restart = true
+model = "opencode/glm-4.7-free"
+```
+
+#### 方式 2: 编程方式
+
+```rust
+use cis_core::agent::persistent::{
+    AgentConfig, RuntimeType, 
+    ClaudePersistentAgent, ClaudeRuntime
+};
+
+// 1. 创建 Agent 配置
+let config = AgentConfig::new(
+    "my-persistent-agent",
+    PathBuf::from("~/workspace")
+)
+.with_runtime(RuntimeType::Claude)
+.with_model("claude-3-sonnet")
+.with_system_prompt("You are a helpful coding assistant.")
+.with_max_concurrent(2)
+.with_timeout(600)
+.with_auto_restart();  // ← 启用自动重启
+
+// 2. 创建 Runtime
+let runtime = ClaudeRuntime::new().await?;
+
+// 3. 创建 Agent
+let agent = runtime.create_agent(config).await?;
+
+// 4. 启动 Agent (后台运行)
+agent.start().await?;
+
+// 5. 后续操作...
+// 查看状态
+let status = agent.status().await;
+println!("Agent status: {}", status);
+
+// 分配任务
+let task = TaskRequest::new("task-1", "Review this code: ...")
+    .with_timeout(300);
+let result = agent.execute(task).await?;
+
+// 前台交互 (attach)
+agent.attach().await?;  // 进入交互式模式，直到用户按 Ctrl+D detach
+
+// 优雅关闭
+agent.shutdown().await?;
+```
+
+### Agent Pool 管理
+
+```rust
+use cis_core::agent::persistent::pool::{AgentPool, PoolConfig};
+
+// 1. 配置 Pool
+let pool_config = PoolConfig {
+    min_agents: 2,      // 最少保持 2 个 Agent
+    max_agents: 10,     // 最多 10 个 Agent
+    idle_timeout_secs: 300,  // 空闲 5 分钟后回收
+    auto_scale: true,   // 自动扩缩容
+};
+
+// 2. 创建 Pool
+let pool = AgentPool::new(pool_config);
+
+// 3. 获取 Agent (自动分配或创建)
+let agent = pool.acquire(AgentAcquireConfig {
+    runtime_type: RuntimeType::Claude,
+    timeout_secs: 60,
+}).await?;
+
+// 4. 使用 Agent
+let result = agent.execute(task).await?;
+
+// 5. 归还 Agent (自动放回 Pool)
+drop(agent);
+```
+
+### 四级决策与 Agent 集成
+
+```rust
+// DAG 任务中的 Agent 调用
+use cis_core::types::TaskLevel;
+
+async fn execute_with_agent(level: TaskLevel, prompt: &str) -> Result<()> {
+    match level {
+        TaskLevel::Mechanical { retry } => {
+            // 机械级：Agent 自动执行，失败重试
+            for attempt in 0..retry {
+                match agent.execute(prompt).await {
+                    Ok(result) => return Ok(result),
+                    Err(e) if attempt < retry - 1 => {
+                        tracing::warn!("Attempt {} failed, retrying...", attempt + 1);
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+        
+        TaskLevel::Recommended { timeout, default_action } => {
+            // 推荐级：Agent 执行，用户可撤销
+            println!("Recommended action: {}", prompt);
+            println!("Will execute in 5 seconds (Ctrl+C to cancel)...");
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            agent.execute(prompt).await?;
+        }
+        
+        TaskLevel::Confirmed => {
+            // 确认级：需要人工确认
+            println!("Please confirm: {}", prompt);
+            print!("Execute? [y/N] ");
+            io::stdout().flush()?;
+            
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            
+            if input.trim().to_lowercase() == "y" {
+                agent.execute(prompt).await?;
+            } else {
+                return Err("User cancelled".into());
+            }
+        }
+        
+        TaskLevel::Arbitrated { stakeholders } => {
+            // 仲裁级：多方投票
+            // ... 投票逻辑
+        }
+    }
+    
+    Ok(())
+}
+```
 
 ---
 
@@ -342,6 +749,89 @@ p2p.broadcast_public_memory().await?;
 **回复**:
 "已将项目配置保存到公域记忆，正在同步到已连接的团队节点。团队成员在下次同步后将能看到此配置。"
 
+### 示例 4: 接入新项目
+
+**用户**: "我想把当前项目接入 CIS 管理"
+
+**Claude 应该**:
+```bash
+# 1. 检查当前目录
+if [ ! -f ".cis/project.toml" ]; then
+    # 2. 初始化项目配置
+    cis project init
+    
+    # 3. 询问项目信息并配置
+    echo "已初始化 CIS 项目配置"
+fi
+
+# 4. 建议创建项目记忆
+echo "建议创建以下项目记忆："
+echo "- 技术栈约定"
+echo "- 架构决策记录"
+echo "- API 契约"
+echo "- 部署配置"
+```
+
+**回复**:
+"已为你初始化 CIS 项目配置：
+- `.cis/project.toml` - 项目配置
+- `.cis/skills/` - 本地 Skill 目录
+
+建议下一步：
+1. 存储项目技术栈: `cis memory set project/{name}/tech-stack "..."`
+2. 创建项目级 DAG: `mkdir .cis/dags/`
+3. 配置自启动 Agent: 编辑 `.cis/project.toml` 添加 `[persistent_agent]`
+"
+
+### 示例 5: 配置自启动 Agent
+
+**用户**: "我希望有一个一直在后台运行的 Agent"
+
+**Claude 应该**:
+```toml
+# 编辑 ~/.cis/config.toml
+
+[persistent_agent]
+auto_start = true
+
+[[persistent_agent.agents]]
+name = "my-background-agent"
+runtime = "claude"
+work_dir = "~/projects"
+auto_restart = true
+system_prompt = """
+You are a persistent CIS Agent always running in background.
+When assigned tasks, execute them efficiently.
+Report back results and any issues encountered.
+"""
+```
+
+```bash
+# 启动 Agent
+cis agent start my-background-agent
+
+# 查看状态
+cis agent status
+
+# 附加到 Agent 进行交互
+cis agent attach my-background-agent
+
+# 分离回后台 (在 Agent 中按 Ctrl+D)
+```
+
+**回复**:
+"已配置自启动 Agent `my-background-agent`：
+- Runtime: Claude
+- 自动重启: 启用
+- 工作目录: ~/projects
+
+命令：
+- 启动: `cis agent start my-background-agent`
+- 查看状态: `cis agent status`
+- 交互式连接: `cis agent attach my-background-agent`
+- 停止: `cis agent stop my-background-agent`
+"
+
 ---
 
 ## API 快速参考
@@ -398,6 +888,48 @@ p2p.broadcast(topic, data).await?;
 p2p.sync_memory(key, peers).await?;
 ```
 
+### 项目 API
+
+```rust
+// 查找项目
+let project = ProjectManager::find_project(&current_dir);
+
+// 初始化项目
+let project = Project::init(&dir, "project-name")?;
+
+// 创建会话
+let session = ProjectSession::new(project);
+session.start().await?;
+
+// 获取 AI 引导
+let guide = session.project.build_ai_guide();
+```
+
+### Agent API
+
+```rust
+// 创建配置
+let config = AgentConfig::new("agent-name", work_dir)
+    .with_auto_restart()
+    .with_timeout(600);
+
+// 创建 Agent
+let runtime = ClaudeRuntime::new().await?;
+let agent = runtime.create_agent(config).await?;
+
+// 启动
+agent.start().await?;
+
+// 执行任务
+let result = agent.execute(task).await?;
+
+// 前台交互
+agent.attach().await?;
+
+// 优雅关闭
+agent.shutdown().await?;
+```
+
 ---
 
 ## 故障排查
@@ -441,6 +973,35 @@ cis p2p peers
 cis p2p connect <node-id>
 ```
 
+### 项目接入问题
+
+```bash
+# 检查项目配置
+cat .cis/project.toml
+
+# 验证项目结构
+cis project validate
+
+# 重新初始化
+cis project init --force
+```
+
+### Agent 问题
+
+```bash
+# 查看 Agent 状态
+cis agent status
+
+# 查看 Agent 日志
+cis agent logs <agent-name>
+
+# 重启 Agent
+cis agent restart <agent-name>
+
+# 强制停止
+cis agent kill <agent-name>
+```
+
 ---
 
 ## 最佳实践
@@ -450,6 +1011,9 @@ cis p2p connect <node-id>
 3. **DAG 设计**: 机械任务自动执行，高风险任务需确认
 4. **错误处理**: 所有记忆/DAG/网络操作都要处理错误
 5. **索引优化**: 重要记忆使用 `set_with_embedding` 建立语义索引
+6. **项目隔离**: 每个项目独立的命名空间，避免记忆冲突
+7. **Agent 管理**: 使用 Pool 管理 Agent 生命周期，避免资源泄漏
+8. **配置分层**: 全局配置 → 项目配置 → 任务配置，层层覆盖
 
 ---
 
