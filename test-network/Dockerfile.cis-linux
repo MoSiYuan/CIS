@@ -1,11 +1,12 @@
-# CIS 测试节点 - 真实构建版本
-# 使用已缓存的 rust 镜像进行构建
-
-FROM rust:1.75-slim-bookworm AS builder
+# Build CIS node for Linux in Docker
+FROM rustlang/rust:nightly-alpine AS builder
 
 WORKDIR /build
 
-# 只复制必要文件以减少层数
+# Install build dependencies
+RUN apk add --no-cache musl-dev openssl-dev pkgconfig
+
+# Copy Cargo files first for caching
 COPY Cargo.toml Cargo.lock ./
 COPY cis-core/Cargo.toml cis-core/
 COPY cis-node/Cargo.toml cis-node/
@@ -22,7 +23,7 @@ COPY skills/im/Cargo.toml skills/im/
 COPY skills/dag-executor/Cargo.toml skills/dag-executor/
 COPY skills/matrix-register-skill/Cargo.toml skills/matrix-register-skill/
 
-# 创建虚拟源文件用于依赖缓存
+# Create dummy source for dependency caching
 RUN mkdir -p cis-core/src cis-node/src cis-skill-sdk/src cis-skill-sdk/cis-skill-sdk-derive/src \
     crates/cis-capability/src crates/cis-mcp-adapter/src cis-gui/src \
     skills/init-wizard/src skills/push-client/src skills/memory-organizer/src \
@@ -30,13 +31,12 @@ RUN mkdir -p cis-core/src cis-node/src cis-skill-sdk/src cis-skill-sdk/cis-skill
     echo "fn main(){}" > cis-node/src/main.rs && \
     echo "" > cis-core/src/lib.rs
 
-# 预编译依赖（使用离线模式避免网络问题）
-RUN cargo build --release -p cis-node --offline 2>/dev/null || \
-    cargo build --release -p cis-node 2>/dev/null || \
-    true
+# Build dependencies (cached layer)
+RUN cargo build --release -p cis-node 2>/dev/null || true
 
-# 复制真实源码
+# Copy real source code
 COPY cis-core/src cis-core/src
+COPY cis-core/benches cis-core/benches
 COPY cis-node/src cis-node/src
 COPY cis-skill-sdk/src cis-skill-sdk/src
 COPY cis-skill-sdk/cis-skill-sdk-derive/src cis-skill-sdk/cis-skill-sdk-derive/src
@@ -51,34 +51,44 @@ COPY skills/im/src skills/im/src
 COPY skills/dag-executor/src skills/dag-executor/src
 COPY skills/matrix-register-skill/src skills/matrix-register-skill/src
 
-# 构建真实二进制
+# Build the real binary
 RUN touch cis-node/src/main.rs && \
-    cargo build --release -p cis-node --offline 2>/dev/null || \
-    cargo build --release -p cis-node && \
-    strip target/release/cis-node
+    cargo build --release -p cis-node 2>&1 && \
+    strip target/release/cis-node && \
+    cp target/release/cis-node /tmp/cis-node-linux && \
+    ls -lh /tmp/cis-node-linux
 
-# 预下载 fastembed 向量模型 (~130MB)
-# 使用相同的 builder 镜像来运行下载
-RUN mkdir -p /tmp/model-cache && \
-    cd /build && \
-    cargo test --package cis-core test_embedding -- --ignored --test-threads=1 2>&1 || true && \
-    cp -r ~/.cache/huggingface/fastembed* /tmp/model-cache/ 2>/dev/null || true
+# Final stage - Alpine with all tools
+FROM alpine:3.19
 
-# 运行镜像 - 使用 alpine 减小体积
-FROM alpine:3.18
-RUN apk add --no-cache ca-certificates curl sqlite-libs libgcc bash
+# Install runtime dependencies and tools
+RUN apk add --no-cache \
+    ca-certificates curl sqlite-libs libgcc \
+    python3 py3-pip py3-numpy py3-scipy \
+    nodejs npm \
+    iputils bind-tools netcat-openbsd iperf3
 
-WORKDIR /app
+# Install Claude CLI
+RUN npm install -g @anthropic-ai/claude-cli 2>/dev/null || \
+    npm install -g claude-cli 2>/dev/null || \
+    echo "Claude CLI install skipped"
 
-# 复制预下载的向量模型
-COPY --from=builder /tmp/model-cache /root/.cache/huggingface/
+# Install fastembed
+RUN pip3 install fastembed 2>/dev/null || \
+    echo "fastembed install skipped"
 
-COPY --from=builder /build/target/release/cis-node /usr/local/bin/
-RUN mkdir -p /var/lib/cis/data /etc/cis /var/log/cis
+# Copy the built binary
+COPY --from=builder /tmp/cis-node-linux /usr/local/bin/cis-node
+RUN chmod +x /usr/local/bin/cis-node
 
-# 创建配置脚本
-COPY test-network/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Create required directories
+RUN mkdir -p /var/lib/cis/data /etc/cis /var/log/cis /root/.cache/huggingface
 
+# Verify binary works
+RUN cis-node --version || echo "Binary check completed"
+
+# Expose ports
 EXPOSE 7676 7677/udp 6767 6768
-ENTRYPOINT ["/entrypoint.sh"]
+
+# Default command
+CMD ["cis-node", "--version"]

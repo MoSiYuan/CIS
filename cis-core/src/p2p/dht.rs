@@ -723,7 +723,7 @@ mod tests {
         // 查找自己
         let found = service.find_node("test-node").await.unwrap();
         assert!(found.is_some());
-        assert_eq!(found.unwrap().node_id, "test-node");
+        assert_eq!(found.unwrap().summary.id, "test-node");
 
         // 查找不存在的节点
         let not_found = service.find_node("non-existent").await.unwrap();
@@ -764,16 +764,16 @@ mod tests {
         // 验证节点已添加
         let nodes = service.get_all_nodes().await;
         assert_eq!(nodes.len(), 1);
-        assert_eq!(nodes[0].node_id, "peer-node");
+        assert_eq!(nodes[0].summary.id, "peer-node");
 
         // 再次添加同一节点（应更新）
         let mut updated_peer = peer.clone();
-        updated_peer.addresses = vec!["192.168.1.1:7677".to_string()];
+        updated_peer.summary.endpoint = "192.168.1.1:7677".to_string();
         service.add_node(updated_peer).await.unwrap();
 
         let nodes = service.get_all_nodes().await;
         assert_eq!(nodes.len(), 1);
-        assert_eq!(nodes[0].addresses[0], "192.168.1.1:7677");
+        assert_eq!(nodes[0].summary.endpoint, "192.168.1.1:7677");
     }
 
     #[tokio::test]

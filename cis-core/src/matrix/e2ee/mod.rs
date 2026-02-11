@@ -194,11 +194,12 @@ mod tests {
             .unwrap();
 
         // 4. Alice 通过 Olm 发送 Megolm 会话密钥给 Bob
-        let alice_room_session = MegolmSession::new(
+        let mut alice_room_session = MegolmSession::new(
             "alice_device",
             &alice.olm_account().identity_keys().ed25519,
         );
-        let session_key = alice_room_session.session_key_base64();
+        let session_key = alice_room_session.session_key_base64()
+            .expect("Session key should be available");
 
         // 5. Alice 加密消息
         let plaintext = "Hello, encrypted world!";

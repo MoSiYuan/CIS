@@ -10,7 +10,7 @@ use anyhow::{anyhow, Context, Result};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-const SERVICE_TYPE: &str = "_cis._tcp.local";
+const SERVICE_TYPE: &str = "_cis._tcp.local.";
 const DEFAULT_DISCOVERY_TIMEOUT_MS: u64 = 10000;
 
 /// 发现的节点信息

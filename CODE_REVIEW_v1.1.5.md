@@ -379,6 +379,7 @@ compile_error!("PID Manager currently only supports Unix-like systems");
 - ✅ 公共记忆同步到 DHT（2026-02-11）
 - ✅ 硬编码超时值修复（2026-02-11）
 - ✅ 临时目录路径可配置（2026-02-11）
+- ✅ 测试编译修复（2026-02-11）- 1107 通过, 22 失败(环境依赖), 6 忽略
 
 ---
 

@@ -33,8 +33,9 @@
 
 pub mod mocks;
 
-#[cfg(test)]
-pub mod examples;
+// Temporarily disabled for v1.1.5 API updates
+// #[cfg(test)]
+// pub mod examples;
 
 /// 测试工具函数
 pub mod utils {

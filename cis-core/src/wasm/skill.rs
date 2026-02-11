@@ -107,6 +107,11 @@ impl WasmSkill {
         })
     }
 
+    /// 获取 Skill 名称
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// 计算内存页数限制
     fn get_max_memory_pages(&self) -> u32 {
         let max_memory_mb = self.config.memory_limit

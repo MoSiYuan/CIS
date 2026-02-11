@@ -1,0 +1,57 @@
+# CIS 功能测试环境
+# 使用 rust 镜像直接运行测试
+
+version: '3.8'
+
+services:
+  cis-builder:
+    image: rustlang/rust:nightly-slim
+    container_name: cis-builder
+    working_dir: /build
+    volumes:
+      - ../:/build
+    command: >
+      sh -c "
+        echo 'Building cis-node for Linux...' &&
+        apt-get update && apt-get install -y pkg-config libssl-dev 2>/dev/null &&
+        cargo build --release -p cis-node 2>&1 &&
+        echo 'Build completed!' &&
+        ls -lh target/release/cis-node &&
+        cp target/release/cis-node /build/cis-node-linux &&
+        tail -f /dev/null
+      "
+    networks:
+      - cis-net
+
+  cis-test-runner:
+    image: alpine:3.19
+    container_name: cis-test-runner
+    working_dir: /app
+    volumes:
+      - ../:/app/source:ro
+    command: >
+      sh -c "
+        apk add --no-cache iputils curl netcat-openbsd &&
+        echo '' &&
+        echo '========================================' &&
+        echo 'CIS Test Environment' &&
+        echo '========================================' &&
+        echo '' &&
+        echo 'Looking for cis-node binary...' &&
+        ls -la /app/source/target/release/cis-node 2>/dev/null || echo 'Not found' &&
+        echo '' &&
+        echo 'Network test:' &&
+        ping -c 3 cis-builder &&
+        echo '' &&
+        echo 'Test completed!'
+      "
+    networks:
+      - cis-net
+    depends_on: [cis-builder]
+
+networks:
+  cis-net:
+    driver: bridge
+
+volumes:
+  cis-build-cache:

@@ -193,7 +193,8 @@ impl HostContext {
     }
 
     /// 检查执行限制
-    fn check_limits(&self) -> Result<(), CisError> {
+    #[allow(dead_code)]
+    pub(crate) fn check_limits(&self) -> Result<(), CisError> {
         if let Some(ref limits) = self.execution_limits {
             if limits.is_timeout() {
                 return Err(CisError::wasm(

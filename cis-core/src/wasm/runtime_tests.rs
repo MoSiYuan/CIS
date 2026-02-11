@@ -154,7 +154,7 @@ fn test_default_execution_timeout() {
     let runtime = WasmRuntime::new().unwrap();
     let module = runtime.load_module(SIMPLE_WASM).unwrap();
     
-    assert_eq!(module.execution_timeout().as_millis(), DEFAULT_EXECUTION_TIMEOUT_MS);
+    assert_eq!(module.execution_timeout().as_millis() as u64, DEFAULT_EXECUTION_TIMEOUT_MS);
 }
 
 /// 测试模块获取方法

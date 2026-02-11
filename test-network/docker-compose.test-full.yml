@@ -1,0 +1,95 @@
+# CIS 完整测试环境 - 包含预下载的向量模型
+version: '3.8'
+
+services:
+  test-runner:
+    build:
+      context: ..
+      dockerfile: test-network/Dockerfile.test-full
+    image: cis-test-full:latest
+    container_name: cis-test-runner
+    environment:
+      - RUST_LOG=info
+    volumes:
+      - test-results:/tmp/test-results
+    command: >
+      bash -c "
+        echo '=== Running CIS Tests ===' &&
+        cd /build &&
+        cargo test --package cis-core 2>&1 | tee /tmp/test-results/test-output.log &&
+        echo '=== Tests Completed ==='
+      "
+
+  # 3 节点组网测试环境（带模型）
+  node1:
+    build:
+      context: ..
+      dockerfile: test-network/Dockerfile.test-full
+    image: cis-test-full:latest
+    container_name: cis-node1
+    hostname: cis-node1
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.11
+    environment:
+      - CIS_NODE_ID=node1
+      - CIS_NODE_NAME=node1-coordinator
+      - CIS_NODE_ROLE=coordinator
+      - CIS_DID=did:cis:node1:test
+    command: ["/usr/local/bin/cis-node", "daemon", "--config", "/etc/cis/config.toml"]
+
+  node2:
+    build:
+      context: ..
+      dockerfile: test-network/Dockerfile.test-full
+    image: cis-test-full:latest
+    container_name: cis-node2
+    hostname: cis-node2
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.12
+    environment:
+      - CIS_NODE_ID=node2
+      - CIS_NODE_NAME=node2-worker
+      - CIS_NODE_ROLE=worker
+      - CIS_DID=did:cis:node2:test
+    depends_on: [node1]
+    command: ["/usr/local/bin/cis-node", "daemon", "--config", "/etc/cis/config.toml"]
+
+  node3:
+    build:
+      context: ..
+      dockerfile: test-network/Dockerfile.test-full
+    image: cis-test-full:latest
+    container_name: cis-node3
+    hostname: cis-node3
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.13
+    environment:
+      - CIS_NODE_ID=node3
+      - CIS_NODE_NAME=node3-worker
+      - CIS_NODE_ROLE=worker
+      - CIS_DID=did:cis:node3:test
+    depends_on: [node1]
+    command: ["/usr/local/bin/cis-node", "daemon", "--config", "/etc/cis/config.toml"]
+
+  debug:
+    image: alpine:3.19
+    container_name: cis-debug
+    networks:
+      cis-net:
+        ipv4_address: 172.30.1.100
+    command: sleep infinity
+    profiles: [debug]
+
+networks:
+  cis-net:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+
+volumes:
+  test-results:

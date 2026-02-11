@@ -143,7 +143,7 @@ impl ValidationResult {
         Self {
             allowed: false,
             class: Some(CommandClass::Forbidden),
-            requires_confirmation: false,
+            requires_confirmation: true, // 禁止的命令也要求确认（保守处理）
             reason: Some(reason),
             matched_pattern: Some(pattern),
         }
@@ -154,7 +154,7 @@ impl ValidationResult {
         Self {
             allowed: false,
             class: Some(CommandClass::Forbidden),
-            requires_confirmation: false,
+            requires_confirmation: true, // 未匹配的命令也要求确认（保守处理）
             reason: Some("Command not in whitelist".to_string()),
             matched_pattern: None,
         }

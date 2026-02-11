@@ -1,17 +1,36 @@
-# CIS Test Node - Alpine 精简版
+# CIS Test Node - Alpine 完整版
+# 包含: CIS 内核 + Claude CLI + 向量引擎(fastembed)
 FROM alpine:3.19
 
-# 安装必要依赖
-RUN apk add --no-cache ca-certificates curl sqlite-libs libgcc
+# 安装必要依赖（包含网络测试工具）
+RUN apk add --no-cache \
+    ca-certificates curl sqlite-libs libgcc \
+    python3 py3-pip py3-numpy py3-scipy \
+    nodejs npm \
+    iputils ping netcat-openbsd bind-tools iperf3
 
 WORKDIR /app
 
-# 复制二进制文件
+# 安装 Claude CLI
+RUN npm install -g @anthropic-ai/claude-cli 2>/dev/null || \
+    npm install -g claude-cli 2>/dev/null || \
+    echo "Claude CLI install skipped"
+
+# 安装 fastembed 向量引擎
+RUN pip3 install --break-system-packages fastembed 2>/dev/null || \
+    pip3 install fastembed 2>/dev/null || \
+    echo "fastembed install skipped"
+
+# 复制 CIS 内核二进制
 COPY cis-node /usr/local/bin/cis-node
 RUN chmod +x /usr/local/bin/cis-node
 
-# 创建 CIS 目录
-RUN mkdir -p /var/lib/cis/data /etc/cis
+# 创建 CIS 目录和模型缓存目录
+RUN mkdir -p /var/lib/cis/data /etc/cis /var/log/cis /root/.cache/huggingface
+
+# 设置环境变量
+ENV HF_HOME=/root/.cache/huggingface
+ENV RUST_LOG=info
 
 # 生成配置的启动脚本
 RUN cat > /entrypoint.sh << 'EOF'

@@ -959,6 +959,9 @@ mod tests {
             uptime_secs: 100,
             connected_peers: 5,
             discovered_peers: 10,
+            dht_enabled: true,
+            dht_routing_table_nodes: Some(10),
+            dht_storage_entries: Some(5),
         };
 
         assert!(status.running);

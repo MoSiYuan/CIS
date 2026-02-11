@@ -170,6 +170,7 @@ mod tests {
     use super::*;
     
     #[tokio::test]
+    #[ignore = "Requires ONNX model download (~130MB)"]
     async fn test_embedding() {
         let service = EmbeddingService::new().await.unwrap();
         
@@ -182,6 +183,7 @@ mod tests {
     }
     
     #[tokio::test]
+    #[ignore = "Requires ONNX model download (~130MB)"]
     async fn test_batch_embedding() {
         let service = EmbeddingService::new().await.unwrap();
         

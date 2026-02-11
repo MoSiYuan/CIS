@@ -4,6 +4,15 @@
 
 use super::transport::{QuicTransport, TransportConfig};
 use std::time::Duration;
+use std::sync::Once;
+
+static INIT_CRYPTO: Once = Once::new();
+
+fn init_crypto() {
+    INIT_CRYPTO.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
 
 /// 测试传输配置默认值
 #[test]
@@ -74,7 +83,9 @@ async fn test_bind_invalid_address() {
 
 /// 测试重复绑定相同端口
 #[tokio::test]
+#[ignore = "Requires network environment"]
 async fn test_bind_duplicate_port() {
+    init_crypto();
     let transport1 = QuicTransport::bind("127.0.0.1:0", "node-1").await;
     assert!(transport1.is_ok());
     
@@ -110,6 +121,7 @@ async fn test_connect_invalid_address() {
 /// 测试连接超时配置
 #[tokio::test]
 async fn test_connection_timeout() {
+    init_crypto();
     let config = TransportConfig {
         connection_timeout: Duration::from_millis(100),
         ..Default::default()
