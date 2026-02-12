@@ -31,6 +31,12 @@ clap = { version = "4.5", features = ["derive"] }
 dirs = "5.0"
 toml = "0.8"
 
+# Additional dependencies
+chrono = "0.4"
+base64 = "0.22"
+mime_guess = "2.0"
+regex = "1.10"
+
 [[bin]]
 name = "cis-mcp"
 path = "src/main.rs"

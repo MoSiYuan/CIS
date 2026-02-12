@@ -55,16 +55,35 @@ impl std::fmt::Display for DagError {
 
 impl std::error::Error for DagError {}
 
+pub mod event_driven;
 pub mod local_executor;
 pub mod multi_agent_executor;
+pub mod multi_agent_executor_unified;
+pub mod notify;
 pub mod persistence;
 pub mod skill_executor;
+pub mod skill_executor_unified;
 pub mod todo_monitor;
 
+// DAG 定义统一模块（v1.1.6 新增）
+pub mod converters;
+
+// DAG 统一集成测试
+#[cfg(test)]
+mod tests {
+    use super::*;
+    include!("tests/dag_tests.rs");
+}
+
+pub use event_driven::{EventDrivenConfig, EventDrivenScheduler, ExecutionSummary};
 pub use local_executor::{LocalExecutor, WorkerInfo, WorkerSummary, ExecutorStats};
 pub use multi_agent_executor::{
     MultiAgentDagExecutor, MultiAgentExecutorConfig, MultiAgentExecutionReport,
     TaskExecutionResult,
+};
+pub use notify::{
+    CompletionNotifier, ErrorNotifier, ErrorSeverity, NotificationBundle, ReadyNotify,
+    TaskCompletion, TaskError,
 };
 pub use persistence::{DagPersistence, TaskExecution, TaskExecutionStatus};
 pub use skill_executor::SkillDagExecutor;

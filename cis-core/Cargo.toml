@@ -92,6 +92,8 @@ argon2 = { version = "0.5", optional = true }
 sha2 = "0.10"
 hex = "0.4"
 ssh-key = { version = "0.6", features = ["ed25519", "std", "encryption"] }
+hmac = "0.12"
+base64 = "0.22"
 
 # Claude CLI integration
 which = "6.0"
@@ -150,6 +152,10 @@ wasmer = { version = "4.0", optional = true }
 wasmer-compiler-cranelift = { version = "4.0", optional = true }
 wasmparser = { version = "0.115", optional = true }
 
+# WASM Runtime v2 (Enhanced Security)
+wasmtime = { version = "19.0", optional = true, features = ["async"] }
+wasmtime-wasi = { version = "19.0", optional = true }
+
 # FastEmbed for local embeddings (replaces ort)
 fastembed = { version = "4.0", optional = true }
 
@@ -171,6 +177,7 @@ default = ["encryption", "vector", "p2p", "wasm"]
 
 # WASM support
 wasm = ["wasmer", "wasmer-compiler-cranelift", "wasmparser"]
+wasm-v2 = ["wasmtime", "wasmtime-wasi"]
 
 # Encryption features (planned for Phase 2)
 encryption = ["sqlx", "chacha20poly1305", "argon2", "dep:vodozemac"]

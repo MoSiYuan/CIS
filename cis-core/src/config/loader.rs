@@ -9,7 +9,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use crate::config::{
-    Config, DatabaseConfig, EncryptionConfig, NetworkConfig, P2PConfig, 
+    Config, ConfigEncryption, DatabaseConfig, EncryptionConfig, NetworkConfig, P2PConfig,
     SecurityConfig, StorageConfig, TlsConfig, WasmConfig,
 };
 use crate::config::p2p::{DhtConfig, GossipConfig, NatConfig, QuicConfig, RelayConfig};
@@ -124,6 +124,27 @@ impl ConfigLoader {
                 e
             ))
         })?;
+
+        // Try to decrypt if content is encrypted
+        let content = if ConfigEncryption::is_encrypted(&content) {
+            tracing::info!("Detected encrypted configuration file, attempting decryption");
+            let encryption = ConfigEncryption::new().map_err(|e| {
+                CisError::configuration(format!(
+                    "Failed to initialize config encryption: {}",
+                    e
+                ))
+            })?;
+
+            encryption.decrypt_config(&content).map_err(|e| {
+                CisError::configuration(format!(
+                    "Failed to decrypt config file '{}': {}",
+                    self.config_path.display(),
+                    e
+                ))
+            })?
+        } else {
+            content
+        };
 
         let config: FileConfig = toml::from_str(&content).map_err(|e| {
             CisError::configuration(format!(

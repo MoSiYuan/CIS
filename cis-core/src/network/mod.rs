@@ -44,6 +44,7 @@ pub mod sync;
 pub mod websocket;
 pub mod websocket_auth;
 pub mod websocket_integration;
+pub mod clock_tolerance;
 
 #[cfg(test)]
 mod acl_tests;

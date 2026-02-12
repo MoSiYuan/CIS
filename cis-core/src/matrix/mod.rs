@@ -83,11 +83,14 @@ pub mod error;
 pub mod events;
 pub mod federation;
 pub mod nucleus;
+pub mod presence;
+pub mod receipts;
 pub mod server;
 pub mod server_manager;
 pub mod store;
 pub mod store_social;
 pub mod sync;
+pub mod typing;
 
 // Routes are internal, not exposed directly
 mod routes;

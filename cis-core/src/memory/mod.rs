@@ -31,10 +31,15 @@ use crate::storage::memory_db::MemoryEntry;
 use crate::types::{MemoryCategory, MemoryDomain};
 
 pub mod encryption;
+pub mod encryption_v2;
 pub mod service;
+pub mod ops;
+pub mod crypto;
 
+// Re-export all public types
 pub use self::encryption::MemoryEncryption;
-pub use self::service::{MemoryItem, MemoryService, SearchOptions, SyncMarker, MemorySearchResult};
+pub use self::encryption_v2::{EncryptionKeyV2, MemoryEncryptionV2};
+pub use self::service::{MemoryItem, MemoryService, MemorySearchResult, SearchOptions, SyncMarker};
 
 /// 扩展的记忆条目（包含更多元数据）
 #[derive(Debug, Clone, Serialize, Deserialize)]

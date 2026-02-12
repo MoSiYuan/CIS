@@ -47,7 +47,10 @@
       "Bash(tree:*)",
       "ReadFile(*)",
       "WriteFile(*)",
-      "StrReplaceFile(*)"
+      "StrReplaceFile(*)",
+      "Bash(/Users/jiangxiaolong/work/project/CIS/tools/Cargo.toml << 'EOF'\n[package]\nname = \"cis-tools\"\nversion = \"1.1.5\"\nedition = \"2021\"\nauthors = [\"CIS Team\"]\n\n[[bin]]\nname = \"migrate_keys\"\npath = \"migrate_keys.rs\"\n\n[dependencies]\ncis-core = { path = \"../cis-core\", features = [\"encryption\"] }\nanyhow = \"1.0\"\nclap = { version = \"4.4\", features = [\"derive\"] }\ntracing = \"0.1\"\ntracing-subscriber = { version = \"0.3\", features = [\"env-filter\"] }\nserde_json = \"1.0\"\ntempfile = \"3\"\nEOF)",
+      "Read(//Users/jiangxiaolong/work/project/CIS/**)",
+      "Bash(rustc:*)"
     ]
   },
   "project": {
@@ -76,27 +79,61 @@
     },
     "dag": {
       "description": "有向无环图任务编排",
-      "levels": ["Mechanical", "Recommended", "Confirmed", "Arbitrated"],
+      "levels": [
+        "Mechanical",
+        "Recommended",
+        "Confirmed",
+        "Arbitrated"
+      ],
       "use_case": "多步骤workflow，依赖管理，并行执行"
     },
     "p2p": {
-      "modes": ["单机", "局域网mDNS", "P2P公网", "混合模式"],
-      "features": ["自动发现", "NAT穿透", "记忆同步", "联邦网络"]
+      "modes": [
+        "单机",
+        "局域网mDNS",
+        "P2P公网",
+        "混合模式"
+      ],
+      "features": [
+        "自动发现",
+        "NAT穿透",
+        "记忆同步",
+        "联邦网络"
+      ]
     },
     "matrix": {
       "description": "Matrix联邦网关",
-      "features": ["Element兼容", "端到端加密", "跨节点消息"]
+      "features": [
+        "Element兼容",
+        "端到端加密",
+        "跨节点消息"
+      ]
     },
     "project": {
       "description": "客户项目接入管理",
       "config_file": ".cis/project.toml",
-      "features": ["项目级配置", "本地Skill", "记忆命名空间", "双向绑定"],
+      "features": [
+        "项目级配置",
+        "本地Skill",
+        "记忆命名空间",
+        "双向绑定"
+      ],
       "use_case": "将CIS能力集成到客户项目，提供项目级记忆和Skill管理"
     },
     "persistent_agent": {
       "description": "持久化运行的AI Agent",
-      "features": ["前后台切换", "自动重启", "状态保持", "多Runtime支持"],
-      "runtimes": ["Claude", "OpenCode", "Kimi", "Aider"],
+      "features": [
+        "前后台切换",
+        "自动重启",
+        "状态保持",
+        "多Runtime支持"
+      ],
+      "runtimes": [
+        "Claude",
+        "OpenCode",
+        "Kimi",
+        "Aider"
+      ],
       "use_case": "后台持续运行，随时attach交互，自动执行任务"
     }
   },

@@ -18,6 +18,10 @@ use alloc::vec::Vec;
 pub mod native {
     use super::*;
 
+    // 线程安全 Host API
+    pub mod thread_safe;
+    use super::*;
+
 
     /// Native Host API 提供者
     ///

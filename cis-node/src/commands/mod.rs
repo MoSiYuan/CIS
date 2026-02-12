@@ -3,6 +3,7 @@
 //! Command implementations for the CIS CLI.
 
 pub mod agent;
+pub mod config_cmd;
 pub mod dag;
 pub mod debt;
 pub mod decision;
@@ -17,6 +18,7 @@ pub mod network;
 pub mod pair;
 pub mod node;
 pub mod peer;
+pub mod project;
 #[cfg(feature = "p2p")]
 pub mod p2p;
 pub mod schema;

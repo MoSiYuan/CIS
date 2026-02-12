@@ -1,6 +1,8 @@
 //! MCP Server implementation
 
 use crate::mcp_protocol::*;
+use crate::prompts::PromptStore;
+use crate::resources::ResourceManager;
 use cis_capability::{CapabilityLayer, CallerType};
 use serde_json::json;
 use std::sync::Arc;
@@ -8,11 +10,17 @@ use tracing::{debug, error, info};
 
 pub struct CisMcpServer {
     capability: Arc<CapabilityLayer>,
+    prompts: Arc<PromptStore>,
+    resources: Arc<ResourceManager>,
 }
 
 impl CisMcpServer {
     pub fn new(capability: Arc<CapabilityLayer>) -> Self {
-        Self { capability }
+        Self {
+            capability,
+            prompts: Arc::new(PromptStore::new()),
+            resources: Arc::new(ResourceManager::new()),
+        }
     }
 
     pub async fn run_stdio(&self) -> anyhow::Result<()> {
@@ -71,6 +79,12 @@ impl CisMcpServer {
             "tools/list" => self.handle_tools_list(id).await,
             "tools/call" => self.handle_tool_call(id, &request).await,
             "resources/list" => self.handle_resources_list(id).await,
+            "resources/read" => self.handle_resources_read(id, &request).await,
+            "resources/subscribe" => self.handle_resources_subscribe(id, &request).await,
+            "resources/unsubscribe" => self.handle_resources_unsubscribe(id, &request).await,
+            "prompts/list" => self.handle_prompts_list(id).await,
+            "prompts/get" => self.handle_prompts_get(id, &request).await,
+            "prompts/render" => self.handle_prompts_render(id, &request).await,
             "ping" => Ok(McpResponse::success(id, json!({}))),
             _ => Ok(McpResponse::error(
                 id,
@@ -385,16 +399,138 @@ impl CisMcpServer {
         &self,
         id: Option<serde_json::Value>,
     ) -> anyhow::Result<McpResponse> {
-        let resources = vec![
-            Resource {
-                uri: "context://current".to_string(),
-                name: "Current Context".to_string(),
-                description: Some("Current project context information".to_string()),
-                mime_type: "application/json".to_string(),
-            },
-        ];
-
+        let resources = self.resources.list_resources().await?;
         Ok(McpResponse::success(id, json!({ "resources": resources })))
+    }
+
+    async fn handle_resources_read(
+        &self,
+        id: Option<serde_json::Value>,
+        request: &serde_json::Value,
+    ) -> anyhow::Result<McpResponse> {
+        let params = request
+            .get("params")
+            .ok_or_else(|| anyhow::anyhow!("Missing params"))?;
+
+        let uri = params
+            .get("uri")
+            .and_then(|u| u.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing uri"))?;
+
+        let content = self.resources.read_resource(uri).await?;
+
+        Ok(McpResponse::success(id, serde_json::to_value(content)?))
+    }
+
+    async fn handle_resources_subscribe(
+        &self,
+        id: Option<serde_json::Value>,
+        request: &serde_json::Value,
+    ) -> anyhow::Result<McpResponse> {
+        let params = request
+            .get("params")
+            .ok_or_else(|| anyhow::anyhow!("Missing params"))?;
+
+        let uri = params
+            .get("uri")
+            .and_then(|u| u.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing uri"))?;
+
+        // Use a default subscriber ID for stdio mode
+        let subscriber_id = params
+            .get("subscriberId")
+            .and_then(|s| s.as_str())
+            .unwrap_or("stdio_client");
+
+        let subscription_id = self.resources.subscribe(uri, subscriber_id).await?;
+
+        Ok(McpResponse::success(id, json!({
+            "subscriptionId": subscription_id
+        })))
+    }
+
+    async fn handle_resources_unsubscribe(
+        &self,
+        id: Option<serde_json::Value>,
+        request: &serde_json::Value,
+    ) -> anyhow::Result<McpResponse> {
+        let params = request
+            .get("params")
+            .ok_or_else(|| anyhow::anyhow!("Missing params"))?;
+
+        let subscription_id = params
+            .get("subscriptionId")
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing subscriptionId"))?;
+
+        self.resources.unsubscribe(subscription_id).await?;
+
+        Ok(McpResponse::success(id, json!({ "success": true })))
+    }
+
+    async fn handle_prompts_list(
+        &self,
+        id: Option<serde_json::Value>,
+    ) -> anyhow::Result<McpResponse> {
+        let prompts = self.prompts.list_prompts();
+        Ok(McpResponse::success(id, json!({ "prompts": prompts })))
+    }
+
+    async fn handle_prompts_get(
+        &self,
+        id: Option<serde_json::Value>,
+        request: &serde_json::Value,
+    ) -> anyhow::Result<McpResponse> {
+        let params = request
+            .get("params")
+            .ok_or_else(|| anyhow::anyhow!("Missing params"))?;
+
+        let name = params
+            .get("name")
+            .and_then(|n| n.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing name"))?;
+
+        let prompt = self
+            .prompts
+            .get_prompt(name)
+            .ok_or_else(|| anyhow::anyhow!("Prompt not found: {}", name))?;
+
+        Ok(McpResponse::success(id, serde_json::to_value(prompt)?))
+    }
+
+    async fn handle_prompts_render(
+        &self,
+        id: Option<serde_json::Value>,
+        request: &serde_json::Value,
+    ) -> anyhow::Result<McpResponse> {
+        let params = request
+            .get("params")
+            .ok_or_else(|| anyhow::anyhow!("Missing params"))?;
+
+        let name = params
+            .get("name")
+            .and_then(|n| n.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing name"))?;
+
+        let args = params
+            .get("arguments")
+            .and_then(|a| a.as_object())
+            .ok_or_else(|| anyhow::anyhow!("Missing arguments"))?;
+
+        let mut args_map = std::collections::HashMap::new();
+        for (key, value) in args {
+            args_map.insert(key.clone(), value.clone());
+        }
+
+        let rendered = self.prompts.render_prompt(name, &args_map)?;
+
+        Ok(McpResponse::success(
+            id,
+            json!({
+                "description": rendered.description,
+                "messages": rendered.messages
+            }),
+        ))
     }
 
     // DAG Tool implementations

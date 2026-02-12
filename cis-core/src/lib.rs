@@ -37,6 +37,9 @@
 pub mod error;
 pub mod types;
 
+// Lock timeout module - Lock management with timeout and monitoring
+pub mod lock_timeout;
+
 // Configuration module - unified configuration center
 pub mod config;
 
@@ -46,6 +49,9 @@ pub mod scheduler;
 
 // Memory module - Private/Public memory with encryption
 pub mod memory;
+
+// Cache module - LRU cache for memory queries
+pub mod cache;
 
 // Storage module - Cross-platform storage with core/skill data isolation
 pub mod storage;

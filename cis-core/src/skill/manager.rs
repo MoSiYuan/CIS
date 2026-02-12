@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use tokio::sync::{mpsc, oneshot};
 
+use super::permission_checker::{CheckContext, PermissionChecker, PermissionScope, ResourcePattern};
 use super::registry::SkillRegistry;
 use super::types::{LoadOptions, SkillConfig, SkillInfo, SkillMeta, SkillState, SkillType};
 use super::{Event, Skill, SkillContext};
@@ -162,6 +163,8 @@ pub struct SkillManager {
     /// WASM 运行时（仅在 wasm 特性启用时）
     #[cfg(feature = "wasm")]
     wasm_runtime: Arc<Mutex<WasmRuntime>>,
+    /// Permission checker
+    permission_checker: Arc<PermissionChecker>,
 }
 
 impl SkillManager {
@@ -172,13 +175,21 @@ impl SkillManager {
         #[cfg(feature = "wasm")]
         let wasm_runtime = Arc::new(Mutex::new(WasmRuntime::new()?));
 
+        let permission_checker = Arc::new(PermissionChecker::new()?);
+
         Ok(Self {
             db_manager,
             registry,
             active_skills: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(feature = "wasm")]
             wasm_runtime,
+            permission_checker,
         })
+    }
+
+    /// Get permission checker
+    pub fn permission_checker(&self) -> Arc<PermissionChecker> {
+        self.permission_checker.clone()
     }
 
     /// 加载 WASM Skill
