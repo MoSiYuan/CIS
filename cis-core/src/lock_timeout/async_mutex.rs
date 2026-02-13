@@ -12,7 +12,35 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::time::timeout;
 
 use crate::error::{CisError, Result};
-use super::{LockType, LockTimeoutError, LockStatsAtomic, LockId};
+use super::{LockTimeoutError, LockId};
+
+/// 锁统计信息（原子计数器）
+#[derive(Debug, Clone, Default)]
+struct LockStatsAtomic {
+    /// 锁获取总次数
+    total_acquisitions: std::sync::atomic::AtomicU64,
+
+    /// 锁超时次数
+    timeout_count: std::sync::atomic::AtomicU64,
+
+    /// 总等待时间（纳秒）
+    total_wait_time: std::sync::atomic::AtomicU64,
+
+    /// 最大等待时间（纳秒）
+    max_wait_time: std::sync::atomic::AtomicU64,
+
+    /// 总持有时间（纳秒）
+    total_hold_time: std::sync::atomic::AtomicU64,
+
+    /// 最大持有时间（纳秒）
+    max_hold_time: std::sync::atomic::AtomicU64,
+
+    /// 当前等待者数量
+    current_waiters: std::sync::atomic::AtomicI32,
+
+    /// 最后等待时间（纳秒）
+    last_wait_time: std::sync::atomic::AtomicU64,
+}
 
 /// 带超时的互斥锁
 pub struct AsyncMutex<T> {
@@ -90,7 +118,7 @@ impl<T> AsyncMutex<T> {
                 );
 
                 Err(LockTimeoutError::Timeout {
-                    lock_type: LockType::Mutex,
+                    lock_type: super::LockType::WriteLock,
                     timeout: timeout_duration,
                 })
             }

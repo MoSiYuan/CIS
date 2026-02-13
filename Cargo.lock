@@ -1568,6 +1568,7 @@ dependencies = [
  "trust-dns-resolver",
  "uuid",
  "vodozemac",
+ "walkdir",
  "wasmer",
  "wasmer-compiler-cranelift",
  "wasmparser 0.115.0",
@@ -1657,6 +1658,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "walkdir",
  "which",
  "whoami",
 ]

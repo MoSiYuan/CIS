@@ -386,25 +386,25 @@ impl AdaptiveThreshold {
 
     /// 降低 ef_search
     fn decrease_ef_search(&self) -> usize {
-        (self.current_ef_search as f32 * (1.0 - ADJUSTMENT_STEP)) as usize
+        ((self.current_ef_search as f32 * (1.0 - ADJUSTMENT_STEP)) as usize)
             .max(MIN_EF_SEARCH)
     }
 
     /// 增加 ef_search
     fn increase_ef_search(&self) -> usize {
-        (self.current_ef_search as f32 * (1.0 + ADJUSTMENT_STEP)) as usize
+        ((self.current_ef_search as f32 * (1.0 + ADJUSTMENT_STEP)) as usize)
             .min(MAX_EF_SEARCH)
     }
 
     /// 增加预加载
     fn increase_preload(&self) -> usize {
-        (self.current_preload as f32 * (1.0 + ADJUSTMENT_STEP)) as usize
+        ((self.current_preload as f32 * (1.0 + ADJUSTMENT_STEP)) as usize)
             .min(MAX_PRELOAD)
     }
 
     /// 减少预加载
     fn decrease_preload(&self) -> usize {
-        (self.current_preload as f32 * (1.0 - ADJUSTMENT_STEP)) as usize
+        ((self.current_preload as f32 * (1.0 - ADJUSTMENT_STEP)) as usize)
             .max(MIN_PRELOAD)
     }
 

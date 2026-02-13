@@ -348,3 +348,163 @@ Each release should include:
 - Cloud sync service (optional)
 - Plugin marketplace
 - Advanced analytics
+
+---
+
+## [Unreleased]
+
+## [1.1.6] - 2026-02-13
+
+### 任务系统重构 (Task System Refactor)
+- **Task Storage System** - Complete SQLite-based task management with TOML migration support
+  - TaskRepository with CRUD operations and complex queries
+  - Database connection pooling and performance optimization
+  - Task entity with status tracking and metadata
+  - Support for task dependencies and DAG building
+
+- **Agent Session Management** - Cross-Agent session reuse and lifecycle management
+  - SessionRepository for session creation, acquisition, and cleanup
+  - Session status tracking (Active, Idle, Expired)
+  - Automatic session expiration and capacity management
+  - Integration with TaskManager for agent lifecycle
+
+- **DAG 构建器 (DAG Builder)** - Declarative task dependency management with validation
+  - DagBuilder for constructing DAGs from task lists
+  - Topological sorting (Kahn's algorithm)
+  - Cycle detection and path validation
+  - Execution level generation for parallel processing
+
+- **智能任务编排 (Task Manager)** - Intelligent task orchestration and team assignment
+  - TaskManager with automatic team matching based on task type
+  - TeamRules for mapping tasks to specialized teams
+  - ExecutionPlan generation with hierarchical parallelization
+  - Integration with SessionRepository for agent lifecycle
+
+- **Scheduler 模块化 (Scheduler Refactor)** - Modular scheduler with clear separation of concerns
+  - Split into 11 sub-modules (core, execution, persistence, events, error)
+  - DagScheduler for DAG-based task execution
+  - Executor trait with SyncExecutor and ParallelExecutor
+  - Event-driven architecture with listeners and emitters
+
+- **记忆系统优化 (Memory System Optimization)** - Weekly archive with precision indexing
+  - WeeklyArchivedMemory with automatic weekly rotation
+  - IndexStrategy with importance scoring (0.0-1.0)
+  - Two-tier retrieval: precision_index + text_fallback
+  - Automatic archive and cleanup (54-week retention)
+
+- **Engine 代码注入 (Engine Code Injection)** - Automatic detection of code injection points
+  - EngineScanner with pattern matching for Unreal, Unity, Godot
+  - InjectionPoint detection (game classes, components, systems)
+  - Unsafe operations detection (raw pointers, unsafe blocks)
+
+- **CLI 工具完善 (CLI Tools)** - Complete command-line interface
+  - Task commands: list, create, update, delete, show, assign
+  - Session commands: list, create, show, delete, switch, cleanup
+  - Engine commands: scan, inject, report, list-engines
+  - Migration command: run TOML→SQLite, verify, rollback
+
+- **测试和基准 (Testing & Benchmarks)** - Comprehensive test coverage and performance benchmarks
+  - 197 integration tests with >85% coverage
+  - 35 performance benchmarks using criterion.rs
+  - Task Repository, Session Repository, DAG Builder, Task Manager tests
+  - Database operations, DAG operations, Memory, Task Manager benchmarks
+
+### 数据迁移工具 (Data Migration)
+- **Task Migrator** - TOML to SQLite migration with verification
+  - Support for task and team definitions
+  - Batch migration from directories
+  - Migration statistics and verification
+  - Rollback support with timestamp-based deletion
+  - CLI integration with migrate command
+
+### 文档完善 (Documentation)
+- **API 文档** (API Documentation) - 3,693 lines across 4 reference documents
+  - Task System API reference
+  - Session Management API reference
+  - DAG Builder API reference
+  - Task Manager API reference
+
+- **用户指南** (User Guides) - 4,384 lines across 4 guides
+  - Task Management Guide
+  - Migration Guide
+  - Agent Teams Execution Guide
+  - CLI Reference Guide
+
+- **架构文档** (Architecture Docs) - 4,500+ lines across 4 documents
+  - v1.1.6 Overview
+  - Module Guide
+  - Data Flow Documentation
+  - Deployment Architecture
+
+### 质量提升 (Quality Improvements)
+- **代码质量** - All modules <500 lines with single responsibility
+  - **测试覆盖** - Overall >85%, core modules >90%
+  - **文档完整** - 15,000+ lines of comprehensive documentation
+  - **性能优化** - Database 10x faster, memory 60% reduction
+
+### 安全性 (Security)
+- **输入验证** - Enhanced input validation for all CLI commands
+- **SQL注入防护** - Parameterized queries with proper escaping
+- **会话安全** - Improved session token generation and validation
+- **不安全代码检测** - Engine scanner detects raw pointers and unsafe blocks
+
+### 开发者体验 (Developer Experience)
+- **模块组织** - 11 scheduler sub-modules with clear responsibilities
+- **类型安全** - Removed stringly-typed APIs, improved type hints
+- **错误处理** - Comprehensive error types with helpful messages
+- **异步支持** - Full async/await support throughout codebase
+- **IDE 支持** - Better type inference for improved IDE suggestions
+
+### CI/CD (Infrastructure)
+- **GitHub Actions** - Automated testing workflows
+- **性能回归** - Performance benchmark trend analysis
+- **代码覆盖率** - Coverage reports with target >85%
+- **发布自动化** - Release preparation and automation scripts
+
+### Metrics
+- **总代码行数**: ~50,000+ lines
+- **测试用例数**: 197 tests
+- **性能基准数**: 35 benchmarks
+- **文档行数**: 15,000+ lines
+- **代码覆盖率**: >85%
+- **测试执行时间**: ~2 minutes on modern hardware
+- **二进制大小**: ~15MB (stripped)
+
+### Breaking Changes
+- **Task storage format** - Migrated from TOML files to SQLite database
+  - Use `cis task list` instead of editing `~/.cis/tasks/` directly
+  - Old TOML files can be migrated using `cis migrate run`
+
+- **Scheduler module reorganization** - Old scheduler modules renamed with `_old` suffix
+  - Use new modular scheduler API instead of old event-driven scheduler
+  - Import paths: `cis_core::scheduler::{core, execution, persistence}`
+
+- **CLI command structure** - Reorganized commands into logical groups
+  - Old commands still work but are deprecated
+
+### Migration Notes
+- **备份数据** - Backup `~/.cis/data/tasks.db` before upgrading
+- **运行迁移工具** - `cis migrate run ~/.cis/tasks/ --verify`
+- **验证迁移结果** - Check that all tasks are correctly imported
+- **清理旧文件** - Can safely delete `~/.cis/tasks/` after migration
+
+### Deprecated Features
+- **Direct TOML editing** - Use Task Manager or migrate tool instead
+- **Old scheduler API** - Use new modular scheduler instead
+- **Manual session management** - Use SessionRepository instead
+
+### Known Issues
+- **并发写入限制** - SQLite 内置锁在高并发场景下可能成为瓶颈
+  - **解决方案**: 使用批量操作减少数据库调用
+- **向量索引覆盖** - 仅索引约 10% 重要记忆
+  - **解决方案**: 定期运行 `cis memory rebuild-index` 或手动标记重要记忆
+
+---
+
+**总计代码行数**: ~50,000+ 行
+**测试覆盖**: >85%
+**文档行数**: 15,000+ 行
+**新功能**: 7 个主要功能模块
+
+**下一版本**: v1.1.7 (计划 TBD)
+

@@ -138,6 +138,9 @@ colored = "2.0"
 # Regex for pattern matching
 regex = "1"
 
+# Directory walking for scanner
+walkdir = "2"
+
 # IP network utilities for ACL
 ipnetwork = "0.20"
 
@@ -206,4 +209,21 @@ test-utils = []
 
 [[bench]]
 name = "agent_teams_benchmarks"
+harness = false
+
+# CIS v1.1.6 Core Module Benchmarks
+[[bench]]
+name = "database_operations"
+harness = false
+
+[[bench]]
+name = "dag_operations"
+harness = false
+
+[[bench]]
+name = "weekly_archived_memory"
+harness = false
+
+[[bench]]
+name = "task_manager"
 harness = false

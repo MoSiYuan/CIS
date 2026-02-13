@@ -1,0 +1,751 @@
+# CIS v1.1.6 任务定义
+
+> **定义日期**: 2026-02-12
+> **格式**: TOML
+> **用途**: Agent Pool 自动加载和分配任务
+
+---
+
+## 任务清单
+
+### P0 - 架构修复
+
+```toml
+[[task]]
+id = "V-1"
+name = "CLI 架构修复"
+type = "ModuleRefactoring"
+priority = "p0"
+effort_person_days = 5
+
+prompt = """
+# 任务：CLI 架构修复
+
+## 目标
+审查所有 CLI handler，确保它们只调用 Server API，不直接实现业务逻辑。
+
+## 参考文档
+- CLI_GUIDE_OPTIMIZED.md（第 4-5 节：错误模式 vs 正确模式）
+- cis-node/src/cli/handlers/ 下的所有 handler
+
+## 具体步骤
+1. 列出所有 CLI handler
+2. 识别直接使用 std::fs, std::process 等的代码
+3. 重构为 Server API 调用模式：
+   - 构建请求对象（如 InitProjectRequest）
+   - 调用 ctx.server.handle(Box::new(request)).await
+   - 处理响应状态码（200, 404, 500 等）
+4. 更新 CLI_GUIDE_OPTIMIZED.md 中的示例
+
+## 验收标准
+- [ ] 所有 CLI handler 只调用 Server API
+- [ ] 无直接文件系统操作（通过 Server API）
+- [ ] 测试覆盖率 > 80%
+- [ ] 文档更新完整
+
+## 依赖
+无
+
+## 上下文
+- 当前问题：Team M 实现的 init.rs 直接使用 std::fs
+- 参考 CLI_GUIDE_OPTIMIZED.md 中的正确模式
+"""
+
+[[task.dependencies]]
+task_id = None
+
+[[task.capabilities]]
+capability = "CodeReview"
+capability = "ModuleRefactoring"
+
+[[task.context_files]]
+path = "cis-node/src/cli/handlers"
+description = "CLI handlers 源码"
+
+[[task.context_files]]
+path = "docs/plan/v1.1.6/CLI_GUIDE_OPTIMIZED.md"
+description = "CLI 优化指南"
+```
+
+### P1 - 核心重构
+
+```toml
+[[task]]
+id = "V-2"
+name = "scheduler 拆分"
+type = "ModuleRefactoring"
+priority = "p1"
+effort_person_days = 15
+
+prompt = """
+# 任务：scheduler 拆分
+
+## 目标
+拆分 scheduler/mod.rs (3439 行) 为多个子模块，每个 <500 行。
+
+## 参考文档
+- REFACTORING_EXECUTION_PLAN.md（阶段 2，Team Q 任务）
+- MONOLITHIC_REFACTORING_ANALYSIS.md（scheduler 模块分析）
+
+## 具体步骤
+1. 创建 scheduler/core/（~300 行）
+   - dag.rs - TaskDag, UnifiedDag
+   - validator.rs - DAG 验证
+   - topo_sort.rs - 拓扑排序
+2. 创建 scheduler/execution/（~400 行）
+   - executor.rs - Executor trait
+   - local.rs - LocalExecutor
+   - multi_agent.rs - MultiAgentExecutor
+   - skill.rs - SkillExecutor
+3. 创建 scheduler/events/（~300 行）
+   - bus.rs - 事件总线
+   - dispatcher.rs - 事件分发
+   - handlers.rs - 事件处理器
+4. 创建 scheduler/persistence/（~250 行）
+   - store.rs - 持久化存储
+   - recovery.rs - 状态恢复
+5. 创建 scheduler/notification/（~250 行）
+   - notifier.rs - 通知器
+   - channels.rs - 通知通道
+
+## 验收标准
+- [ ] scheduler/mod.rs <500 行（只做导出）
+- [ ] 每个子模块 <500 行
+- [ ] 测试覆盖率 > 85%
+- [ ] 性能无回退（对比基准）
+
+## 依赖
+- V-1: 需要事件总线（但如果未完成，可先使用简化版）
+
+## 上下文
+- 现有代码：cis-core/src/scheduler/mod.rs (3439 行)
+- 现有子模块：event_driven.rs, multi_agent_executor.rs 等
+"""
+
+[[task.dependencies]]
+task_id = "V-1"
+
+[[task.capabilities]]
+capability = "ModuleRefactoring"
+capability = "TestWriting"
+
+[[task.context_files]]
+path = "cis-core/src/scheduler"
+description = "scheduler 源码"
+
+[[task.context_files]]
+path = "docs/plan/v1.1.6/REFACTORING_EXECUTION_PLAN.md"
+description = "重构执行计划"
+```
+
+```toml
+[[task]]
+id = "V-3"
+name = "config 拆分"
+type = "ModuleRefactoring"
+priority = "p1"
+effort_person_days = 5
+
+prompt = """
+# 任务：config 拆分
+
+## 目标
+拆分 config/loader.rs (1034 行) 和其他配置模块。
+
+## 参考文档
+- REFACTORING_EXECUTION_PLAN.md（阶段 2，Team R 任务）
+- MONOLITHIC_MODULES_ANALYSIS.md（config 模块分析）
+
+## 具体步骤
+1. 拆分 config/loader.rs (1034 → 4× ~200 行)
+   - file.rs - 文件加载
+   - parser.rs - TOML/YAML 解析
+   - validator.rs - 配置验证
+   - defaults.rs - 默认值
+2. 拆分 config/p2p.rs (916 → 4× ~200 行)
+3. 拆分 config/security.rs (648 → 3× ~200 行)
+4. 拆分 config/wasm.rs (636 → 3× ~200 行)
+
+## 验收标准
+- [ ] 每个子模块 <250 行
+- [ ] 测试覆盖率 > 80%
+- [ ] 配置加载时间无增加
+
+## 依赖
+无
+
+## 上下文
+- 现有代码：cis-core/src/config/
+"""
+
+[[task.dependencies]]
+task_id = None
+
+[[task.capabilities]]
+capability = "ModuleRefactoring"
+
+[[task.context_files]]
+path = "cis-core/src/config"
+description = "config 源码"
+```
+
+```toml
+[[task]]
+id = "V-4"
+name = "memory 精准索引"
+type = "ModuleRefactoring"
+priority = "p1"
+effort_person_days = 15
+
+prompt = """
+# 任务：memory 精准索引
+
+## 目标
+实现精准向量索引 + 54 周按周分 db 归档，优化记忆系统性能。
+
+## 参考文档
+- MEMORY_INDEX_PRECISION_DESIGN.md（完整设计）
+- MEMORY_ARCHITECTURE_DESIGN.md（架构设计）
+
+## 具体步骤
+1. 实现 LogMemory 模块（按周分 db）
+   - 当前周数据库管理
+   - 批量写入优化
+   - 访问统计更新
+   - 跨周查询支持
+2. 实现 VectorIndex 模块（精准索引）
+   - 索引类型分类
+   - 权重计算
+   - LRU 淘汰策略（最多 10000 条）
+   - HNSW 集成
+3. 实现 WeekArchiver 模块（54 周归档）
+   - 周归档任务（每周日 23:59）
+   - 自动清理（54 周滚动）
+   - gzip 压缩支持
+4. 数据迁移脚本
+   - 从旧 VectorStorage 迁移日志数据
+   - 重建精准索引（只索引重要数据）
+5. 性能基准测试
+   - 对比重构前后
+   - 目标：搜索延迟 <80ms，内存 <100MB
+
+## 验收标准
+- [ ] 向量索引规模 <10,000 条
+- [ ] 搜索延迟 <80ms
+- [ ] 内存占用 <100MB
+- [ ] 测试覆盖率 > 85%
+- [ ] 54 周分 db 自动归档生效
+
+## 依赖
+无（但建议等 V-1 完成，参考事件总线模式）
+
+## 上下文
+- 现有代码：cis-core/src/memory/, cis-core/src/vector/
+- 现有归档逻辑：cis-core/src/telemetry/request_logger.rs（cleanup_old_logs）
+"""
+
+[[task.dependencies]]
+task_id = None
+
+[[task.capabilities]]
+capability = "ModuleRefactoring"
+capability = "PerformanceOptimization"
+
+[[task.context_files]]
+path = "cis-core/src/memory"
+description = "memory 源码"
+
+[[task.context_files]]
+path = "cis-core/src/vector"
+description = "vector 源码"
+
+[[task.context_files]]
+path = "cis-core/src/telemetry/request_logger.rs"
+description = "telemetry cleanup 逻辑参考"
+
+[[task.context_files]]
+path = "docs/plan/v1.1.6/MEMORY_INDEX_PRECISION_DESIGN.md"
+description = "精准索引设计"
+```
+
+### P2 - 次要重构
+
+```toml
+[[task]]
+id = "V-5"
+name = "skill 拆分"
+type = "ModuleRefactoring"
+priority = "p2"
+effort_person_days = 6
+
+prompt = """
+# 任务：skill 拆分
+
+## 目标
+拆分 skill 模块的巨型文件。
+
+## 参考文档
+- REFACTORING_EXECUTION_PLAN.md（阶段 3，Team T 任务）
+
+## 具体步骤
+1. 拆分 skill/chain.rs (1390 → 3× ~400 行)
+2. 拆分 skill/router.rs (1287 → 3× ~400 行)
+3. 拆分 skill/manager.rs (1038 → 4× ~300 行)
+
+## 验收标准
+- [ ] 每个子模块 <400 行
+- [ ] 测试覆盖率 > 80%
+
+## 依赖
+- V-2: 需要事件总线
+
+## 上下文
+- 现有代码：cis-core/src/skill/
+"""
+
+[[task.dependencies]]
+task_id = "V-2"
+
+[[task.capabilities]]
+capability = "ModuleRefactoring"
+capability = "TestWriting"
+
+[[task.context_files]]
+path = "cis-core/src/skill"
+description = "skill 源码"
+```
+
+```toml
+[[task]]
+id = "V-6"
+name = "p2p 拆分"
+type = "ModuleRefactoring"
+priority = "p2"
+effort_person_days = 7
+
+prompt = """
+# 任务：p2p 拆分
+
+## 目标
+拆分 p2p 模块的巨型文件。
+
+## 参考文档
+- REFACTORING_EXECUTION_PLAN.md（阶段 2，Team S 任务）
+
+## 具体步骤
+1. 拆分 p2p/transport_secure.rs (1536 → 3× ~500 行)
+   - crypto.rs - 加密原语
+   - handshake.rs - 握手协议
+   - secure.rs - 安全传输（精简）
+2. 拆分 p2p/nat.rs (936 → 4× ~200 行)
+   - stun.rs - STUN 协议
+   - upnp.rs - UPnP 协议
+   - turn.rs - TURN 协议
+   - detector.rs - NAT 类型检测
+3. 拆分 p2p/network.rs (1097 → 3× ~400 行)
+
+## 验收标准
+- [ ] 每个子模块 <500 行
+- [ ] 测试覆盖率 > 75%
+
+## 依赖
+无
+
+## 上下文
+- 现有代码：cis-core/src/p2p/
+"""
+
+[[task.dependencies]]
+task_id = None
+
+[[task.capabilities]]
+capability = "ModuleRefactoring"
+
+[[task.context_files]]
+path = "cis-core/src/p2p"
+description = "p2p 源码"
+```
+
+```toml
+[[task]]
+id = "V-7"
+name = "agent/其他模块拆分"
+type = "ModuleRefactoring"
+priority = "p2"
+effort_person_days = 4
+
+prompt = """
+# 任务：agent/其他模块拆分
+
+## 目标
+拆分 agent 和其他模块的巨型文件。
+
+## 参考文档
+- REFACTORING_EXECUTION_PLAN.md（阶段 3，Team U 任务）
+
+## 具体步骤
+1. 拆分 agent/guard.rs (692 → 3× ~200 行)
+2. 拆分其他大模块
+   - agent/leak_detector.rs (535 → ~400 行)
+   - agent/config.rs (491 → ~400 行)
+   - p2p/sync.rs (638 → ~500 行)
+   - p2p/dht.rs (921 → ~700 行，或标记废弃）
+
+## 验收标准
+- [ ] 每个子模块 <500 行
+- [ ] 测试覆盖率 > 75%
+
+## 依赖
+无
+
+## 上下文
+- 现有代码：cis-core/src/agent/, cis-core/src/p2p/
+"""
+
+[[task.dependencies]]
+task_id = None
+
+[[task.capabilities]]
+capability = "ModuleRefactoring"
+capability = "TestWriting"
+
+[[task.context_files]]
+path = "cis-core/src/agent"
+description = "agent 源码"
+```
+
+### P3 - 验收和优化
+
+```toml
+[[task]]
+id = "V-8"
+name = "全面测试"
+type = "TestWriting"
+priority = "p3"
+effort_person_days = 8
+
+prompt = """
+# 任务：全面测试
+
+## 目标
+补充单元测试和集成测试，达到覆盖率目标。
+
+## 参考文档
+- REFACTORING_EXECUTION_PLAN.md（阶段 4，验收-1 到 验收-2）
+
+## 具体步骤
+1. 单元测试补充
+   - 目标覆盖率 >85%
+   - 边界情况测试
+   - 错误路径测试
+2. 集成测试
+   - 端到端场景（CLI → Server → Service）
+   - 性能压力测试（1000+ 并发请求）
+   - 长时间运行稳定性
+3. CI 配置
+   - 覆盖率门禁（PR 必须通过）
+   - 性能回归检测（自动 benchmark）
+
+## 验收标准
+- [ ] 整体覆盖率 >85%
+- [ ] 所有核心模块 >90%
+- [ ] CI 门禁生效
+
+## 依赖
+- V-1 到 V-7: 所有重构任务完成
+
+## 上下文
+- 测试文件：cis-core/src/**/tests.rs, cis-core/src/**/integration_tests.rs
+"""
+
+[[task.dependencies]]
+task_id = "V-1"
+task_id = "V-2"
+task_id = "V-3"
+task_id = "V-4"
+task_id = "V-5"
+task_id = "V-6"
+task_id = "V-7"
+
+[[task.capabilities]]
+capability = "TestWriting"
+
+[[task.context_files]]
+path = "cis-core"
+description = "所有源码（需测试覆盖）"
+```
+
+```toml
+[[task]]
+id = "V-9"
+name = "性能优化"
+type = "PerformanceOptimization"
+priority = "p3"
+effort_person_days = 3
+
+prompt = """
+# 任务：性能优化
+
+## 目标
+优化编译时间和运行时性能。
+
+## 参考文档
+- REFACTORING_EXECUTION_PLAN.md（阶段 4，验收-3）
+
+## 具体步骤
+1. 编译时间优化
+   - 使用 `cargo build --timings` 分析瓶颈
+   - 目标：增量编译 <60s
+   - 优化：依赖解耦、feature flags
+2. 运行时性能优化
+   - 使用 `cargo flamegraph` 分析热点
+   - 使用 `heaptrack` 分析内存
+   - 目标：内存 <150MB
+3. 性能基准对比
+   - 重构前后对比
+   - 建立性能回归检测
+
+## 验收标准
+- [ ] 增量编译 <60s
+- [ ] 运行时性能无回退
+- [ ] 内存占用 <150MB
+
+## 依赖
+- V-8: 测试完成
+
+## 上下文
+- 性能工具：cargo flamegraph, heaptrack, hyperfine
+"""
+
+[[task.dependencies]]
+task_id = "V-8"
+
+[[task.capabilities]]
+capability = "PerformanceOptimization"
+
+[[task.context_files]]
+path = "."
+description = "项目根目录（运行性能工具）"
+```
+
+```toml
+[[task]]
+id = "V-10"
+name = "文档更新"
+type = "Documentation"
+priority = "p3"
+effort_person_days = 3
+
+prompt = """
+# 任务：文档更新
+
+## 目标
+更新所有文档，确保完整性和准确性。
+
+## 参考文档
+- REFACTORING_EXECUTION_PLAN.md（阶段 4，验收-4）
+
+## 具体步骤
+1. 更新 CLAUDE.md
+   - 架构说明（Server API 优先）
+   - API 使用指南
+   - 最佳实践
+2. 更新 README.md
+   - v1.1.6 特性说明
+   - 快速开始指南
+3. 编写迁移指南
+   - 从旧 API 迁移到新 API
+   - 数据迁移步骤（memory 精准索引）
+4. 编写示例代码
+   - CLI 使用示例
+   - Server API 使用示例
+   - Agent Pool 使用示例
+
+## 验收标准
+- [ ] 所有公开 API 有文档
+- [ ] 示例代码可直接运行
+- [ ] 文档覆盖率 >90%
+
+## 依赖
+- V-1 到 V-9: 所有任务完成
+
+## 上下文
+- 文档文件：CLAUDE.md, README.md, docs/
+"""
+
+[[task.dependencies]]
+task_id = "V-1"
+task_id = "V-2"
+task_id = "V-3"
+task_id = "V-4"
+task_id = "V-5"
+task_id = "V-6"
+task_id = "V-7"
+task_id = "V-8"
+task_id = "V-9"
+
+[[task.capabilities]]
+capability = "Documentation"
+
+[[task.context_files]]
+path = "docs"
+description = "文档目录"
+
+[[task.context_files]]
+path = "CLAUDE.md"
+description = "主引导文档"
+
+[[task.context_files]]
+path = "README.md"
+description = "项目 README"
+```
+
+---
+
+## Team 定义
+
+```toml
+[[team]]
+id = "Team-V-CLI"
+name = "Team V - CLI 优化"
+runtime = "claude"
+max_concurrent_tasks = 3
+
+[[team.capabilities]]
+capability = "CodeReview"
+capability = "ModuleRefactoring"
+
+[[team.members]]
+name = "Auto-Created"
+type = "AI Agent"
+```
+
+```toml
+[[team]]
+id = "Team-Q-Core"
+name = "Team Q - 核心重构"
+runtime = "claude"
+max_concurrent_tasks = 5
+
+[[team.capabilities]]
+capability = "ModuleRefactoring"
+capability = "TestWriting"
+
+[[team.members]]
+name = "Auto-Created"
+type = "AI Agent"
+```
+
+```toml
+[[team]]
+id = "Team-R-Config"
+name = "Team R - 配置重构"
+runtime = "claude"
+max_concurrent_tasks = 3
+
+[[team.capabilities]]
+capability = "ModuleRefactoring"
+
+[[team.members]]
+name = "Auto-Created"
+type = "AI Agent"
+```
+
+```toml
+[[team]]
+id = "Team-V-Memory"
+name = "Team V - 记忆优化"
+runtime = "claude"
+max_concurrent_tasks = 4
+
+[[team.capabilities]]
+capability = "ModuleRefactoring"
+capability = "PerformanceOptimization"
+
+[[team.members]]
+name = "Auto-Created"
+type = "AI Agent"
+```
+
+```toml
+[[team]]
+id = "Team-T-Skill"
+name = "Team T - Skill 重构"
+runtime = "claude"
+max_concurrent_tasks = 3
+
+[[team.capabilities]]
+capability = "ModuleRefactoring"
+capability = "TestWriting"
+
+[[team.members]]
+name = "Auto-Created"
+type = "AI Agent"
+```
+
+```toml
+[[team]]
+id = "Team-S-P2P"
+name = "Team S - P2P 重构"
+runtime = "claude"
+max_concurrent_tasks = 3
+
+[[team.capabilities]]
+capability = "ModuleRefactoring"
+
+[[team.members]]
+name = "Auto-Created"
+type = "AI Agent"
+```
+
+```toml
+[[team]]
+id = "Team-U-Other"
+name = "Team U - 其他重构"
+runtime = "claude"
+max_concurrent_tasks = 3
+
+[[team.capabilities]]
+capability = "ModuleRefactoring"
+capability = "TestWriting"
+
+[[team.members]]
+name = "Auto-Created"
+type = "AI Agent"
+```
+
+---
+
+## 执行配置
+
+```toml
+[execution]
+# 并行策略
+strategy = "parallel"  # parallel | sequential
+
+# 最大并发 Teams
+max_parallel_teams = 7
+
+# 事件总线配置
+[execution.event_bus]
+port = 7678
+buffer_size = 1000
+
+# Agent Pool 配置
+[execution.agent_pool]
+# 默认 Runtime
+default_runtime = "claude"
+
+# Agent 超时（分钟）
+agent_timeout_mins = 30
+
+# 任务重试次数
+max_retries = 3
+
+# 优先级权重（调度算法）
+[execution.priority]
+p0_weight = 100
+p1_weight = 80
+p2_weight = 60
+p3_weight = 40
+```

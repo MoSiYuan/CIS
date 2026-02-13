@@ -400,7 +400,10 @@ impl ResultMerger {
         // 转换并排序
         let mut merged: Vec<_> = score_map
             .into_iter()
-            .map(|(id, (score, source)| SearchResult::new(id, score, source))
+            .map(|(id, tuple)| {
+                let (score, source) = tuple;
+                SearchResult::new(id, score, source)
+            })
             .collect();
 
         merged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());

@@ -333,7 +333,7 @@ impl<T> FallibleOperation<T> {
 
 /// Create a fallible operation that always fails
 pub fn always_fail<T>() -> FallibleOperation<T> {
-    FallibleOperation::new(Err(MockError::Internal("Always fails".into()))
+    FallibleOperation::new(Err(MockError::Internal("Always fails".into())))
 }
 
 /// Create a fallible operation that always succeeds

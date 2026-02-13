@@ -55,15 +55,34 @@ impl std::fmt::Display for DagError {
 
 impl std::error::Error for DagError {}
 
+// ===== 新模块结构 (v1.1.6) =====
+pub mod core;
+pub mod execution;
+pub mod persistence;
+pub mod events;
+pub mod error;
+
+// 重新导出新模块的类型
+pub use core::{DagScheduler, SchedulerDagError, SchedulerDagNode, DagStats, SchedulerCore, TaskQueue, TaskQueueItem, TaskQueueError, TaskQueueStats};
+pub use execution::{Executor, ExecutionResult, ExecutorStats, SyncExecutor, ParallelExecutor};
+pub use events::{SchedulerEvent, SchedulerEventType, EventListener, EventRegistry, LoggingEventListener};
+pub use persistence::{Persistence, SqlitePersistence, MemoryPersistence};
+// error 模块导出 Result 类型
+pub use error::Result as SchedulerResult;
+
+// ===== 旧模块（保持向后兼容） =====
 pub mod event_driven;
 pub mod local_executor;
 pub mod multi_agent_executor;
 pub mod multi_agent_executor_unified;
 pub mod notify;
-pub mod persistence;
+pub mod persistence_old;
 pub mod skill_executor;
 pub mod skill_executor_unified;
 pub mod todo_monitor;
+
+// 重新导出旧的 persistence 类型
+pub use persistence_old::{DagPersistence, TaskExecution, TaskExecutionStatus};
 
 // DAG 定义统一模块（v1.1.6 新增）
 pub mod converters;
@@ -76,7 +95,7 @@ mod tests {
 }
 
 pub use event_driven::{EventDrivenConfig, EventDrivenScheduler, ExecutionSummary};
-pub use local_executor::{LocalExecutor, WorkerInfo, WorkerSummary, ExecutorStats};
+pub use local_executor::{LocalExecutor, WorkerInfo, WorkerSummary, ExecutorStats as LocalExecutorStats};
 pub use multi_agent_executor::{
     MultiAgentDagExecutor, MultiAgentExecutorConfig, MultiAgentExecutionReport,
     TaskExecutionResult,
@@ -85,7 +104,8 @@ pub use notify::{
     CompletionNotifier, ErrorNotifier, ErrorSeverity, NotificationBundle, ReadyNotify,
     TaskCompletion, TaskError,
 };
-pub use persistence::{DagPersistence, TaskExecution, TaskExecutionStatus};
+// 重新导出旧的 persistence 类型
+pub use old_persistence::{DagPersistence, TaskExecution, TaskExecutionStatus};
 pub use skill_executor::SkillDagExecutor;
 pub use todo_monitor::{TodoListMonitor, TodoChangeEvent, TodoListLoader, FileSystemLoader};
 
@@ -2422,6 +2442,7 @@ impl DagRun {
     }
 }
 
+/* // Deprecated: Use core::DagScheduler instead
 /// DAG scheduler managing multiple DAG runs
 pub struct DagScheduler {
     runs: HashMap<String, DagRun>,
@@ -2678,6 +2699,7 @@ impl Default for DagScheduler {
         Self::new()
     }
 }
+*/ // End deprecated DagScheduler block
 
 
 #[cfg(test)]

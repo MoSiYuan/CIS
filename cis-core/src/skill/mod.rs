@@ -49,11 +49,10 @@ pub use permission_checker::{
     CheckContext, Constraint, PermissionCategory, PermissionChecker, PermissionLevel,
     PermissionResult, PermissionScope, ResourcePattern,
 };
-pub use manager::SkillManager;
 pub use dag::{SkillDagBuilder, SkillDagContext, SkillDagConverter, SkillDagStats};
 pub use project_registry::{ProjectSkillRegistry, ProjectSkillConfig, ProjectSkillEntry, ProjectSkillDiscovery};
 pub use registry::{SkillRegistry, SkillRegistration};
-pub use router::{ChainExecutionResult, ResolvedParameters, RouteResult, 
+pub use router::{ChainExecutionResult, ResolvedParameters, RouteResult,
                 SkillCompatibility, SkillRoutingResult, SkillVectorRouter};
 pub use semantics::{SkillIoSignature, SkillScope, SkillSemanticDescription, SkillSemanticMatcher, SkillSemanticRegistry, SkillSemanticsExt};
 pub use types::{LoadOptions, SkillConfig, SkillInfo, SkillMeta, SkillRoomInfo, SkillState, SkillType};

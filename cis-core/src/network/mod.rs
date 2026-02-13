@@ -30,7 +30,6 @@
 //!                         Allow/Deny communication
 //! ```
 
-pub mod acl;
 pub mod acl_rules;
 pub mod agent_session;
 pub mod audit;

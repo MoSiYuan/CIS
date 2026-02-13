@@ -8,6 +8,7 @@ pub mod error;
 pub mod output;
 pub mod progress;
 pub mod registry;
+pub mod commands;
 
 pub mod groups;
 pub mod handlers;

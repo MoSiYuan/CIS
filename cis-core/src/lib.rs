@@ -130,6 +130,9 @@ pub mod cli;
 // Decision module - Four-tier decision mechanism
 pub mod decision;
 
+// Engine scanner module - Game engine detection and code injection
+pub mod engine;
+
 // Test framework with mocks (only for testing)
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test;

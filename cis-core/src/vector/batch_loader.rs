@@ -353,7 +353,7 @@ impl BatchVectorLoader {
             pool.install(|| loaded)
         })
         .await
-        .map_err(|e| CisError::other(format!("Loader task failed: {}", e)))??;
+        .map_err(|e| CisError::other(format!("Loader task failed: {}", e)))?;
 
         VectorBatch::from_vectors(vectors)
     }

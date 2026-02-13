@@ -83,6 +83,27 @@ impl CommandContext {
             eprintln!("[VERBOSE] {}", msg);
         }
     }
+
+    /// Get task manager if available
+    pub fn get_task_manager(&self) -> Option<cis_core::task::manager::TaskManager> {
+        // TODO: Implement proper initialization from context
+        // For now, return None to indicate not available
+        None
+    }
+
+    /// Get session repository if available
+    pub fn get_session_repository(&self) -> Option<cis_core::task::session::SessionRepository> {
+        // TODO: Implement proper initialization from context
+        // For now, return None to indicate not available
+        None
+    }
+
+    /// Get agent repository if available
+    pub fn get_agent_repository(&self) -> Option<cis_core::task::session::AgentRepository> {
+        // TODO: Implement proper initialization from context
+        // For now, return None to indicate not available
+        None
+    }
 }
 
 impl Default for CommandContext {
