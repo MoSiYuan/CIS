@@ -8,8 +8,8 @@ services:
   # CIS 主节点
   cis-node:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
       target: runtime
     image: cis-node:latest
     container_name: cis-node
@@ -63,7 +63,7 @@ services:
   # CIS GUI（可选）
   cis-gui:
     build:
-      context: .
+      context: ..
       dockerfile: cis-gui/Dockerfile
     image: cis-gui:latest
     container_name: cis-gui
@@ -86,7 +86,7 @@ services:
   # Matrix Bridge（可选）
   cis-matrix-bridge:
     build:
-      context: .
+      context: ..
       dockerfile: packaging/matrix-appservice/Dockerfile
     image: cis-matrix-bridge:latest
     container_name: cis-matrix-bridge

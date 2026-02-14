@@ -1,0 +1,78 @@
+# CIS Docker Ignore Patterns
+# ====================
+
+# Build artifacts
+target/
+**/target/
+*.rlib
+*.rmeta
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies (will be installed in container)
+Cargo.lock
+
+# Test files
+test_*/
+test_*.rs
+tests/
+
+# Development files
+*.dev.*
+*.local.*
+*.test.*
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Data (will be mounted as volume)
+data/
+.cis/data/
+
+# Build cache
+.cargo/
+.cache/
+
+# Python (if any Python tools)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/

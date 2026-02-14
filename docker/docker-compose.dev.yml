@@ -7,8 +7,8 @@ services:
   # CIS 开发节点（带热重载）
   cis-node-dev:
     build:
-      context: .
-      dockerfile: Dockerfile.dev
+      context: ..
+      dockerfile: docker/Dockerfile.dev
     image: cis-node:dev
     container_name: cis-node-dev
     
@@ -19,11 +19,11 @@ services:
     
     volumes:
       # 源代码挂载（用于热重载）
-      - ./cis-core:/app/cis-core
-      - ./cis-node:/app/cis-node
-      - ./crates:/app/crates
-      - ./Cargo.toml:/app/Cargo.toml
-      - ./Cargo.lock:/app/Cargo.lock
+      - ../cis-core:/app/cis-core
+      - ../cis-node:/app/cis-node
+      - ../crates:/app/crates
+      - ../Cargo.toml:/app/Cargo.toml
+      - ../Cargo.lock:/app/Cargo.lock
       # 数据持久化
       - cis-dev-data:/app/.cis
       # 目标目录（缓存）
@@ -73,7 +73,7 @@ services:
     image: nginx:alpine
     container_name: cis-docs
     volumes:
-      - ./docs:/usr/share/nginx/html:ro
+      - ../docs:/usr/share/nginx/html:ro
     ports:
       - "8080:80"
     networks:
