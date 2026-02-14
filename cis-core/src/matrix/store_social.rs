@@ -582,16 +582,21 @@ impl MatrixSocialStore {
         // 生成设备 ID（如果没有提供）
         let device_id = device_id.map(|s| s.to_string()).unwrap_or_else(generate_device_id);
 
+        // 如果没有提供显示名称，使用设备名（hostname）作为默认值
+        let display_name = display_name.map(|s| s.to_string()).unwrap_or_else(|| {
+            gethostname::gethostname().to_string_lossy().to_string()
+        });
+
         // 创建用户
-        let profile = display_name.map(|name| UserProfile {
-            display_name: Some(name.to_string()),
+        let profile = UserProfile {
+            display_name: Some(display_name.clone()),
             avatar_url: None,
             status_msg: None,
-        });
-        self.create_user(user_id, profile)?;
+        };
+        self.create_user(user_id, Some(profile))?;
 
         // 注册设备
-        self.register_device(&device_id, user_id, display_name, None)?;
+        self.register_device(&device_id, user_id, Some(&display_name), None)?;
 
         // 创建访问令牌（默认 30 天过期）
         let token = self.create_token(user_id, Some(&device_id), Some(30 * 24 * 60 * 60))?;

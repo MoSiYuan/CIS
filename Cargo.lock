@@ -1371,7 +1371,7 @@ dependencies = [
 
 [[package]]
 name = "cis-capability"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1394,7 +1394,7 @@ dependencies = [
 
 [[package]]
 name = "cis-core"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1474,7 +1474,7 @@ dependencies = [
 
 [[package]]
 name = "cis-gui"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -1499,7 +1499,7 @@ dependencies = [
 
 [[package]]
 name = "cis-mcp-adapter"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1518,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "cis-node"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1553,7 +1553,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-ai-executor"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -1561,7 +1561,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-init-wizard"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -1569,7 +1569,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-memory-organizer"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -1577,7 +1577,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-push-client"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -1585,7 +1585,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-sdk"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "async-trait",
  "cis-skill-sdk-derive",
@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "cis-skill-sdk-derive"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2142,7 +2142,7 @@ dependencies = [
 
 [[package]]
 name = "dag-executor"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4103,7 +4103,7 @@ dependencies = [
 
 [[package]]
 name = "im-skill"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4722,7 +4722,7 @@ dependencies = [
 
 [[package]]
 name = "matrix-register-skill"
-version = "1.1.3"
+version = "1.1.5"
 dependencies = [
  "anyhow",
  "async-trait",

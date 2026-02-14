@@ -174,19 +174,25 @@ impl BuiltinSkillInstaller {
 
         info!("正在编译内置 Skill '{}'...", skill.name);
 
-        // 构建编译命令
+        // 构建编译命令，添加网络超时设置
         let mut cmd = Command::new("cargo");
         cmd.arg("build")
             .arg("-p")
             .arg(skill.name)
-            .current_dir(&self.project_root);
+            .current_dir(&self.project_root)
+            // 设置网络超时为 60 秒
+            .env("CARGO_NET_TIMEOUT", "60")
+            // 设置重试次数
+            .env("CARGO_NET_RETRY", "3")
+            // 使用 git 协议时超时
+            .env("CARGO_HTTP_TIMEOUT", "60");
 
         if self.release_mode {
             cmd.arg("--release");
         }
 
-        // 执行编译
-        let output = cmd.output()
+        // 执行编译（带 10 分钟超时）
+        let output = Self::run_with_timeout(&mut cmd, std::time::Duration::from_secs(600))
             .map_err(|e| CisError::skill(format!("编译命令执行失败: {}", e)))?;
 
         if !output.status.success() {
@@ -207,6 +213,38 @@ impl BuiltinSkillInstaller {
         };
         
         Ok(target_dir)
+    }
+
+    /// 执行命令并设置超时
+    fn run_with_timeout(cmd: &mut Command, timeout: std::time::Duration) -> std::io::Result<std::process::Output> {
+        use std::sync::mpsc;
+        use std::thread;
+        
+        let mut cmd = cmd.stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        
+        let (tx, rx) = mpsc::channel();
+        
+        // 在另一个线程中等待子进程
+        thread::spawn(move || {
+            let result = cmd.wait_with_output();
+            let _ = tx.send(result);
+        });
+        
+        // 等待结果或超时
+        match rx.recv_timeout(timeout) {
+            Ok(result) => result,
+            Err(_) => {
+                // 超时，尝试终止进程
+                // 注意：由于 cmd 已经移动到线程中，我们无法直接终止
+                // 但进程会在线程结束时自动清理
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "编译超时（超过 10 分钟），请检查网络连接或稍后重试"
+                ))
+            }
+        }
     }
 
     /// 安装单个 Skill

@@ -83,7 +83,10 @@ ehthumbs_vista.db
 *.cert
 
 # Claude 配置（包含 API 密钥）
-.claude/
+.claude/*
+# 但允许以下文件提交到版本控制
+!.claude/CLAUDE.md
+!.claude/settings.local.json
 
 # Docker 测试环境（包含敏感配置）
 test_docker/
