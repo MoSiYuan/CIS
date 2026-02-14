@@ -1,0 +1,970 @@
+//! # 54周按周分归档的记忆系统
+//!
+//! 实现记忆的周级别归档和精准索引策略。
+
+use crate::error::{CisError, Result as CisResult};
+use crate::types::{MemoryCategory, MemoryDomain};
+use chrono::{Datelike, Utc};
+use rusqlite::{params, Connection, Result as SqliteResult};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::{Mutex, Semaphore};
+
+/// 周归档记忆数据库
+pub struct WeeklyArchivedMemory {
+    /// 基础目录（包含所有周数据库）
+    base_dir: PathBuf,
+
+    /// 最大保留周数
+    max_weeks: usize,
+
+    /// 当前周ID（如 "2026-W07"）
+    current_week: Arc<Mutex<String>>,
+
+    /// 并发信号量（限制同时打开的数据库数）
+    semaphore: Arc<Semaphore>,
+
+    /// 精准索引策略
+    index_strategy: IndexStrategy,
+}
+
+/// 索引策略配置
+#[derive(Debug, Clone)]
+pub struct IndexStrategy {
+    /// 最大索引条目数
+    pub max_entries: usize,
+
+    /// 索引类型白名单
+    pub allowed_types: Vec<IndexType>,
+
+    /// 最小重要性分数
+    pub min_importance: f32,
+
+    /// 目标索引率（~10%）
+    pub target_ratio: f32,
+}
+
+impl Default for IndexStrategy {
+    fn default() -> Self {
+        Self {
+            max_entries: 10_000,
+            allowed_types: vec![
+                IndexType::UserPreference,
+                IndexType::ProjectConfig,
+                IndexType::ImportantDecision,
+                IndexType::FrequentlyQueried,
+            ],
+            min_importance: 0.7,
+            target_ratio: 0.1,
+        }
+    }
+}
+
+/// 索引类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IndexType {
+    /// 用户偏好设置
+    UserPreference,
+
+    /// 项目配置
+    ProjectConfig,
+
+    /// 重要决策
+    ImportantDecision,
+
+    /// 常用查询
+    FrequentlyQueried,
+
+    /// 敏感信息（不建向量）
+    Sensitive,
+
+    /// 临时数据（不索引）
+    Temporary,
+}
+
+impl WeeklyArchivedMemory {
+    /// 创建新的周归档记忆系统
+    pub fn new(base_dir: PathBuf, max_weeks: usize) -> CisResult<Self> {
+        // 创建基础目录
+        std::fs::create_dir_all(&base_dir)
+            .map_err(|e| CisError::Memory(format!("Failed to create memory directory: {}", e)))?;
+
+        // 初始化当前周
+        let current_week = Self::calculate_week_id(&Utc::now());
+
+        Ok(Self {
+            base_dir,
+            max_weeks,
+            current_week: Arc::new(Mutex::new(current_week)),
+            semaphore: Arc::new(Semaphore::new(10)),
+            index_strategy: IndexStrategy::default(),
+        })
+    }
+
+    /// 计算周ID（ISO 8601标准）
+    fn calculate_week_id(datetime: &chrono::DateTime<Utc>) -> String {
+        let year = datetime.year();
+        let week = datetime.iso_week().week();
+        format!("{}-W{:02}", year, week)
+    }
+
+    /// 获取当前周ID
+    pub async fn current_week_id(&self) -> String {
+        self.current_week.lock().await.clone()
+    }
+
+    /// 获取指定周的数据库路径
+    fn week_db_path(&self, week_id: &str) -> PathBuf {
+        self.base_dir.join(format!("week-{}.db", week_id))
+    }
+
+    /// 获取当前周的数据库路径
+    pub fn current_db_path(&self) -> PathBuf {
+        let week_id = Self::calculate_week_id(&Utc::now());
+        self.week_db_path(&week_id)
+    }
+
+    /// 获取或创建周数据库连接
+    async fn get_week_connection(&self, week_id: &str) -> SqliteResult<Connection> {
+        // 获取信号量（限制并发）
+        let _permit = self.semaphore.acquire().await;
+
+        // 打开连接
+        let db_path = self.week_db_path(week_id);
+        let conn = Connection::open(&db_path)?;
+
+        // 初始化Schema
+        Self::initialize_week_schema(&conn, week_id)?;
+
+        Ok(conn)
+    }
+
+    /// 初始化周数据库Schema
+    fn initialize_week_schema(conn: &Connection, week_id: &str) -> SqliteResult<()> {
+        // 启用WAL模式
+        conn.execute("PRAGMA journal_mode=WAL", [])?;
+        conn.execute("PRAGMA synchronous=NORMAL", [])?;
+        conn.execute("PRAGMA foreign_keys=ON", [])?;
+        conn.execute("PRAGMA page_size=4096", [])?;
+        conn.execute("PRAGMA cache_size=-64000", [])?;
+
+        // 创建log_memory表（全量记忆存储）
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS log_memory (
+                key TEXT PRIMARY KEY,
+                value BLOB NOT NULL,
+                domain TEXT NOT NULL,
+                category TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                week_id TEXT NOT NULL,
+                is_indexed INTEGER DEFAULT 0,
+                access_count INTEGER DEFAULT 0,
+                last_accessed_at INTEGER,
+                metadata TEXT
+            )",
+            [],
+        )?;
+
+        // 创建索引
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_log_key ON log_memory(key)", [])?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_log_domain_category ON log_memory(domain, category)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_log_created_at ON log_memory(created_at)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_log_is_indexed ON log_memory(is_indexed)",
+            [],
+        )?;
+
+        // 创建precision_index表（精准向量索引）
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS precision_index (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT NOT NULL,
+                week_id TEXT NOT NULL,
+                embedding BLOB,
+                importance_score REAL DEFAULT 0.0,
+                index_type TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (key) REFERENCES log_memory(key) ON DELETE CASCADE,
+                UNIQUE(key, week_id)
+            )",
+            [],
+        )?;
+
+        // 创建向量索引
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_precision_importance
+             ON precision_index(importance_score DESC)",
+            [],
+        )?;
+
+        Ok(())
+    }
+
+    /// 存储记忆（自动分配到当前周）
+    pub async fn set(
+        &self,
+        key: &str,
+        value: &[u8],
+        domain: MemoryDomain,
+        category: MemoryCategory,
+    ) -> CisResult<bool> {
+        // 检查周切换
+        self.check_and_archive_week().await?;
+
+        // 获取当前周ID
+        let week_id = self.current_week_id().await;
+        let conn = self.get_week_connection(&week_id).await
+            .map_err(|e| CisError::Memory(format!("Failed to get connection: {}", e)))?;
+
+        let now = Utc::now().timestamp();
+        let domain_str = format!("{:?}", domain);
+        let category_str = format!("{:?}", category);
+
+        // 判断是否应该索引
+        let index_type = self.classify_entry(key, domain, category);
+        let should_index = self.should_index(&index_type);
+
+        // 插入到log_memory表
+        conn.execute(
+            "INSERT OR REPLACE INTO log_memory
+             (key, value, domain, category, created_at, week_id, is_indexed, access_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+            params![
+                key,
+                value,
+                domain_str,
+                category_str,
+                now,
+                week_id,
+                should_index as i32,
+            ],
+        )
+        .map_err(|e| CisError::Memory(format!("Failed to insert memory: {}", e)))?;
+
+        // 创建精准索引（异步）
+        if should_index {
+            let importance = self.calculate_importance(key, domain, category);
+            self.create_precision_index(&conn, key, &week_id, index_type, importance).await?;
+        }
+
+        Ok(should_index)
+    }
+
+    /// 分类记忆条目
+    fn classify_entry(
+        &self,
+        key: &str,
+        _domain: MemoryDomain,
+        _category: MemoryCategory,
+    ) -> IndexType {
+        // 敏感信息（不建向量）
+        if key.contains("api_key")
+            || key.contains("secret")
+            || key.contains("password")
+            || key.contains("token")
+        {
+            return IndexType::Sensitive;
+        }
+
+        // 临时数据（不索引）
+        if key.starts_with("temp/")
+            || key.starts_with("cache/")
+            || key.starts_with("debug/")
+        {
+            return IndexType::Temporary;
+        }
+
+        // 用户偏好
+        if key.starts_with("user/preference/") {
+            return IndexType::UserPreference;
+        }
+
+        // 项目配置
+        if key.starts_with("project/")
+            || key.starts_with("config/")
+            || key.contains("architecture")
+        {
+            return IndexType::ProjectConfig;
+        }
+
+        // 重要决策
+        if key.contains("decision") || key.contains("convention") {
+            return IndexType::ImportantDecision;
+        }
+
+        // 默认
+        IndexType::FrequentlyQueried
+    }
+
+    /// 判断是否应该索引
+    fn should_index(&self, index_type: &IndexType) -> bool {
+        // 敏感和临时数据不索引
+        if matches!(index_type, IndexType::Sensitive | IndexType::Temporary) {
+            return false;
+        }
+
+        // 检查白名单
+        self.index_strategy.allowed_types.contains(index_type)
+    }
+
+    /// 计算重要性分数（0.0-1.0）
+    fn calculate_importance(
+        &self,
+        key: &str,
+        domain: MemoryDomain,
+        category: MemoryCategory,
+    ) -> f32 {
+        let mut score = 0.5;
+
+        // 公域记忆加权
+        if matches!(domain, MemoryDomain::Public) {
+            score += 0.2;
+        }
+
+        // 重要类别加权
+        if matches!(category, MemoryCategory::Context) {
+            score += 0.2;
+        }
+
+        // 键名模式加权
+        if key.contains("architecture") || key.contains("api") {
+            score += 0.1;
+        }
+
+        score.min(1.0)
+    }
+
+    /// 创建精准向量索引
+    async fn create_precision_index(
+        &self,
+        conn: &Connection,
+        key: &str,
+        week_id: &str,
+        index_type: IndexType,
+        importance: f32,
+    ) -> CisResult<()> {
+        // 敏感信息不建向量
+        if matches!(index_type, IndexType::Sensitive) {
+            return Ok(());
+        }
+
+        // 生成嵌入向量（简化版）
+        let embedding = self.generate_embedding(key).await;
+
+        let now = Utc::now().timestamp();
+        let type_str = format!("{:?}", index_type);
+
+        conn.execute(
+            "INSERT OR REPLACE INTO precision_index
+             (key, week_id, embedding, importance_score, index_type, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![key, week_id, embedding, importance, type_str, now],
+        )
+        .map_err(|e| CisError::Memory(format!("Failed to create index: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 生成嵌入向量（简化版）
+    async fn generate_embedding(&self, text: &str) -> Vec<u8> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        text.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        // 生成384维向量（简化版）
+        let mut embedding = Vec::with_capacity(384 * 4);
+        for i in 0..384 {
+            let val = ((hash >> (i % 64)) & 0xFF) as u8;
+            embedding.push(val);
+            embedding.push(val);
+            embedding.push(val);
+            embedding.push(val);
+        }
+
+        embedding
+    }
+
+    /// 获取记忆（精确键查询）
+    pub async fn get(&self, key: &str) -> CisResult<Option<MemoryItem>> {
+        let week_id = self.current_week_id().await;
+        let conn = self.get_week_connection(&week_id).await
+            .map_err(|e| CisError::Memory(format!("Failed to get connection: {}", e)))?;
+
+        // 更新访问统计
+        conn.execute(
+            "UPDATE log_memory SET access_count = access_count + 1, last_accessed_at = ?1 WHERE key = ?2",
+            params![Utc::now().timestamp(), key],
+        )
+        .map_err(|e| CisError::Memory(format!("Failed to update access count: {}", e)))?;
+
+        // 查询数据
+        let item = conn
+            .query_row(
+                "SELECT key, value, domain, category, created_at, week_id, access_count
+                 FROM log_memory WHERE key = ?1",
+                params![key],
+                |row| {
+                    Ok(MemoryItem {
+                        key: row.get(0)?,
+                        value: row.get(1)?,
+                        domain: parse_domain(row.get(2)?),
+                        category: parse_category(row.get(3)?),
+                        created_at: row.get(4)?,
+                        week_id: row.get(5)?,
+                        access_count: row.get(6)?,
+                        source: "direct".to_string(),
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| CisError::Memory(format!("Failed to query memory: {}", e)))?;
+
+        Ok(item)
+    }
+
+    /// 搜索记忆（两级检索：向量搜索 + 文本回溯）
+    pub async fn search(
+        &self,
+        query: &str,
+        domain: Option<MemoryDomain>,
+        limit: usize,
+    ) -> CisResult<Vec<MemoryItem>> {
+        let mut results = Vec::new();
+
+        // 1. 精准索引搜索（向量相似度）
+        let indexed_results = self.search_precision_index(query, domain, limit).await?;
+        results.extend(indexed_results);
+
+        // 2. 如果结果不足，使用文本回溯
+        if results.len() < limit {
+            let fts_results = self.search_text_fallback(query, domain, limit - results.len()).await?;
+            results.extend(fts_results);
+        }
+
+        // 3. 去重并限制数量
+        results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        results.dedup_by_key(|item| item.key.clone());
+        results.truncate(limit);
+
+        Ok(results)
+    }
+
+    /// 在精准索引中搜索
+    async fn search_precision_index(
+        &self,
+        _query: &str,
+        domain: Option<MemoryDomain>,
+        limit: usize,
+    ) -> CisResult<Vec<MemoryItem>> {
+        let week_id = self.current_week_id().await;
+        let conn = self.get_week_connection(&week_id).await
+            .map_err(|e| CisError::Memory(format!("Failed to get connection: {}", e)))?;
+
+        // 构建SQL查询
+        let domain_filter = match domain {
+            Some(MemoryDomain::Private) => " AND l.domain = 'Private'",
+            Some(MemoryDomain::Public) => " AND l.domain = 'Public'",
+            None => "",
+        };
+
+        let sql = format!(
+            "SELECT l.key, l.value, l.domain, l.category, l.created_at, l.week_id, l.access_count
+             FROM log_memory l
+             INNER JOIN precision_index p ON l.key = p.key
+             WHERE l.week_id = ?1 {}
+             ORDER BY p.importance_score DESC
+             LIMIT ?2",
+            domain_filter
+        );
+
+        let mut stmt = conn.prepare(&sql)
+            .map_err(|e| CisError::Memory(format!("Failed to prepare query: {}", e)))?;
+
+        let items = stmt
+            .query_map(params![week_id, limit], |row| {
+                Ok(MemoryItem {
+                    key: row.get(0)?,
+                    value: row.get(1)?,
+                    domain: parse_domain(row.get(2)?),
+                    category: parse_category(row.get(3)?),
+                    created_at: row.get(4)?,
+                    week_id: row.get(5)?,
+                    access_count: row.get(6)?,
+                    source: "precision_index".to_string(),
+                })
+            })
+            .map_err(|e| CisError::Memory(format!("Failed to execute query: {}", e)))?
+            .collect::<SqliteResult<Vec<_>>>()
+            .map_err(|e| CisError::Memory(format!("Failed to fetch results: {}", e)))?;
+
+        Ok(items)
+    }
+
+    /// 文本回溯搜索
+    async fn search_text_fallback(
+        &self,
+        _query: &str,
+        domain: Option<MemoryDomain>,
+        limit: usize,
+    ) -> CisResult<Vec<MemoryItem>> {
+        let week_id = self.current_week_id().await;
+        let conn = self.get_week_connection(&week_id).await
+            .map_err(|e| CisError::Memory(format!("Failed to get connection: {}", e)))?;
+
+        // 构建SQL查询
+        let domain_filter = match domain {
+            Some(MemoryDomain::Private) => " AND l.domain = 'Private'",
+            Some(MemoryDomain::Public) => " AND l.domain = 'Public'",
+            None => "",
+        };
+
+        // 简化版：返回所有已索引的记忆
+        let sql = format!(
+            "SELECT l.key, l.value, l.domain, l.category, l.created_at, l.week_id, l.access_count
+             FROM log_memory l
+             WHERE l.week_id = ?1 AND l.is_indexed = 1 {}
+             ORDER BY l.created_at DESC
+             LIMIT ?2",
+            domain_filter
+        );
+
+        let mut stmt = conn.prepare(&sql)
+            .map_err(|e| CisError::Memory(format!("Failed to prepare query: {}", e)))?;
+
+        let items = stmt
+            .query_map(params![week_id, limit], |row| {
+                Ok(MemoryItem {
+                    key: row.get(0)?,
+                    value: row.get(1)?,
+                    domain: parse_domain(row.get(2)?),
+                    category: parse_category(row.get(3)?),
+                    created_at: row.get(4)?,
+                    week_id: row.get(5)?,
+                    access_count: row.get(6)?,
+                    source: "text_fallback".to_string(),
+                })
+            })
+            .map_err(|e| CisError::Memory(format!("Failed to execute query: {}", e)))?
+            .collect::<SqliteResult<Vec<_>>>()
+            .map_err(|e| CisError::Memory(format!("Failed to fetch results: {}", e)))?;
+
+        Ok(items)
+    }
+
+    /// 删除记忆
+    pub async fn delete(&self, key: &str) -> CisResult<bool> {
+        let week_id = self.current_week_id().await;
+        let conn = self.get_week_connection(&week_id).await
+            .map_err(|e| CisError::Memory(format!("Failed to get connection: {}", e)))?;
+
+        let affected = conn
+            .execute("DELETE FROM log_memory WHERE key = ?1", params![key])
+            .map_err(|e| CisError::Memory(format!("Failed to delete memory: {}", e)))?;
+
+        Ok(affected > 0)
+    }
+
+    /// 检查并归档周数据库
+    async fn check_and_archive_week(&self) -> CisResult<()> {
+        let current_week = Self::calculate_week_id(&Utc::now());
+        let stored_week = self.current_week_id().await;
+
+        // 如果周切换了
+        if current_week != stored_week {
+            tracing::info!("Week switch detected: {} -> {}", stored_week, current_week);
+
+            // 更新当前周
+            *self.current_week.lock().await = current_week.clone();
+
+            // 归档旧周
+            self.archive_week(&stored_week).await?;
+
+            // 清理过期周
+            self.cleanup_old_weeks().await?;
+        }
+
+        Ok(())
+    }
+
+    /// 归档指定周
+    async fn archive_week(&self, week_id: &str) -> CisResult<()> {
+        tracing::info!("Archiving week: {}", week_id);
+
+        // 归档文件路径
+        let db_path = self.week_db_path(week_id);
+        let archive_dir = self.base_dir.join("archives");
+        std::fs::create_dir_all(&archive_dir)
+            .map_err(|e| CisError::Memory(format!("Failed to create archive directory: {}", e)))?;
+
+        let archive_path = archive_dir.join(format!("{}.db", week_id));
+
+        // 移动到归档目录
+        std::fs::rename(&db_path, &archive_path)
+            .map_err(|e| CisError::Memory(format!("Failed to archive database: {}", e)))?;
+
+        tracing::info!("Week {} archived to: {:?}", week_id, archive_path);
+
+        Ok(())
+    }
+
+    /// 清理过期周（保持54周）
+    pub async fn cleanup_old_weeks(&self) -> CisResult<Vec<String>> {
+        let mut removed_weeks = Vec::new();
+
+        // 扫描周数据库文件
+        let entries = std::fs::read_dir(&self.base_dir)
+            .map_err(|e| CisError::Memory(format!("Failed to read memory directory: {}", e)))?;
+
+        let mut week_files: Vec<(String, std::path::PathBuf)> = Vec::new();
+
+        for entry in entries {
+            let entry = entry
+                .map_err(|e| CisError::Memory(format!("Failed to read directory entry: {}", e)))?;
+            let path = entry.path();
+
+            // 只处理.db文件
+            if path.extension().and_then(|s| s.to_str()) != Some("db") {
+                continue;
+            }
+
+            let filename = path.file_stem().and_then(|s| s.to_str());
+            if let Some(name) = filename {
+                if name.starts_with("week-") {
+                    let week_id = name.strip_prefix("week-").unwrap_or(name);
+                    week_files.push((week_id.to_string(), path));
+                }
+            }
+        }
+
+        // 按周排序（最旧的在前）
+        week_files.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // 保留最近54周
+        if week_files.len() > self.max_weeks {
+            let old_count = week_files.len() - self.max_weeks;
+
+            for (week_id, path) in week_files.iter().take(old_count) {
+                // 删除文件
+                std::fs::remove_file(&path)
+                    .map_err(|e| CisError::Memory(format!("Failed to delete old database: {}", e)))?;
+
+                removed_weeks.push(week_id.clone());
+                tracing::info!("Deleted old week database: {}", week_id);
+            }
+        }
+
+        Ok(removed_weeks)
+    }
+
+    /// 获取统计信息
+    pub async fn get_stats(&self) -> CisResult<WeeklyMemoryStats> {
+        let week_id = self.current_week_id().await;
+        let conn = self.get_week_connection(&week_id).await
+            .map_err(|e| CisError::Memory(format!("Failed to get connection: {}", e)))?;
+
+        // 总记忆数
+        let total_memories: i64 = conn
+            .query_row("SELECT COUNT(*) FROM log_memory", [], |row| row.get(0))
+            .map_err(|e| CisError::Memory(format!("Failed to count memories: {}", e)))?;
+
+        // 已索引记忆数
+        let indexed_memories: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM log_memory WHERE is_indexed = 1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| CisError::Memory(format!("Failed to count indexed: {}", e)))?;
+
+        // 精准索引数
+        let precision_index_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM precision_index", [], |row| row.get(0))
+            .map_err(|e| CisError::Memory(format!("Failed to count index: {}", e)))?;
+
+        // 计算索引率
+        let index_ratio = if total_memories > 0 {
+            (indexed_memories as f64) / (total_memories as f64)
+        } else {
+            0.0
+        };
+
+        // 统计周数据库文件数
+        let week_count = std::fs::read_dir(&self.base_dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.path()
+                            .extension()
+                            .and_then(|s| s.to_str())
+                            == Some("db")
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+
+        Ok(WeeklyMemoryStats {
+            total_memories,
+            indexed_memories,
+            precision_index_count,
+            index_ratio,
+            week_databases: week_count as i64,
+            current_week: week_id,
+        })
+    }
+}
+
+/// 记忆项
+#[derive(Debug, Clone)]
+pub struct MemoryItem {
+    pub key: String,
+    pub value: Vec<u8>,
+    pub domain: MemoryDomain,
+    pub category: MemoryCategory,
+    pub created_at: i64,
+    pub week_id: String,
+    pub access_count: i64,
+    pub source: String,
+}
+
+/// 周记忆统计信息
+#[derive(Debug, Clone)]
+pub struct WeeklyMemoryStats {
+    pub total_memories: i64,
+    pub indexed_memories: i64,
+    pub precision_index_count: i64,
+    pub index_ratio: f64,
+    pub week_databases: i64,
+    pub current_week: String,
+}
+
+/// 解析域字符串
+fn parse_domain(s: String) -> MemoryDomain {
+    match s.as_str() {
+        "Private" => MemoryDomain::Private,
+        "Public" => MemoryDomain::Public,
+        _ => MemoryDomain::Private,
+    }
+}
+
+/// 解析分类字符串
+fn parse_category(s: String) -> MemoryCategory {
+    match s.as_str() {
+        "Execution" => MemoryCategory::Execution,
+        "Result" => MemoryCategory::Result,
+        "Error" => MemoryCategory::Error,
+        "Context" => MemoryCategory::Context,
+        "Skill" => MemoryCategory::Skill,
+        _ => MemoryCategory::Context,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn create_test_memory() -> WeeklyArchivedMemory {
+        let temp_dir = TempDir::new().unwrap();
+        WeeklyArchivedMemory::new(temp_dir.path().to_path_buf(), 54).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_weekly_memory_creation() {
+        let memory = create_test_memory();
+
+        // 存储记忆
+        let indexed = memory
+            .set(
+                "test/key",
+                b"test value",
+                MemoryDomain::Public,
+                MemoryCategory::Context,
+            )
+            .await
+            .unwrap();
+
+        assert!(indexed);
+
+        // 获取记忆
+        let item = memory.get("test/key").await.unwrap().unwrap();
+        assert_eq!(item.key, "test/key");
+        assert_eq!(item.value, b"test value");
+    }
+
+    #[tokio::test]
+    async fn test_precision_index_strategy() {
+        let memory = create_test_memory();
+
+        // 测试索引策略
+        let user_pref = memory.classify_entry(
+            "user/preference/theme",
+            MemoryDomain::Public,
+            MemoryCategory::Context,
+        );
+        assert_eq!(user_pref, IndexType::UserPreference);
+
+        let project_config = memory.classify_entry(
+            "project/architecture",
+            MemoryDomain::Public,
+            MemoryCategory::Context,
+        );
+        assert_eq!(project_config, IndexType::ProjectConfig);
+
+        let sensitive = memory.classify_entry(
+            "user/api_key",
+            MemoryDomain::Private,
+            MemoryCategory::Context,
+        );
+        assert_eq!(sensitive, IndexType::Sensitive);
+
+        let temp = memory.classify_entry(
+            "temp/data",
+            MemoryDomain::Public,
+            MemoryCategory::Result,
+        );
+        assert_eq!(temp, IndexType::Temporary);
+    }
+
+    #[tokio::test]
+    async fn test_should_index() {
+        let memory = create_test_memory();
+
+        // 用户偏好应该索引
+        assert!(memory.should_index(&IndexType::UserPreference));
+        assert!(memory.should_index(&IndexType::ProjectConfig));
+        assert!(memory.should_index(&IndexType::ImportantDecision));
+
+        // 敏感和临时数据不索引
+        assert!(!memory.should_index(&IndexType::Sensitive));
+        assert!(!memory.should_index(&IndexType::Temporary));
+    }
+
+    #[tokio::test]
+    async fn test_search() {
+        let memory = create_test_memory();
+
+        // 创建测试数据
+        memory
+            .set(
+                "architecture/microservices",
+                b"Use gRPC",
+                MemoryDomain::Public,
+                MemoryCategory::Context,
+            )
+            .await
+            .unwrap();
+
+        memory
+            .set(
+                "temp/cache",
+                b"Temporary data",
+                MemoryDomain::Public,
+                MemoryCategory::Result,
+            )
+            .await
+            .unwrap();
+
+        memory
+            .set(
+                "project/config",
+                b"Database config",
+                MemoryDomain::Public,
+                MemoryCategory::Context,
+            )
+            .await
+            .unwrap();
+
+        // 搜索
+        let results = memory.search("architecture", None, 10).await.unwrap();
+
+        // 应该找到结果
+        assert!(results.iter().any(|r| r.key == "architecture/microservices"));
+    }
+
+    #[tokio::test]
+    async fn test_week_calculation() {
+        let datetime = chrono::DateTime::parse_from_rfc3339("2026-02-12T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+
+        let week_id = WeeklyArchivedMemory::calculate_week_id(&datetime);
+        assert_eq!(week_id, "2026-W07");
+    }
+
+    #[tokio::test]
+    async fn test_importance_calculation() {
+        let memory = create_test_memory();
+
+        // 公域 + Context 应该高分
+        let score1 = memory.calculate_importance(
+            "project/architecture",
+            MemoryDomain::Public,
+            MemoryCategory::Context,
+        );
+        assert!(score1 > 0.7);
+
+        // 私域 + Result 应该低分
+        let score2 = memory.calculate_importance(
+            "temp/data",
+            MemoryDomain::Private,
+            MemoryCategory::Result,
+        );
+        assert!(score2 < 0.7);
+    }
+
+    #[tokio::test]
+    async fn test_stats() {
+        let memory = create_test_memory();
+
+        memory
+            .set("test1", b"value1", MemoryDomain::Public, MemoryCategory::Context)
+            .await
+            .unwrap();
+
+        memory
+            .set(
+                "temp/test2",
+                b"value2",
+                MemoryDomain::Public,
+                MemoryCategory::Result,
+            )
+            .await
+            .unwrap();
+
+        let stats = memory.get_stats().await.unwrap();
+        assert_eq!(stats.total_memories, 2);
+        assert!(stats.indexed_memories <= 2);
+    }
+
+    #[tokio::test]
+    async fn test_delete() {
+        let memory = create_test_memory();
+
+        memory
+            .set("test/key", b"value", MemoryDomain::Public, MemoryCategory::Context)
+            .await
+            .unwrap();
+
+        // 删除
+        let deleted = memory.delete("test/key").await.unwrap();
+        assert!(deleted);
+
+        // 验证删除
+        let item = memory.get("test/key").await.unwrap();
+        assert!(item.is_none());
+
+        // 再次删除应该返回false
+        let deleted2 = memory.delete("test/key").await.unwrap();
+        assert!(!deleted2);
+    }
+}

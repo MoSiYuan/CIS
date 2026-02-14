@@ -30,9 +30,12 @@
 pub mod auth;
 pub mod discovery;
 pub mod login;
+pub mod presence;
+pub mod receipts;
 pub mod register;
 pub mod room;
 pub mod sync;
+pub mod typing;
 
 use axum::{
     routing::{get, post, put},
@@ -42,17 +45,41 @@ use std::sync::Arc;
 
 use super::store::MatrixStore;
 use super::store_social::MatrixSocialStore;
+use super::presence::PresenceService;
+use super::receipts::ReceiptService;
+use super::typing::TypingService;
 
 /// 应用状态，包含两个存储
 #[derive(Clone)]
 pub struct AppState {
     pub store: Arc<MatrixStore>,
     pub social_store: Arc<MatrixSocialStore>,
+    pub presence_service: Arc<PresenceService>,
+    pub typing_service: Arc<TypingService>,
+    pub receipt_service: Arc<ReceiptService>,
 }
 
 impl AppState {
     pub fn new(store: Arc<MatrixStore>, social_store: Arc<MatrixSocialStore>) -> Self {
-        Self { store, social_store }
+        let presence_service = Arc::new(PresenceService::new(social_store.clone()));
+        // 启动 Presence 清理任务
+        presence_service.spawn_cleanup_task();
+
+        let typing_service = Arc::new(TypingService::new());
+        // 启动 Typing 清理任务
+        typing_service.spawn_cleanup_task();
+
+        let receipt_service = Arc::new(ReceiptService::new());
+        // 启动 Receipt 清理任务
+        receipt_service.spawn_cleanup_task();
+
+        Self {
+            store,
+            social_store,
+            presence_service,
+            typing_service,
+            receipt_service,
+        }
     }
 }
 
@@ -89,6 +116,29 @@ pub fn router(store: Arc<MatrixStore>, social_store: Arc<MatrixSocialStore>) -> 
         )
         // Room state
         .route("/_matrix/client/v3/rooms/{room_id}/state", get(room::get_room_state))
+        // Presence (v1.1.6 新增)
+        .route(
+            "/_matrix/client/v3/presence/:user_id/status",
+            get(presence::get_presence_status).put(presence::set_presence_status),
+        )
+        .route(
+            "/_matrix/client/v3/presence/list/:user_id",
+            get(presence::get_presence_list).post(presence::update_presence_list),
+        )
+        // Typing (v1.1.6 新增)
+        .route(
+            "/_matrix/client/v3/rooms/:room_id/typing/:user_id",
+            put(typing::send_typing),
+        )
+        // Receipts (v1.1.6 新增)
+        .route(
+            "/_matrix/client/v3/rooms/:room_id/receipt/:receipt_type/:event_id",
+            post(receipts::send_receipt),
+        )
+        .route(
+            "/_matrix/client/v3/rooms/:room_id/receipts",
+            get(receipts::get_receipts),
+        )
         // Store state (both stores)
         .with_state(state)
 }

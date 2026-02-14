@@ -29,6 +29,7 @@ libc = "0.2"
 crossterm = "0.27"
 colored = "2.0"
 indicatif = "0.17"
+walkdir = "2.4"
 
 [features]
 default = ["vector", "p2p"]

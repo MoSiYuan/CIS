@@ -24,6 +24,10 @@ mod remote_session;
 mod theme;
 mod layout;
 
+// MVVM Architecture
+mod view_models;
+mod controllers;
+
 use app_element::CisAppElement;
 
 fn main() -> eframe::Result {

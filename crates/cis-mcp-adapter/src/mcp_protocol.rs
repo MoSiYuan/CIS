@@ -142,7 +142,7 @@ pub struct ResourceReadParams {
     pub uri: String,
 }
 
-/// Resource definition
+/// Resource definition (simplified for protocol)
 #[derive(Debug, Clone, Serialize)]
 pub struct Resource {
     pub uri: String,
@@ -150,6 +150,26 @@ pub struct Resource {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub mime_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ResourceMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<ResourceAnnotations>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ResourceMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_modified: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ResourceAnnotations {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i32>,
 }
 
 /// Resource content
@@ -157,7 +177,39 @@ pub struct Resource {
 pub struct ResourceContent {
     pub uri: String,
     pub mime_type: String,
-    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blob: Option<String>, // Base64 encoded binary
+}
+
+/// Prompt definition
+#[derive(Debug, Clone, Serialize)]
+pub struct Prompt {
+    pub name: String,
+    pub description: String,
+    pub arguments: Vec<PromptArgument>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PromptArgument {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub required: bool,
+}
+
+/// Prompt message
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "role")]
+pub enum PromptMessage {
+    #[serde(rename = "user")]
+    User { content: Content },
+    #[serde(rename = "assistant")]
+    Assistant { content: Content },
+    #[serde(rename = "system")]
+    System { content: Content },
 }
 
 /// Error codes

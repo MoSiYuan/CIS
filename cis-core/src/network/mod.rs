@@ -30,7 +30,6 @@
 //!                         Allow/Deny communication
 //! ```
 
-pub mod acl;
 pub mod acl_rules;
 pub mod agent_session;
 pub mod audit;
@@ -44,6 +43,7 @@ pub mod sync;
 pub mod websocket;
 pub mod websocket_auth;
 pub mod websocket_integration;
+pub mod clock_tolerance;
 
 #[cfg(test)]
 mod acl_tests;

@@ -150,6 +150,10 @@ pub mod sandbox;
 pub mod skill;
 pub mod validator;
 
+// v2 安全增强模块 (需要 wasm-v2 feature)
+#[cfg(feature = "wasm-v2")]
+pub mod v2;
+
 #[cfg(test)]
 mod tests;
 

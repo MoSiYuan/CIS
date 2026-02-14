@@ -17,7 +17,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::agent::persistent::{
-    AgentAcquireConfig, AgentHandle, AgentPool, RuntimeType as PersistentRuntimeType,
+    AgentAcquireConfig, AgentHandle, AgentPool, RuntimeType as AgentRuntimeType,
     TaskRequest, TaskResult,
 };
 use crate::agent::cluster::context::ContextStore;
@@ -25,31 +25,48 @@ use crate::error::{CisError, Result};
 use crate::scheduler::{DagNode, DagNodeStatus, DagScheduler, RuntimeType, TaskDag};
 
 /// 转换 scheduler::RuntimeType 到 persistent::RuntimeType
-fn to_persistent_runtime_type(rt: RuntimeType) -> PersistentRuntimeType {
+fn to_persistent_runtime_type(rt: RuntimeType) -> AgentRuntimeType {
     match rt {
-        RuntimeType::Claude => PersistentRuntimeType::Claude,
-        RuntimeType::Kimi => PersistentRuntimeType::Kimi,
-        RuntimeType::Aider => PersistentRuntimeType::Aider,
-        RuntimeType::OpenCode => PersistentRuntimeType::OpenCode,
-        RuntimeType::Default => PersistentRuntimeType::Claude, // 默认使用 Claude
+        RuntimeType::Claude => AgentRuntimeType::Claude,
+        RuntimeType::Kimi => AgentRuntimeType::Kimi,
+        RuntimeType::Aider => AgentRuntimeType::Aider,
+        RuntimeType::OpenCode => AgentRuntimeType::OpenCode,
+        RuntimeType::Default => AgentRuntimeType::Claude, // 默认使用 Claude
     }
 }
 
 /// 转换 persistent::RuntimeType 到 scheduler::RuntimeType
-fn to_scheduler_runtime_type(rt: PersistentRuntimeType) -> RuntimeType {
+fn to_scheduler_runtime_type(rt: AgentRuntimeType) -> RuntimeType {
     match rt {
-        PersistentRuntimeType::Claude => RuntimeType::Claude,
-        PersistentRuntimeType::Kimi => RuntimeType::Kimi,
-        PersistentRuntimeType::Aider => RuntimeType::Aider,
-        PersistentRuntimeType::OpenCode => RuntimeType::OpenCode,
+        AgentRuntimeType::Claude => RuntimeType::Claude,
+        AgentRuntimeType::Kimi => RuntimeType::Kimi,
+        AgentRuntimeType::Aider => RuntimeType::Aider,
+        AgentRuntimeType::OpenCode => RuntimeType::OpenCode,
+    }
+}
+
+/// Scheduling mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchedulingMode {
+    /// Event-driven scheduling (default, recommended)
+    EventDriven,
+    /// Legacy polling-based scheduling (fallback)
+    Polling,
+}
+
+impl Default for SchedulingMode {
+    fn default() -> Self {
+        Self::EventDriven
     }
 }
 
 /// 多 Agent DAG 执行器配置
 #[derive(Debug, Clone)]
 pub struct MultiAgentExecutorConfig {
+    /// Scheduling mode
+    pub scheduling_mode: SchedulingMode,
     /// 默认 Agent Runtime
-    pub default_runtime: PersistentRuntimeType,
+    pub default_runtime: AgentRuntimeType,
     /// 是否自动清理完成的 Agent
     pub auto_cleanup: bool,
     /// 任务超时时间
@@ -63,7 +80,8 @@ pub struct MultiAgentExecutorConfig {
 impl Default for MultiAgentExecutorConfig {
     fn default() -> Self {
         Self {
-            default_runtime: PersistentRuntimeType::Claude,
+            scheduling_mode: SchedulingMode::EventDriven,
+            default_runtime: AgentRuntimeType::Claude,
             auto_cleanup: true,
             task_timeout: Duration::from_secs(300),
             enable_context_injection: true,
@@ -78,8 +96,14 @@ impl MultiAgentExecutorConfig {
         Self::default()
     }
 
+    /// 设置调度模式
+    pub fn with_scheduling_mode(mut self, mode: SchedulingMode) -> Self {
+        self.scheduling_mode = mode;
+        self
+    }
+
     /// 设置默认 Runtime
-    pub fn with_default_runtime(mut self, runtime: PersistentRuntimeType) -> Self {
+    pub fn with_default_runtime(mut self, runtime: AgentRuntimeType) -> Self {
         self.default_runtime = runtime;
         self
     }
@@ -214,7 +238,10 @@ impl MultiAgentDagExecutor {
     /// 执行 DAG 运行（核心方法）
     pub async fn execute(&self, run_id: &str) -> Result<MultiAgentExecutionReport> {
         let start_time = std::time::Instant::now();
-        info!("Starting MultiAgent execution for run {}", run_id);
+        info!(
+            "Starting MultiAgent execution for run {} (mode: {:?})",
+            run_id, self.config.scheduling_mode
+        );
 
         // 初始化 DAG
         {
@@ -226,7 +253,177 @@ impl MultiAgentDagExecutor {
             info!("Initialized DAG with {} tasks", run.dag.node_count());
         }
 
-        // 主执行循环
+        // 选择调度模式
+        match self.config.scheduling_mode {
+            SchedulingMode::EventDriven => {
+                self.execute_event_driven(run_id, start_time).await
+            }
+            SchedulingMode::Polling => {
+                self.execute_polling(run_id, start_time).await
+            }
+        }
+    }
+
+    /// 事件驱动执行（新实现）
+    async fn execute_event_driven(
+        &self,
+        run_id: &str,
+        start_time: std::time::Instant,
+    ) -> Result<MultiAgentExecutionReport> {
+        use crate::scheduler::notify::{ReadyNotify, TaskCompletion};
+        use tokio::select;
+
+        let ready_notify = Arc::new(ReadyNotify::new());
+        let (completion_tx, mut completion_rx) = tokio::sync::broadcast::channel(100);
+
+        // 初始通知
+        ready_notify.notify_ready();
+
+        loop {
+            // 检查运行状态
+            let should_stop = {
+                let scheduler = self.scheduler.read().await;
+                let run = scheduler.get_run(run_id);
+                if let Some(run) = run {
+                    run.status == crate::scheduler::DagRunStatus::Failed
+                        || run.status == crate::scheduler::DagRunStatus::Paused
+                } else {
+                    return Err(CisError::scheduler("Run not found"));
+                }
+            };
+
+            if should_stop {
+                warn!("Run {} stopped due to failure or pause", run_id);
+                break;
+            }
+
+            // 获取就绪任务
+            let ready_tasks = {
+                let scheduler = self.scheduler.read().await;
+                let run = scheduler.get_run(run_id);
+                if let Some(run) = run {
+                    run.dag.get_ready_tasks()
+                } else {
+                    return Err(CisError::scheduler("Run not found"));
+                }
+            };
+
+            // 检查是否完成
+            if ready_tasks.is_empty() {
+                let is_completed = {
+                    let scheduler = self.scheduler.read().await;
+                    let run = scheduler.get_run(run_id);
+                    if let Some(run) = run {
+                        run.dag.nodes().values().all(|n| n.is_terminal())
+                    } else {
+                        return Err(CisError::scheduler("Run not found"));
+                    }
+                };
+
+                if is_completed {
+                    info!("Run {} completed", run_id);
+                    break;
+                }
+            } else {
+                // 有就绪任务，限制并发数
+                let active_count = self.count_active_agents(run_id).await;
+                let available_slots = self
+                    .config
+                    .max_concurrent_tasks
+                    .saturating_sub(active_count);
+
+                if available_slots > 0 {
+                    let tasks_to_start: Vec<String> = ready_tasks
+                        .into_iter()
+                        .take(available_slots)
+                        .collect();
+
+                    info!(
+                        "Starting {} tasks for run {} (active: {}, slots: {})",
+                        tasks_to_start.len(),
+                        run_id,
+                        active_count,
+                        available_slots
+                    );
+
+                    // 启动任务
+                    for task_id in tasks_to_start {
+                        // 标记为运行中
+                        {
+                            let mut scheduler = self.scheduler.write().await;
+                            if let Some(run) = scheduler.get_run_mut(run_id) {
+                                let _ = run.dag.mark_running(task_id.clone());
+                            }
+                        }
+
+                        // 异步执行任务
+                        let this = self.clone_ref();
+                        let run_id = run_id.to_string();
+                        let task_id = task_id.clone();
+                        let ready_notify = ready_notify.clone();
+                        let completion_tx = completion_tx.clone();
+
+                        tokio::spawn(async move {
+                            let result = this.execute_task(&run_id, &task_id).await;
+
+                            match result {
+                                Ok(task_result) => {
+                                    // 更新结果
+                                    let _ = this.update_task_result(&run_id, &task_id, task_result).await;
+
+                                    // 发送完成通知
+                                    let _ = completion_tx.send(TaskCompletion {
+                                        run_id: run_id.clone(),
+                                        task_id: task_id.clone(),
+                                        success: true,
+                                        output: String::new(),
+                                        exit_code: 0,
+                                        duration_ms: 0,
+                                    });
+
+                                    // 通知有任务可能就绪
+                                    ready_notify.notify_ready();
+                                }
+                                Err(e) => {
+                                    warn!("Task {} execution failed: {}", task_id, e);
+                                    let _ = this.mark_task_failed(&run_id, &task_id, e.to_string()).await;
+
+                                    // 即使失败也通知（可能触发跳过等逻辑）
+                                    ready_notify.notify_ready();
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+
+            // 等待事件
+            select! {
+                _ = ready_notify.wait_for_ready() => {
+                    // 有任务就绪，继续循环
+                }
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {
+                    // 超时，继续循环检查
+                }
+            }
+        }
+
+        // 清理 Agent
+        if let Err(e) = self.cleanup_run(run_id).await {
+            warn!("Failed to cleanup run {}: {}", run_id, e);
+        }
+
+        // 生成报告
+        self.build_report(run_id, start_time.elapsed()).await
+    }
+
+    /// 轮询执行（原始实现）
+    async fn execute_polling(
+        &self,
+        run_id: &str,
+        start_time: std::time::Instant,
+    ) -> Result<MultiAgentExecutionReport> {
+        // 主执行循环（原始轮询逻辑）
         loop {
             // 检查运行状态
             let should_stop = {
@@ -769,6 +966,17 @@ impl MultiAgentDagExecutor {
         info!("Cancelling run {}", run_id);
         self.cleanup_run(run_id).await
     }
+
+    /// Clone references for spawned tasks
+    fn clone_ref(&self) -> Self {
+        Self {
+            scheduler: self.scheduler.clone(),
+            agent_pool: self.agent_pool.clone(),
+            context_store: self.context_store.clone(),
+            config: self.config.clone(),
+            run_agents: self.run_agents.clone(),
+        }
+    }
 }
 
 /// 格式化输出（截断如果太长）
@@ -793,7 +1001,8 @@ mod tests {
     #[test]
     fn test_multi_agent_executor_config_default() {
         let config = MultiAgentExecutorConfig::default();
-        assert_eq!(config.default_runtime, PersistentRuntimeType::Claude);
+        assert_eq!(config.scheduling_mode, SchedulingMode::EventDriven);
+        assert_eq!(config.default_runtime, AgentRuntimeType::Claude);
         assert!(config.auto_cleanup);
         assert_eq!(config.task_timeout, Duration::from_secs(300));
         assert!(config.enable_context_injection);
@@ -803,17 +1012,25 @@ mod tests {
     #[test]
     fn test_multi_agent_executor_config_builder() {
         let config = MultiAgentExecutorConfig::new()
-            .with_default_runtime(PersistentRuntimeType::Kimi)
+            .with_scheduling_mode(SchedulingMode::Polling)
+            .with_default_runtime(AgentRuntimeType::Kimi)
             .with_auto_cleanup(false)
             .with_task_timeout(Duration::from_secs(600))
             .with_context_injection(false)
             .with_max_concurrent(8);
 
-        assert_eq!(config.default_runtime, PersistentRuntimeType::Kimi);
+        assert_eq!(config.scheduling_mode, SchedulingMode::Polling);
+        assert_eq!(config.default_runtime, AgentRuntimeType::Kimi);
         assert!(!config.auto_cleanup);
         assert_eq!(config.task_timeout, Duration::from_secs(600));
         assert!(!config.enable_context_injection);
         assert_eq!(config.max_concurrent_tasks, 8);
+    }
+
+    #[test]
+    fn test_scheduling_mode_default() {
+        let mode = SchedulingMode::default();
+        assert_eq!(mode, SchedulingMode::EventDriven);
     }
 
     #[test]
@@ -847,24 +1064,24 @@ mod tests {
         // Test scheduler -> persistent
         assert_eq!(
             to_persistent_runtime_type(RuntimeType::Claude),
-            PersistentRuntimeType::Claude
+            AgentRuntimeType::Claude
         );
         assert_eq!(
             to_persistent_runtime_type(RuntimeType::Kimi),
-            PersistentRuntimeType::Kimi
+            AgentRuntimeType::Kimi
         );
         assert_eq!(
             to_persistent_runtime_type(RuntimeType::Default),
-            PersistentRuntimeType::Claude
+            AgentRuntimeType::Claude
         );
 
         // Test persistent -> scheduler
         assert_eq!(
-            to_scheduler_runtime_type(PersistentRuntimeType::Claude),
+            to_scheduler_runtime_type(AgentRuntimeType::Claude),
             RuntimeType::Claude
         );
         assert_eq!(
-            to_scheduler_runtime_type(PersistentRuntimeType::OpenCode),
+            to_scheduler_runtime_type(AgentRuntimeType::OpenCode),
             RuntimeType::OpenCode
         );
     }

@@ -1,0 +1,493 @@
+# CIS WASM 沙箱系统调用白名单
+#
+# 版本: v1.1.6
+# 最后更新: 2026-02-12
+# 安全级别: 严格
+#
+# 本文件定义了 CIS WASM 沙箱中允许的系统调用白名单。
+# 只有在此列表中的系统调用才能被 WASM 模块执行。
+#
+# 安全原则：
+# 1. 默认拒绝：所有未明确列出的系统调用都被禁止
+# 2. 最小权限：只允许执行必要的系统调用
+# 3. 防御深度：即使单个系统调用被允许，也要通过多层安全检查
+# 4. 审计追踪：所有系统调用都被记录和监控
+
+# ============================================================================
+# 系统调用分类
+# ============================================================================
+
+syscall_categories:
+  # 文件 I/O 操作（受限）
+  file_io:
+    description: "基本的文件读写操作，用于 WASM 模块的数据持久化"
+    risk_level: "medium"
+    syscalls:
+      - name: "read"
+        number: 0
+        description: "从文件描述符读取数据"
+        restrictions:
+          - "只允许读取已打开的文件描述符"
+          - "禁止读取敏感系统文件"
+          - "限制单次读取最大 4KB"
+
+      - name: "write"
+        number: 1
+        description: "向文件描述符写入数据"
+        restrictions:
+          - "只允许写入已打开的文件描述符"
+          - "禁止写入系统关键路径"
+          - "限制单次写入最大 4KB"
+
+      - name: "close"
+        number: 3
+        description: "关闭文件描述符"
+        restrictions:
+          - "只允许关闭模块自己打开的文件描述符"
+
+      - name: "readv"
+        number: 19
+        description: "分散读取"
+        restrictions:
+          - "限制向量数量最多 16 个"
+          - "限制总数据大小 4KB"
+
+      - name: "writev"
+        number: 20
+        description: "集中写入"
+        restrictions:
+          - "限制向量数量最多 16 个"
+          - "限制总数据大小 4KB"
+
+  # 内存管理操作
+  memory_management:
+    description: "内存分配、释放和映射操作"
+    risk_level: "low"
+    syscalls:
+      - name: "mmap"
+        number: 9
+        description: "内存映射"
+        restrictions:
+          - "只允许匿名私有映射 (MAP_PRIVATE | MAP_ANONYMOUS)"
+          - "禁止文件映射"
+          - "限制最大映射大小为配置的内存限制"
+          - "强制 PROT_READ | PROT_WRITE，禁止 PROT_EXEC"
+
+      - name: "munmap"
+        number: 11
+        description: "解除内存映射"
+        restrictions:
+          - "只允许解除之前 mmap 映射的区域"
+
+      - name: "mremap"
+        number: 25
+        description: "重新映射内存"
+        restrictions:
+          - "只允许调整匿名映射的大小"
+          - "不能超过全局内存限制"
+          - "禁止 MREMAP_MAYMOVE 标志"
+
+      - name: "mprotect"
+        number: 10
+        description: "修改内存保护"
+        restrictions:
+          - "只允许 PROT_READ | PROT_WRITE"
+          - "禁止设置 PROT_EXEC（防止代码注入）"
+
+      - name: "brk"
+        number: 12
+        description: "调整数据段大小"
+        restrictions:
+          - "限制堆增长不超过全局内存限制"
+
+      - name: "msync"
+        number: 26
+        description: "同步内存映射到文件"
+        restrictions:
+          - "只允许匿名映射的 MS_ASYNC 操作"
+          - "禁止 MS_SYNC（防止阻塞）"
+
+  # 时间和时钟操作
+  time:
+    description: "获取系统时间信息"
+    risk_level: "low"
+    syscalls:
+      - name: "clock_gettime"
+        number: 228
+        description: "获取时钟时间"
+        restrictions:
+          - "只允许 CLOCK_MONOTONIC 和 CLOCK_REALTIME"
+          - "禁止访问其他时钟源"
+
+      - name: "gettimeofday"
+        number: 96
+        description: "获取时间和时区"
+        restrictions:
+          - "只返回当前时间"
+          - "不返回时区信息（减少信息泄露）"
+
+      - name: "clock_getres"
+        number: 229
+        description: "获取时钟分辨率"
+        restrictions:
+          - "只允许查询允许的时钟"
+
+  # 进程和线程操作
+  process:
+    description: "进程控制操作"
+    risk_level: "high"
+    syscalls:
+      - name: "exit"
+        number: 60
+        description: "正常退出进程"
+        restrictions:
+          - "只允许退出当前 WASM 模块"
+          - "状态码被记录"
+
+      - name: "exit_group"
+        number: 231
+        description: "退出线程组"
+        restrictions:
+          - "只允许退出当前 WASM 模块的所有线程"
+
+      - name: "getpid"
+        number: 39
+        description: "获取进程 ID"
+        restrictions:
+          - "返回虚拟 PID，而非真实 PID"
+
+      - name: "gettid"
+        number: 186
+        description: "获取线程 ID"
+        restrictions:
+          - "返回虚拟 TID，而非真实 TID"
+
+  # 信号处理（受限）
+  signal:
+    description: "信号处理操作"
+    risk_level: "medium"
+    syscalls:
+      - name: "rt_sigprocmask"
+        number: 14
+        description: "修改信号掩码"
+        restrictions:
+          - "只允许屏蔽 SIGPIPE、SIGUSR1、SIGUSR2"
+          - "禁止屏蔽 SIGKILL、SIGSTOP"
+
+      - name: "rt_sigaction"
+        number: 13
+        description: "设置信号处理函数"
+        restrictions:
+          - "禁止自定义信号处理器"
+          - "只允许 SIG_DFL 或 SIG_IGN"
+
+  # 套接字操作（受限）
+  network:
+    description: "网络通信操作"
+    risk_level: "high"
+    syscalls:
+      - name: "socket"
+        number: 41
+        description: "创建套接字"
+        restrictions:
+          - "只允许 AF_UNIX/AF_LOCAL 域套接字"
+          - "禁止 AF_INET、AF_INET6（除非明确授权）"
+          - "只允许 SOCK_STREAM 类型"
+
+      - name: "connect"
+        number: 42
+        description: "连接套接字"
+        restrictions:
+          - "只允许连接到预先配置的端点"
+          - "通过 ACL 检查"
+
+      - name: "send"
+        number: 44
+        description: "发送数据"
+        restrictions:
+          - "限制单次发送最大 16KB"
+          - "通过流量控制检查"
+
+      - name: "recv"
+        number: 45
+        description: "接收数据"
+        restrictions:
+          - "限制单次接收最大 16KB"
+          - "超时限制"
+
+      - name: "shutdown"
+        number: 48
+        description: "关闭套接字的一部分"
+        restrictions:
+          - "只允许关闭自己创建的套接字"
+
+  # 文件系统操作（严格受限）
+  filesystem:
+    description: "文件系统操作"
+    risk_level: "high"
+    syscalls:
+      - name: "stat"
+        number: 4
+        description: "获取文件状态"
+        restrictions:
+          - "只允许访问技能目录下的文件"
+          - "禁止访问系统路径"
+
+      - name: "fstat"
+        number: 5
+        description: "获取文件描述符状态"
+        restrictions:
+          - "只允许查询已打开的文件描述符"
+
+      - name: "lstat"
+        number: 6
+        description: "获取链接文件状态"
+        restrictions:
+          - "同 stat 限制"
+
+      - name: "access"
+        number: 21
+        description: "检查文件访问权限"
+        restrictions:
+          - "只允许检查技能目录下的文件"
+
+  # 其他操作
+  misc:
+    description: "其他系统操作"
+    risk_level: "varies"
+    syscalls:
+      - name: "uname"
+        number: 63
+        description: "获取系统信息"
+        restrictions:
+          - "返回虚拟化的系统信息"
+          - "隐藏真实主机信息"
+
+      - name: "getrandom"
+        number: 318
+        description: "获取随机数"
+        restrictions:
+          - "限制单次调用最多 256 字节"
+          - "使用内核随机数生成器"
+
+      - name: "arch_prctl"
+        number: 158
+        description: "架构特定的进程控制"
+        restrictions:
+          - "只允许 ARCH_SET_FS"
+          - "禁止其他操作"
+
+# ============================================================================
+# 严格禁止的系统调用（黑名单）
+# ============================================================================
+
+forbidden_syscalls:
+  - name: "execve"
+    number: 59
+    reason: "禁止执行外部程序（防止代码注入）"
+
+  - name: "fork"
+    number: 57
+    reason: "禁止创建进程（防止进程逃逸）"
+
+  - name: "clone"
+    number: 56
+    reason: "禁止创建线程或进程（除非使用 WASM 线程）"
+
+  - name: "kill"
+    number: 62
+    reason: "禁止发送信号（防止干扰其他进程）"
+
+  - name: "ptrace"
+    number: 101
+    reason: "禁止调试其他进程（防止信息泄露）"
+
+  - name: "mount"
+    number: 165
+    reason: "禁止挂载文件系统"
+
+  - name: "umount"
+    number: 166
+    reason: "禁止卸载文件系统"
+
+  - name: "chroot"
+    number: 161
+    reason: "禁止改变根目录"
+
+  - name: "setuid"
+    number: 105
+    reason: "禁止改变用户 ID（防止权限提升）"
+
+  - name: "setgid"
+    number: 106
+    reason: "禁止改变组 ID（防止权限提升）"
+
+  - name: "setreuid"
+    number: 70
+    reason: "禁止设置真实/有效用户 ID"
+
+  - name: "setregid"
+    number: 71
+    reason: "禁止设置真实/有效组 ID"
+
+  - name: "chmod"
+    number: 90
+    reason: "禁止改变文件权限"
+
+  - name: "chown"
+    number: 92
+    reason: "禁止改变文件所有者"
+
+  - name: "link"
+    number: 86
+    reason: "禁止创建硬链接"
+
+  - name: "symlink"
+    number: 88
+    reason: "禁止创建符号链接"
+
+  - name: "unlink"
+    number: 87
+    reason: "禁止删除文件（除非在技能目录下）"
+
+  - name: "rename"
+    number: 82
+    reason: "禁止重命名文件（除非在技能目录下）"
+
+  - name: "ioctl"
+    number: 16
+    reason: "禁止设备 I/O 控制"
+
+  - name: "fcntl"
+    number: 72
+    reason: "受限的文件描述符操作"
+
+# ============================================================================
+# 默认策略配置
+# ============================================================================
+
+default_policy:
+  description: "默认安全策略配置"
+
+  # 内存限制
+  memory:
+    max_heap_size: "512MB"        # 最大堆大小
+    max_stack_size: "8MB"         # 最大栈大小
+    max_mmap_regions: 100         # 最大 mmap 区域数
+
+  # 时间限制
+  time:
+    max_execution_time: "30s"     # 最大执行时间
+    max_sleep_time: "1s"          # 最大单次睡眠时间
+
+  # 文件系统限制
+  filesystem:
+    allowed_directories:           # 允许访问的目录
+      - "$SKILL_DATA_DIR"         # 技能数据目录
+      - "$SKILL_TEMP_DIR"         # 技能临时目录
+    denied_directories:           # 明确禁止的目录
+      - "/etc"
+      - "/sys"
+      - "/proc"
+      - "/dev"
+      - "/root"
+      - "/home/*/.ssh"
+    max_open_files: 10            # 最大同时打开文件数
+
+  # 网络限制
+  network:
+    allow_network: false          # 默认禁止网络访问
+    allowed_endpoints: []         # 明确允许的端点（空表示全部禁止）
+    max_connections: 0            # 最大并发连接数（0 表示禁止）
+
+  # 信号限制
+  signals:
+    allowed_signals:              # 允许的信号
+      - "SIGPIPE"
+      - "SIGUSR1"
+      - "SIGUSR2"
+    blocked_signals:              # 屏蔽的信号
+      - "SIGTERM"
+      - "SIGINT"
+
+# ============================================================================
+# 审计和监控
+# ============================================================================
+
+auditing:
+  enabled: true
+
+  # 记录所有系统调用
+  log_all_syscalls: true
+
+  # 记录违规尝试
+  log_violations: true
+
+  # 告警阈值（超过此阈值会触发告警）
+  alert_thresholds:
+    syscalls_per_second: 1000    # 每秒系统调用数
+    failed_syscalls: 10          # 失败的系统调用数
+    suspicious_patterns:          # 可疑模式
+      - "连续尝试禁止的系统调用"
+      - "快速文件访问模式（可能的扫描）"
+      - "异常内存分配模式"
+
+# ============================================================================
+# 平台特定配置
+# ============================================================================
+
+platform_specific:
+  linux:
+    additional_allowed: []
+    additional_forbidden: []
+
+  darwin:  # macOS
+    additional_allowed: []
+    additional_forbidden:
+      - name: "getfsstat"
+        number: 18
+        reason: "禁止获取文件系统统计信息"
+
+  # 在此添加其他平台的特定配置...
+
+# ============================================================================
+# 版本历史
+# ============================================================================
+
+version_history:
+  - version: "1.1.6"
+    date: "2026-02-12"
+    changes:
+      - "初始化系统调用白名单"
+      - "定义严格的默认策略"
+      - "添加审计和监控支持"
+      - "添加平台特定配置支持"
+
+# ============================================================================
+# 注意事项
+# ============================================================================
+
+notes: |
+  重要提示：
+
+  1. 本白名单的设计原则是"默认拒绝，明确允许"
+  2. 只有在此文件中明确列出的系统调用才能被执行
+  3. 即使系统调用在白名单中，也要通过多层安全检查
+  4. 所有系统调用都会被记录和监控
+  5. 违反安全策略会导致立即终止 WASM 模块
+  6. 考虑使用 wasmtime 的资源限制功能作为额外保护层
+  7. 定期审查和更新此白名单以应对新的安全威胁
+  8. 在生产环境中，建议使用正式的验证和审计流程
+
+  安全最佳实践：
+  - 定期审计系统调用日志
+  - 监控异常的访问模式
+  - 及时更新安全策略
+  - 使用容器或虚拟机作为额外隔离层
+  - 限制 WASM 模块的权限到最小必要范围
+
+  免责声明：
+  - 本白名单不能保证 100% 的安全性
+  - 新的攻击技术可能绕过这些限制
+  - 请结合其他安全措施一起使用
+  - 在生产环境使用前应进行全面的安全审计

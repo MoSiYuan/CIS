@@ -1,0 +1,309 @@
+# CIS v1.1.6 并发开发 Makefile
+# 用于支持并行任务开发和工作流管理
+
+.PHONY: help list-tasks show-task test-task test-phase tasks-chart
+
+# 默认目标
+.DEFAULT_GOAL := help
+
+## 🎯 帮助和任务列表
+
+help: ## 显示帮助信息
+	@echo "CIS v1.1.6 并发开发工作流"
+	@echo ""
+	@echo "可用命令:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+list-tasks: ## 列出所有任务及其状态
+	@echo "Phase 1: 安全加固"
+	@echo "  P0-1.1  [TODO] 设计系统调用白名单 (WASM)"
+	@echo "  P0-1.2  [TODO] 实现 wasmtime 集成"
+	@echo "  P0-1.3  [TODO] 添加燃料限制"
+	@echo "  P0-1.4  [TODO] 实现资源监控器"
+	@echo "  P0-1.5  [TODO] 编写安全测试"
+	@echo ""
+	@echo "  P0-2.1  [TODO] 设计新的密钥存储格式"
+	@echo "  P0-2.2  [TODO] 实现 Argon2id 密钥派生"
+	@echo "  P0-2.3  [TODO] 实现数据迁移脚本"
+	@echo "  P0-2.4  [TODO] 更新所有加密/解密调用点"
+	@echo ""
+	@echo "  P0-3.1  [TODO] 更新 ACL 条目结构"
+	@echo "  P0-3.2  [TODO] 实现时间戳验证逻辑"
+	@echo "  P0-3.3  [TODO] 处理时钟偏差"
+	@echo "  P0-3.4  [TODO] 更新 ACL 签名流程"
+	@echo ""
+	@echo "查看完整列表: cat docs/plan/v1.1.6/TASK_BREAKDOWN.md"
+
+show-task: ## 显示任务详情 (用法: make show-task TASK_ID=P0-1.2)
+	@if [ -z "$(TASK_ID)" ]; then \
+		echo "错误: 需要指定 TASK_ID"; \
+		echo "用法: make show-task TASK_ID=P0-1.2"; \
+		exit 1; \
+	fi
+	@echo "任务: $(TASK_ID)"
+	@echo "================================"
+	@grep -A 20 "id: $(TASK_ID)" docs/plan/v1.1.6/TASK_BREAKDOWN.md | head -21
+
+## 🔧 Phase 1: 安全加固任务
+
+# P0-1: WASM 沙箱增强
+p0-1.1: ## 设计系统调用白名单
+	@echo "→ P0-1.1: 设计系统调用白名单"
+	@mkdir -p cis-core/src/wasm/design
+	@echo "# WASM 系统调用白名单" > cis-core/src/wasm/design/syscall_whitelist.yaml
+	@echo "# 创建时间: $$(date)" >> cis-core/src/wasm/design/syscall_whitelist.yaml
+
+p0-1.2: p0-1.1 ## 实现 wasmtime 集成
+	@echo "→ P0-1.2: 实现 wasmtime 集成"
+	@# 开发者在这里开始编码
+
+p0-1.3: p0-1.1 ## 添加燃料限制
+	@echo "→ P0-1.3: 添加燃料限制"
+
+p0-1.4: p0-1.1 ## 实现资源监控器
+	@echo "→ P0-1.4: 实现资源监控器"
+
+p0-1.5: p0-1.2 p0-1.3 p0-1.4 ## 编写安全测试
+	@echo "→ P0-1.5: 编写安全测试"
+
+# 可以并行执行的任务组
+p0-1-2-3-4: p0-1.2 p0-1.3 p0-1.4 ## 并行: wasmtime + 燃料 + 监控 (3个任务并行)
+	@echo "→ 并行执行 P0-1.2, P0-1.3, P0-1.4"
+
+# P0-2: 加密密钥改进
+p0-2.1: ## 设计新的密钥存储格式
+	@echo "→ P0-2.1: 设计新的密钥存储格式"
+
+p0-2.2: p0-2.1 ## 实现 Argon2id 密钥派生
+	@echo "→ P0-2.2: 实现 Argon2id 密钥派生"
+
+p0-2.3: p0-2.2 ## 实现数据迁移脚本
+	@echo "→ P0-2.3: 实现数据迁移脚本"
+
+p0-2.4: p0-2.2 ## 更新所有加密/解密调用点
+	@echo "→ P0-2.4: 更新所有加密/解密调用点"
+
+# P0-3: ACL 时间戳验证
+p0-3.1: ## 更新 ACL 条目结构
+	@echo "→ P0-3.1: 更新 ACL 条目结构"
+
+p0-3.2: p0-3.1 ## 实现时间戳验证逻辑
+	@echo "→ P0-3.2: 实现时间戳验证逻辑"
+
+p0-3.3: p0-3.2 ## 处理时钟偏差
+	@echo "→ P0-3.3: 处理时钟偏差"
+
+p0-3.4: p0-3.2 ## 更新 ACL 签名流程
+	@echo "→ P0-3.4: 更新 ACL 签名流程"
+
+## 🔒 Phase 2: 稳定性改进任务
+
+# P0-6: 锁超时机制
+p0-6.1: ## 设计锁超时 API
+	@echo "→ P0-6.1: 设计锁超时 API"
+
+p0-6.2: p0-6.1 ## 实现 AsyncRwLock 包装器
+	@echo "→ P0-6.2: 实现 AsyncRwLock 包装器"
+
+p0-6.3: p0-6.1 ## 实现 Mutex 超时包装器
+	@echo "→ P0-6.3: 实现 Mutex 超时包装器"
+
+p0-6.4: p0-6.2 p0-6.3 ## 更新所有锁使用点
+	@echo "→ P0-6.4: 更新所有锁使用点"
+
+p0-6.5: p0-6.2 ## 添加锁竞争监控
+	@echo "→ P0-6.5: 添加锁竞争监控"
+
+# 可以并行的锁实现任务
+p0-6-lock-impl: p0-6.2 p0-6.3 ## 并行: AsyncRwLock + Mutex (2个任务并行)
+	@echo "→ 并行实现锁包装器"
+
+## ⚡ Phase 3: 性能优化任务
+
+# P1-1: 事件驱动调度
+p1-1.1: ## 设计事件架构
+	@echo "→ P1-1.1: 设计事件架构"
+
+p1-1.2: p1-1.1 ## 实现通知机制
+	@echo "→ P1-1.2: 实现通知机制"
+
+p1-1.3: p1-1.2 ## 实现事件驱动调度器
+	@echo "→ P1-1.3: 实现事件驱动调度器"
+
+p1-1.4: p1-1.3 ## 迁移现有调度逻辑
+	@echo "→ P1-1.4: 迁移现有调度逻辑"
+
+p1-1.5: p1-1.4 ## 性能基准测试
+	@echo "→ P1-1.5: 性能基准测试"
+
+# P1-2: 向量搜索优化
+p1-2.1: ## 设计混合索引
+	@echo "→ P1-2.1: 设计混合索引"
+
+p1-2.2: p1-2.1 ## 实现智能切换逻辑
+	@echo "→ P1-2.2: 实现智能切换逻辑"
+
+p1-2.3: p1-2.1 ## 实现批量加载优化
+	@echo "→ P1-2.3: 实现批量加载优化"
+
+p1-2.4: p1-2.2 p1-2.3 ## 实现结果合并
+	@echo "→ P1-2.4: 实现结果合并"
+
+p1-2.5: p1-2.2 ## 自适应阈值调整
+	@echo "→ P1-2.5: 自适应阈值调整"
+
+p1-2.6: p1-2.4 ## 性能测试
+	@echo "→ P1-2.6: 性能测试"
+
+# 可以并行的向量搜索任务
+p1-2-vector-impl: p1-2.2 p1-2.3 ## 并行: 智能切换 + 批量加载 (2个任务并行)
+	@echo "→ 并行实现向量搜索优化"
+
+## 🧩 Phase 4: 架构重构任务
+
+# P1-6: MemoryService 拆分
+p1-6.1: ## 设计拆分方案
+	@echo "→ P1-6.1: 设计拆分方案"
+
+p1-6.2: p1-6.1 ## 提取 GET 操作
+	@echo "→ P1-6.2: 提取 GET 操作"
+
+p1-6.3: p1-6.1 ## 提取 SET 操作
+	@echo "→ P1-6.3: 提取 SET 操作"
+
+p1-6.4: p1-6.1 ## 提取搜索操作
+	@echo "→ P1-6.4: 提取搜索操作"
+
+p1-6.5: p1-6.2 p1-6.3 p1-6.4 ## 重构主服务类
+	@echo "→ P1-6.5: 重构主服务类"
+
+# 可以并行的 MemoryService 拆分任务
+p1-6-memory-ops: p1-6.2 p1-6.3 p1-6.4 ## 并行: GET + SET + 搜索操作 (3个任务并行)
+	@echo "→ 并行提取 MemoryService 操作"
+
+# P1-7: CisApp 拆分
+p1-7.1: ## 设计 MVVM 架构
+	@echo "→ P1-7.1: 设计 MVVM 架构"
+
+p1-7.2: p1-7.1 ## 实现主视图模型
+	@echo "→ P1-7.2: 实现主视图模型"
+
+p1-7.3: p1-7.1 ## 实现节点视图
+	@echo "→ P1-7.3: 实现节点视图"
+
+p1-7.4: p1-7.1 ## 实现终端视图
+	@echo "→ P1-7.4: 实现终端视图"
+
+p1-7.5: p1-7.2 p1-7.3 p1-7.4 ## 重构主应用类
+	@echo "→ P1-7.5: 重构主应用类"
+
+# 可以并行的视图模型实现
+p1-7-view-models: p1-7.2 p1-7.3 p1-7.4 ## 并行: 主视图 + 节点视图 + 终端视图 (3个任务并行)
+	@echo "→ 并行实现 GUI 视图模型"
+
+## 🧪 测试命令
+
+test-task: ## 运行特定任务的测试 (用法: make test-task TASK_ID=P0-1.2)
+	@if [ -z "$(TASK_ID)" ]; then \
+		echo "错误: 需要指定 TASK_ID"; \
+		exit 1; \
+	fi
+	@echo "运行任务 $(TASK_ID) 的测试..."
+	@cargo test --package cis-core $$(echo $(TASK_ID) | tr '-' '_' | tr '.' '_') || echo "未找到对应测试")
+
+test-phase-1: ## 运行 Phase 1 集成测试
+	@echo "运行 Phase 1 (安全加固) 集成测试..."
+	@cargo test --test integration_phase1_security
+
+test-phase-2: ## 运行 Phase 2 集成测试
+	@echo "运行 Phase 2 (稳定性改进) 集成测试..."
+	@cargo test --test integration_phase2_stability
+
+test-phase-3: ## 运行 Phase 3 性能测试
+	@echo "运行 Phase 3 (性能优化) 基准测试..."
+	@cargo bench --bench phase3_performance
+
+test-phase-4: ## 运行 Phase 4 回归测试
+	@echo "运行 Phase 4 (架构重构) 回归测试..."
+	@cargo test --test integration_phase4_regression
+
+test-all: ## 运行所有测试
+	@echo "运行完整测试套件..."
+	@cargo test --all
+	@cargo test --test integration
+
+## 📊 可视化和报告
+
+tasks-chart: ## 生成任务依赖图表
+	@echo "生成任务依赖图..."
+	@echo "digraph G {" > task_deps.dot
+	@echo "  rankdir=LR;" >> task_deps.dot
+	@echo "  node [shape=box];" >> task_deps.dot
+	@echo '  "P0-1.1" -> "P0-1.2";' >> task_deps.dot
+	@echo '  "P0-1.2" -> "P0-1.5";' >> task_deps.dot
+	@echo '  "P0-1.3" -> "P0-1.5";' >> task_deps.dot
+	@echo '  "P0-1.4" -> "P0-1.5";' >> task_deps.dot
+	@# 添加更多依赖...
+	@echo "}" >> task_deps.dot
+	@echo "任务依赖图已生成: task_deps.dot"
+	@echo "使用 graphviz 查看: dot -Tpng task_deps.dot -o tasks.png"
+
+progress: ## 显示开发进度
+	@echo "CIS v1.1.6 开发进度"
+	@echo "==================="
+	@echo ""
+	@echo "Phase 1: 安全加固"
+	@echo "  总任务: 20"
+	@echo "  已完成: X"
+	@echo "  进行中: Y"
+	@echo "  待开始: Z"
+	@echo ""
+	@echo "Phase 2: 稳定性改进"
+	@echo "  总任务: 12"
+	@echo "  已完成: X"
+	@echo ""
+	@echo "Phase 3: 性能优化"
+	@echo "  总任务: 25"
+	@echo "  已完成: X"
+	@echo ""
+	@echo "Phase 4: 架构重构"
+	@echo "  总任务: 18"
+	@echo "  已完成: X"
+
+## 🚀 快速开始命令
+
+init-dev: ## 初始化开发环境
+	@echo "初始化 v1.1.6 开发环境..."
+	@cargo fetch
+	@cd cis-core && cargo fetch
+	@cd cis-gui && cargo fetch
+	@echo "✓ 开发环境已就绪"
+
+create-branch: ## 创建功能分支 (用法: make create-branch TASK_ID=P0-1.2)
+	@if [ -z "$(TASK_ID)" ]; then \
+		echo "错误: 需要指定 TASK_ID"; \
+		exit 1; \
+	fi
+	@echo "创建功能分支: feature/$(TASK_ID)"
+	@git checkout -b feature/$(TASK_ID)
+
+## 🔄 并发执行示例
+
+# 示例 1: Phase 1 安全任务并行执行
+phase-1-parallel: p0-1.1 p0-2.1 p0-3.1 p0-4.1 p0-5.1
+	@echo "Phase 1 设计阶段完成，开始并行实现..."
+
+phase-1-wait: ## 等待所有 Phase 1 设计任务完成
+	@echo "等待以下任务完成:"
+	@echo "  - P0-1.1, P0-2.1, P0-3.1, P0-4.1, P0-5.1"
+	@echo "所有设计完成后，开始并行实现..."
+
+# 示例 2: Phase 1 WASM 并行任务
+phase-1-wasm-parallel: p0-1.2-3-4
+	@echo "并行执行 WASM 子任务: wasmtime + 燃料 + 监控"
+
+# 示例 3: Phase 4 架构重构并行
+phase-4-parallel: p1-6-memory-ops p1-7-view-models
+	@echo "并行执行架构重构任务"
+	@echo "  - MemoryService 操作提取 (3个并行)"
+	@echo "  - GUI 视图模型实现 (3个并行)"

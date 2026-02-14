@@ -9,6 +9,8 @@ use tracing::info;
 
 mod mcp_protocol;
 mod server;
+mod prompts;
+mod resources;
 
 use server::CisMcpServer;
 

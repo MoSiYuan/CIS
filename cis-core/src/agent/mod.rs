@@ -21,6 +21,20 @@ pub mod persistent;
 pub mod process_detector;
 pub mod providers;
 pub mod security;
+pub mod guard;
+pub mod leak_detector;
+
+pub use guard::{
+    AgentGuard,
+    GuardId,
+    LeakDetector,
+    LeakedGuard,
+    GuardStats,
+    GuardStatsSummary,
+    AgentCleanupError,
+};
+
+pub use leak_detector::{AgentLeakDetector, LeakReport, LeakedAgent, LeakSeverity, LeakSummary};
 
 pub use bridge::AgentBridgeSkill;
 pub use cluster::{SessionManager, SessionId, SessionEvent, SessionState};

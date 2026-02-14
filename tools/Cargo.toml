@@ -1,0 +1,18 @@
+[package]
+name = "cis-tools"
+version = "1.1.5"
+edition = "2021"
+authors = ["CIS Team"]
+
+[[bin]]
+name = "migrate_keys"
+path = "migrate_keys.rs"
+
+[dependencies]
+cis-core = { path = "../cis-core", features = ["encryption"] }
+anyhow = "1.0"
+clap = { version = "4.4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde_json = "1.0"
+tempfile = "3"

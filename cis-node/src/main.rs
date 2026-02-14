@@ -63,7 +63,19 @@ enum Commands {
         #[command(subcommand)]
         action: MemoryAction,
     },
-    
+
+    /// Project management
+    Project {
+        #[command(subcommand)]
+        action: commands::project::ProjectAction,
+    },
+
+    /// Configuration management
+    Config {
+        #[command(subcommand)]
+        action: commands::config_cmd::ConfigAction,
+    },
+
     /// Task management
     Task {
         #[command(subcommand)]
@@ -189,7 +201,25 @@ enum Commands {
         #[command(subcommand)]
         action: commands::session::SessionCommands,
     },
-    
+
+    /// Data migration (TOML to SQLite)
+    Migrate {
+        /// Source TOML file or directory
+        source: String,
+
+        /// Database file path (default: ~/.cis/data/tasks.db)
+        #[arg(long)]
+        database: Option<String>,
+
+        /// Verify migration after completion
+        #[arg(long)]
+        verify: bool,
+
+        /// Rollback migration
+        #[arg(long)]
+        rollback: bool,
+    },
+
     /// CLI Schema self-description for AI integration
     Schema {
         /// Output format (json, yaml)
@@ -469,6 +499,27 @@ enum MemoryAction {
         /// Output file
         #[arg(long, short)]
         output: Option<String>,
+    },
+
+    /// Show memory system status
+    Status {
+        /// Show detailed statistics
+        #[arg(long)]
+        detailed: bool,
+    },
+
+    /// Rebuild vector index
+    RebuildIndex {
+        /// Force rebuild even if index exists
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Show memory statistics
+    Stats {
+        /// Filter by domain (public, private)
+        #[arg(short, long)]
+        domain: Option<String>,
     },
 }
 
@@ -957,8 +1008,25 @@ async fn run_command(command: Commands, json_output: bool) -> anyhow::Result<()>
             MemoryAction::Export { since, output } => {
                 commands::memory::export_memory(since, output.as_deref())
             }
+            MemoryAction::Status { detailed } => {
+                commands::memory::handle_memory_action(commands::memory::MemoryAction::Status { detailed }).await
+            }
+            MemoryAction::RebuildIndex { force } => {
+                commands::memory::handle_memory_action(commands::memory::MemoryAction::RebuildIndex { force }).await
+            }
+            MemoryAction::Stats { domain } => {
+                commands::memory::handle_memory_action(commands::memory::MemoryAction::Stats { domain }).await
+            }
         }
-        
+
+        Commands::Project { action } => {
+            commands::project::handle_project(action).await
+        }
+
+        Commands::Config { action } => {
+            commands::config_cmd::handle_config(action).await
+        }
+
         Commands::Task { action } => match action {
             TaskAction::List { status } => {
                 commands::task::list_tasks(status.map(Into::into))
@@ -1118,7 +1186,13 @@ async fn run_command(command: Commands, json_output: bool) -> anyhow::Result<()>
             let args = commands::session::SessionArgs { command: action };
             commands::session::handle(args).await
         }
-        
+
+        Commands::Migrate { source, database, verify, rollback } => {
+            use crate::cli::commands::migrate;
+            migrate::execute(source, database, verify, rollback)
+                .map_err(|e| anyhow::anyhow!("迁移失败: {}", e))
+        }
+
         Commands::Schema { format, compositions } => {
             commands::schema::handle(format, compositions).await
         }

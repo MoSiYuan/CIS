@@ -23,6 +23,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+mod encryption;
 mod loader;
 mod network;
 mod p2p;
@@ -30,6 +31,7 @@ mod security;
 mod storage;
 mod wasm;
 
+pub use encryption::ConfigEncryption;
 pub use loader::ConfigLoader;
 pub use network::{
     NetworkConfig, TlsConfig,

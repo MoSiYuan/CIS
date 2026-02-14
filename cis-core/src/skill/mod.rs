@@ -31,6 +31,7 @@ pub mod compatibility_db;
 pub mod dag;
 pub mod manager;
 pub mod manifest;
+pub mod permission_checker;
 pub mod project_registry;
 pub mod registry;
 pub mod router;
@@ -43,11 +44,15 @@ pub use chain::{ChainBuilder, ChainContext, ChainDiscoveryResult, ChainMetadata,
 pub use cis_admin::{CisAdminSkill, CisAnalyzeSkill, CisCommitSkill, CisFileSkill, CisReadSkill, register_cis_local_skills};
 pub use compatibility_db::SkillCompatibilityDb;
 pub use manager::SkillManager;
-pub use manifest::{SkillManifest, SkillPermissions, ManifestValidator};
+pub use manifest::{ConstraintDeclaration, PermissionDeclaration, SkillManifest, SkillPermissions, ManifestValidator};
+pub use permission_checker::{
+    CheckContext, Constraint, PermissionCategory, PermissionChecker, PermissionLevel,
+    PermissionResult, PermissionScope, ResourcePattern,
+};
 pub use dag::{SkillDagBuilder, SkillDagContext, SkillDagConverter, SkillDagStats};
 pub use project_registry::{ProjectSkillRegistry, ProjectSkillConfig, ProjectSkillEntry, ProjectSkillDiscovery};
 pub use registry::{SkillRegistry, SkillRegistration};
-pub use router::{ChainExecutionResult, ResolvedParameters, RouteResult, 
+pub use router::{ChainExecutionResult, ResolvedParameters, RouteResult,
                 SkillCompatibility, SkillRoutingResult, SkillVectorRouter};
 pub use semantics::{SkillIoSignature, SkillScope, SkillSemanticDescription, SkillSemanticMatcher, SkillSemanticRegistry, SkillSemanticsExt};
 pub use types::{LoadOptions, SkillConfig, SkillInfo, SkillMeta, SkillRoomInfo, SkillState, SkillType};

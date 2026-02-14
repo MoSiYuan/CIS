@@ -3,7 +3,8 @@
 //! 私域记忆使用 ChaCha20-Poly1305 进行认证加密，
 //! 使用 HKDF 风格的两步派生进行密钥派生。
 
-use crate::error::{CisError, Result};
+use crate::error::{Result, CisError as UnifiedCisError};
+use crate::error::unified::{CisError, ErrorCategory};
 use chacha20poly1305::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     ChaCha20Poly1305, Nonce,
@@ -53,7 +54,7 @@ impl MemoryEncryption {
         let ciphertext = self
             .cipher
             .encrypt(&nonce, plaintext)
-            .map_err(|e| CisError::memory(format!("encryption failed: {}", e)))?;
+            .map_err(|e| UnifiedCisError::memory_encryption_failed(e.to_string()))?;
 
         // 组合: nonce || ciphertext
         let mut result = Vec::with_capacity(12 + ciphertext.len());
@@ -68,7 +69,7 @@ impl MemoryEncryption {
     /// 输入格式: nonce(12字节) || ciphertext || tag(16字节)
     pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
         if ciphertext.len() < 12 + 16 {
-            return Err(CisError::memory("ciphertext too short"));
+            return Err(UnifiedCisError::memory_decryption_failed("ciphertext too short"));
         }
 
         // 提取 nonce
@@ -78,7 +79,7 @@ impl MemoryEncryption {
         // 解密（自动验证标签）
         self.cipher
             .decrypt(nonce, encrypted)
-            .map_err(|_| CisError::memory("decryption failed (invalid key or corrupted data)"))
+            .map_err(|_| UnifiedCisError::memory_decryption_failed("invalid key or corrupted data"))
     }
 
     /// 重新加密数据（用于密钥轮换）
