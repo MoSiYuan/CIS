@@ -78,9 +78,46 @@ fn default_auto_load() -> bool {
 pub struct MemoryConfig {
     /// 记忆命名空间
     pub namespace: String,
+
     /// 共享记忆键
     #[serde(default)]
     pub shared_keys: Vec<String>,
+
+    /// 🔥 作用域 ID（v1.1.7: 稳定哈希绑定）
+    ///
+    /// # 说明
+    ///
+    /// - **第一次初始化后**：自动生成目录哈希并保存
+    /// - **移动/重命名后**：从配置文件读取（哈希不变）
+    /// - **用户自定义**：可手动指定人类可读的 ID
+    ///
+    /// # 示例
+    ///
+    /// ```toml
+    /// [memory]
+    /// # 自动生成（第一次初始化后）
+    /// scope_id = "a3f7e9c2b1d4f8a5"
+    ///
+    /// # 或用户自定义
+    /// # scope_id = "my-workspace"
+    /// ```
+    #[serde(default = "default_scope_id")]
+    pub scope_id: String,
+
+    /// 🔥 人类可读名称（可选，用于调试和 UI）
+    ///
+    /// # 示例
+    ///
+    /// ```toml
+    /// [memory]
+    /// display_name = "My Project Workspace"
+    /// ```
+    #[serde(default)]
+    pub display_name: Option<String>,
+}
+
+fn default_scope_id() -> String {
+    "".to_string()  // 默认为空，第一次初始化时生成哈希
 }
 
 impl Default for MemoryConfig {
@@ -88,7 +125,41 @@ impl Default for MemoryConfig {
         Self {
             namespace: "default".to_string(),
             shared_keys: vec![],
+            scope_id: default_scope_id(),
+            display_name: None,
         }
+    }
+}
+
+impl ProjectConfig {
+    /// 🔥 项目根目录（v1.1.7）
+    ///
+    /// # 注意
+    ///
+    /// 此属性用于 MemoryScope 生成哈希时使用。
+    pub fn project_root(&self) -> &PathBuf {
+        &self.root_dir
+    }
+
+    /// 🔥 保存配置文件
+    ///
+    /// # 使用场景
+    ///
+    /// - 生成 scope_id 后保存到 `.cis/project.toml`
+    /// - 修改其他配置后保存
+    pub fn save(&self) -> Result<()> {
+        let config_path = self.root_dir.join(".cis").join("project.toml");
+
+        // 1. 序列化为 TOML
+        let content = toml::to_string_pretty(self)
+            .map_err(|e| CisError::config_validation_error("project_config", format!("Failed to serialize: {}", e)))?;
+
+        // 2. 写入文件
+        std::fs::write(&config_path, content)
+            .map_err(|e| CisError::config_validation_error("project_config", format!("Failed to write to {:?}: {}", config_path, e)))?;
+
+        println!("[INFO] Saved project config to {:?}", config_path);
+        Ok(())
     }
 }
 
@@ -110,7 +181,7 @@ impl Project {
         let config_path = dir.join(".cis").join("project.toml");
 
         if !config_path.exists() {
-            return Err(CisError::not_found(format!(
+            return Err(CisError::config_not_found(format!(
                 "Project config not found at {:?}",
                 config_path
             )));
@@ -118,7 +189,7 @@ impl Project {
 
         let content = std::fs::read_to_string(&config_path)?;
         let mut config: ProjectConfig = toml::from_str(&content)
-            .map_err(|e| CisError::configuration(format!("Failed to parse project.toml: {}", e)))?;
+            .map_err(|e| CisError::config_parse_error(&config_path.display().to_string(), e.to_string()))?;
 
         config.root_dir = dir.to_path_buf();
 
@@ -146,6 +217,8 @@ impl Project {
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown")),
                 shared_keys: vec!["conventions".to_string(), "architecture".to_string()],
+                scope_id: default_scope_id(),  // 🔥 v1.1.7: 默认为空（第一次初始化时生成）
+                display_name: None,       // 🔥 v1.1.7: 可选
             },
             extra: HashMap::new(),
         };

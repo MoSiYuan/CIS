@@ -13,6 +13,7 @@ pub mod im;
 pub mod init;
 pub mod matrix;
 pub mod memory;
+pub mod memory_conflicts;  // 🔥 Memory Conflicts CLI (P1.7.0)
 pub mod neighbor;
 pub mod network;
 pub mod pair;

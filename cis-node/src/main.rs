@@ -521,6 +521,12 @@ enum MemoryAction {
         #[arg(short, long)]
         domain: Option<String>,
     },
+
+    /// 🔥 Manage memory conflicts (P1.7.0)
+    Conflicts {
+        #[command(subcommand)]
+        action: commands::memory_conflicts::ConflictsAction,
+    },
 }
 
 /// Peer subcommands
@@ -1016,6 +1022,9 @@ async fn run_command(command: Commands, json_output: bool) -> anyhow::Result<()>
             }
             MemoryAction::Stats { domain } => {
                 commands::memory::handle_memory_action(commands::memory::MemoryAction::Stats { domain }).await
+            }
+            MemoryAction::Conflicts { action } => {
+                commands::memory_conflicts::handle_conflicts(action).await
             }
         }
 

@@ -13,7 +13,9 @@ use tokio::sync::mpsc;
 use crate::error::Result;
 
 pub mod bridge;
+pub mod builder;    // 🔥 Builder 模式强制执行（P1.7.0 任务组 0.4）
 pub mod cluster;
+pub mod executor;   // 🔥 单个任务执行（P1.7.0 任务组 0.3）
 pub mod config;
 pub mod federation;
 pub mod federation_client;
@@ -37,7 +39,9 @@ pub use guard::{
 pub use leak_detector::{AgentLeakDetector, LeakReport, LeakedAgent, LeakSeverity, LeakSummary};
 
 pub use bridge::AgentBridgeSkill;
+pub use builder::AgentTaskBuilder;  // 🔥 Builder API（P1.7.0 任务组 0.4）
 pub use cluster::{SessionManager, SessionId, SessionEvent, SessionState};
+pub use executor::{AgentExecutor, AgentResult};  // 🔥 Executor API（P1.7.0 任务组 0.3）
 pub use config::{AgentCommandConfig, AgentMode};
 
 /// Agent 请求
