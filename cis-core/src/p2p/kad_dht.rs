@@ -30,7 +30,7 @@
 //! ```
 
 use crate::error::{CisError, Result};
-use crate::network::acl::{AclService, AclPermission};
+use crate::network::acl_service::{AclService, AclPermission};
 use crate::p2p::{NodeId, NodeInfo};
 
 use libp2p::{

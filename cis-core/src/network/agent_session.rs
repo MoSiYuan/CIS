@@ -62,7 +62,7 @@ use uuid::Uuid;
 use crate::agent::AgentType;
 use crate::error::{CisError, Result};
 use crate::identity::DIDManager;
-use crate::network::acl::{AclResult, NetworkAcl};
+use crate::network::acl_module::{AclResult, NetworkAcl};
 use crate::sandbox::SandboxConfig;
 
 /// Default WebSocket port for agent sessions

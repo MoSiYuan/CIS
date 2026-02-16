@@ -5,7 +5,7 @@
 use super::{ListOptions, PaginatedResult, ResourceStats};
 use crate::error::{CisError, Result};
 use crate::identity::did::DIDManager;
-use crate::network::acl::NetworkAcl;
+use crate::network::acl_module::NetworkAcl;
 #[cfg(feature = "p2p")]
 use crate::p2p::peer::{PeerInfo as P2PPeerInfo, PeerManager};
 use crate::storage::federation_db::{FederationDb, PeerInfo as DbPeerInfo, PeerStatus};

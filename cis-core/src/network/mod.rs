@@ -45,12 +45,20 @@ pub mod websocket_auth;
 pub mod websocket_integration;
 pub mod clock_tolerance;
 
+// 🔒 ACL模块 (访问控制列表)
+pub mod acl_module;
+pub mod acl_service;  // 🔒 AclService trait
+
 #[cfg(test)]
 mod acl_tests;
 
 
 
-pub use acl::{NetworkAcl, NetworkMode, AclEntry, AclResult};
+// 🔒 从acl_module重新导出ACL类型
+pub use acl_module::{AclEntry, AclResult, NetworkAcl, NetworkMode};
+
+// 🔒 从acl_service重新导出AclService
+pub use acl_service::{AclService, AclPermission, AclAction, NetworkAclService};
 pub use acl_rules::{
     AclRule, AclRulesEngine, AclAction, Condition, RuleContext, RulesSummary
 };

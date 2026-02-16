@@ -59,7 +59,7 @@ use tracing::{debug, info, warn};
 
 use crate::identity::did::DIDManager;
 use crate::network::{
-    acl::{AclResult, NetworkAcl},
+    acl_module::{AclResult, NetworkAcl},
     did_verify::{DidChallenge, DidResponse, DidVerifier, VerifiedPeer},
     NetworkError,
 };

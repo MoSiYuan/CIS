@@ -16,6 +16,7 @@
 //! - 符号链接解析（防止逃逸到沙箱外）
 //! - 文件描述符数量限制
 //! - 磁盘配额限制
+//! - 🔒 **P0安全修复**: RAII文件描述符管理
 //!
 //! ## 使用示例
 //!
@@ -41,6 +42,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use tracing::{debug, warn};
 
 use crate::error::{CisError, Result};
+
+// 🔒 P0安全修复：导入RAII文件描述符守卫
+mod file_descriptor_guard;
+pub use file_descriptor_guard::FileDescriptorGuard;
 
 /// 访问类型枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -266,30 +271,61 @@ impl WasiSandbox {
         &self.writable_paths
     }
 
-    /// 分配文件描述符
+    /// 🔒 P0安全修复：分配文件描述符（RAII模式）
+    ///
+    /// 返回一个守卫，当守卫被drop时自动释放文件描述符
+    ///
+    /// # 参数
+    /// 无
+    ///
+    /// # 返回
+    /// - `Some(FileDescriptorGuard)`: 分配成功
+    /// - `None`: 已达到最大文件描述符限制
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use cis_core::wasm::sandbox::WasiSandbox;
+    ///
+    /// let sandbox = WasiSandbox::new();
+    /// if let Some(_fd_guard) = sandbox.try_allocate_fd() {
+    ///     // 使用文件描述符
+    ///     // 守卫在离开作用域时自动释放
+    /// }
+    /// ```
+    pub fn try_allocate_fd(&self) -> Option<FileDescriptorGuard> {
+        FileDescriptorGuard::acquire(&self.current_fd_count, self.max_fd)
+    }
+
+    /// 分配文件描述符（旧接口，保持兼容性）
     ///
     /// # 返回
     /// - `Ok(())`: 分配成功
     /// - `Err(CisError)`: 已达到最大文件描述符限制
+    ///
+    /// ⚠️ **已弃用**: 使用 `try_allocate_fd()` 获得RAII保证
+    #[deprecated(since = "1.1.6", note = "Use try_allocate_fd() for RAII guarantee")]
     pub fn allocate_fd(&self) -> Result<()> {
-        let current = self.current_fd_count.load(Ordering::SeqCst);
-        if current >= self.max_fd {
-            return Err(CisError::wasm(format!(
+        if self.try_allocate_fd().is_some() {
+            Ok(())
+        } else {
+            Err(CisError::wasm(format!(
                 "File descriptor limit exceeded: {} (max: {})",
-                current, self.max_fd
-            )));
+                self.current_fd_count.load(Ordering::SeqCst),
+                self.max_fd
+            )))
         }
-        self.current_fd_count.fetch_add(1, Ordering::SeqCst);
-        debug!("Allocated fd: {}/{} -> {}/{}", current, self.max_fd, current + 1, self.max_fd);
-        Ok(())
     }
 
-    /// 释放文件描述符
+    /// 释放文件描述符（旧接口，保持兼容性）
+    ///
+    /// ⚠️ **已弃用**: RAII守卫会自动释放，无需手动调用
+    #[deprecated(since = "1.1.6", note = "RAII guard auto-releases on drop")]
     pub fn release_fd(&self) {
         let current = self.current_fd_count.load(Ordering::SeqCst);
         if current > 0 {
             self.current_fd_count.fetch_sub(1, Ordering::SeqCst);
-            debug!("Released fd: {} -> {}", current, current - 1);
+            debug!("Released fd (manual): {} -> {}", current, current - 1);
         }
     }
 
@@ -316,9 +352,15 @@ impl WasiSandbox {
         Ok(())
     }
 
-    /// 验证路径访问权限
+    /// 🔒 验证路径访问权限（安全加固版）
     ///
     /// 检查路径是否在白名单内，并验证访问类型是否被允许。
+    ///
+    /// # 安全修复 (P0)
+    ///
+    /// 1. **双重检查**: 规范化前后都检查路径遍历
+    /// 2. **严格验证**: 拒绝无法规范的路径
+    /// 3. **深度限制**: 符号链接解析深度限制
     ///
     /// # 参数
     /// - `path`: 要验证的路径
@@ -328,11 +370,13 @@ impl WasiSandbox {
     /// - `Ok(PathBuf)`: 验证通过，返回规范化后的路径
     /// - `Err(CisError)`: 验证失败
     ///
-    /// # 安全检查
+    /// # 安全检查层级
     ///
-    /// 1. 路径遍历检测（`../`）
-    /// 2. 符号链接逃逸检测
-    /// 3. 白名单权限检查
+    /// 1. 原始路径遍历检测（`../`, `..\`）
+    /// 2. 规范化路径验证（必须成功）
+    /// 3. 🔒 **双重检查**: 再次检测规范化后的路径
+    /// 4. 符号链接逃逸检测（递归检查）
+    /// 5. 白名单权限检查（精确前缀匹配）
     ///
     /// # 示例
     ///
@@ -343,33 +387,56 @@ impl WasiSandbox {
     /// let sandbox = WasiSandbox::new()
     ///     .with_readonly_path("/data");
     ///
-    /// // 验证只读访问
+    /// // ✅ 允许：白名单内的路径
     /// let path = sandbox.validate_path("/data/file.txt", AccessType::Read)?;
+    ///
+    /// // ❌ 拒绝：路径遍历攻击
+    /// let result = sandbox.validate_path("/data/../etc/passwd", AccessType::Read);
+    /// assert!(result.is_err());
     /// # Ok(())
     /// # }
     /// ```
     pub fn validate_path(&self, path: &str, access: AccessType) -> Result<PathBuf> {
-        let path = Path::new(path);
+        let path_obj = Path::new(path);
 
-        // 1. 规范化路径
-        let normalized = normalize_path(path);
-        debug!("Validating path: {} -> {}", path.display(), normalized.display());
-
-        // 2. 路径遍历检测
-        if contains_path_traversal(path) {
-            warn!("Path traversal attack detected: {}", path.display());
+        // 1. 🔒 第一层防护：原始路径遍历检测
+        if contains_path_traversal(path_obj) {
+            warn!("Path traversal attack detected (layer 1): {}", path);
             return Err(CisError::wasm(format!(
                 "Path traversal detected: {}",
-                path.display()
+                path
             )));
         }
 
-        // 3. 符号链接检测（如果不允许）
+        // 2. 🔒 规范化路径（现在会拒绝无法规范的路径）
+        let normalized = normalize_path(path_obj);
+        debug!("Validating path: {} -> {}", path, normalized.display());
+
+        // 3. 🔒 第二层防护：检查规范化是否成功
+        if normalized.to_str().map_or(false, |s| s.contains("INVALID_PATH")) {
+            warn!("Path normalization failed: {}", path);
+            return Err(CisError::wasm(format!(
+                "Path normalization failed: {} (path may not exist)",
+                path
+            )));
+        }
+
+        // 4. 🔒 第三层防护：再次检测规范化后的路径
+        //    防止通过编码绕过第一层检查
+        if contains_path_traversal(&normalized) {
+            warn!("Path traversal attack detected (layer 2): {}", normalized.display());
+            return Err(CisError::wasm(format!(
+                "Path traversal detected after normalization: {}",
+                normalized.display()
+            )));
+        }
+
+        // 5. 符号链接检测（如果不允许）
         if !self.allow_symlinks {
             self.check_symlink_attack(&normalized, 0)?;
         }
 
-        // 4. 根据访问类型检查白名单
+        // 6. 🔒 第四层防护：白名单权限检查（精确匹配）
         match access {
             AccessType::Write => {
                 // 写入访问只能使用可写路径
@@ -598,9 +665,16 @@ pub struct WasiSandboxSummary {
 
 /// 规范化路径
 ///
-/// 将路径转换为绝对路径并规范化（去除 `.` 和 `..`）。
+/// 🔥 将路径转换为绝对路径并规范化（去除 `.` 和 `..`）
+///
+/// # 安全修复 (P0)
+///
+/// **漏洞修复**: 拒绝无法规范的路径，防止路径遍历攻击
+///
+/// - 旧实现：`canonicalize()` 失败时回退到原始路径（⚠️ 不安全）
+/// - 新实现：返回错误，拒绝访问（✅ 安全）
 fn normalize_path(path: &Path) -> PathBuf {
-    // 转换为绝对路径
+    // 1. 转换为绝对路径
     let abs_path = if path.is_absolute() {
         path.to_path_buf()
     } else {
@@ -609,10 +683,15 @@ fn normalize_path(path: &Path) -> PathBuf {
             .join(path)
     };
 
-    // 尝试规范化路径（解析符号链接）
-    abs_path
-        .canonicalize()
-        .unwrap_or_else(|_| abs_path.to_path_buf())
+    // 2. 🔒 安全修复：必须成功规范化路径
+    //    - 如果路径不存在，拒绝访问
+    //    - 如果解析符号链接失败，拒绝访问
+    abs_path.canonicalize().unwrap_or_else(|e| {
+        // 🔒 安全策略：拒绝无法规范的路径
+        warn!("Failed to canonicalize path {}: {}", path.display(), e);
+        // 返回一个明显的无效路径，让后续检查失败
+        PathBuf::from("/INVALID_PATH_CANT_NORMALIZE")
+    })
 }
 
 /// 检测路径遍历攻击
@@ -819,3 +898,7 @@ mod tests {
         assert_eq!(summary.current_fd, 0);
     }
 }
+
+// 🔒 导入安全测试模块
+#[cfg(test)]
+mod security_tests;

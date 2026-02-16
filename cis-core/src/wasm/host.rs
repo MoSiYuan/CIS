@@ -24,6 +24,9 @@ use crate::ai::AiProvider;
 use crate::error::CisError;
 use crate::storage::DbManager;
 
+// 🔒 P0安全修复：导入ACL服务
+use crate::network::acl_service::{AclService, AclPermission, AclAction};
+
 /// 执行统计和限制
 #[derive(Debug, Clone)]
 pub struct ExecutionLimits {
@@ -114,6 +117,8 @@ pub struct HostContext {
     pub allow_network: bool,
     /// 允许的主机列表
     pub allowed_hosts: Vec<String>,
+    /// 🔒 P0安全修复：ACL服务
+    pub acl_service: Option<Arc<dyn AclService>>,
 }
 
 impl HostContext {
@@ -131,6 +136,7 @@ impl HostContext {
             execution_limits: None,
             allow_network: false,
             allowed_hosts: vec![],
+            acl_service: None, // 🔒 默认无ACL检查
         }
     }
 
@@ -149,6 +155,7 @@ impl HostContext {
             execution_limits: None,
             allow_network: false,
             allowed_hosts: vec![],
+            acl_service: None, // 🔒 默认无ACL检查
         }
     }
 
@@ -179,6 +186,34 @@ impl HostContext {
     pub fn set_network_permissions(&mut self, allow: bool, allowed_hosts: Vec<String>) {
         self.allow_network = allow;
         self.allowed_hosts = allowed_hosts;
+    }
+
+    /// 🔒 P0安全修复：设置ACL服务
+    pub fn set_acl_service(&mut self, acl: Arc<dyn AclService>) {
+        self.acl_service = Some(acl);
+    }
+
+    /// 🔒 P0安全修复：检查ACL权限
+    async fn check_acl(&self, resource: &str, action: AclAction) -> Result<(), CisError> {
+        if let Some(ref acl) = self.acl_service {
+            let permission = AclPermission {
+                namespace: resource.to_string(),
+                action,
+            };
+
+            if !acl.check_permission(&permission).await {
+                tracing::warn!(
+                    "ACL permission denied: resource={}, action={:?}",
+                    resource,
+                    action
+                );
+                return Err(CisError::Forbidden(format!(
+                    "ACL permission denied: resource={}, action={:?}",
+                    resource, action
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// 检查是否允许访问指定主机

@@ -27,7 +27,8 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::identity::did::DIDManager;
-use crate::network::{acl::AclEntry, acl::NetworkAcl, NetworkError};
+use crate::network::acl_module::{AclEntry, NetworkAcl};
+use crate::network::NetworkError;
 use ed25519_dalek::Verifier;
 
 /// ACL update actions
