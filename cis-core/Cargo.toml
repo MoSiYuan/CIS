@@ -174,37 +174,76 @@ criterion = { version = "0.5", features = ["async_tokio"] }
 downcast-rs = "1.2"
 
 [features]
+# =============================================================================
+# Feature Flags Configuration
+# =============================================================================
+# CIS uses feature flags to enable/disable functionality for different use cases:
+#
+# Default Feature Set:
+# - encryption: End-to-end encryption and secure key derivation
+# - vector: Semantic search and AI embeddings
+# - p2p: Peer-to-peer networking and NAT traversal
+# - wasm: WebAssembly skill runtime
+#
+# Minimal Builds:
+# - Use --no-default-features and selectively enable features
+# - Example: cargo build --no-default-features --features "vector,wasm"
+#
+# Feature Dependencies:
+# - p2p depends on encryption (for secure QUIC connections)
+# - full includes all features for complete functionality
+# =============================================================================
+
 # Production features - REQUIRED for production builds
 # DO NOT disable these features in production - will cause compile errors
 default = ["encryption", "vector", "p2p", "wasm"]
 
-# WASM support
+# WASM Runtime Support
+# - wasm: Wasmer-based runtime (v1, stable)
+# - wasm-v2: Wasmtime-based runtime (v2, enhanced security)
+# Note: Only one WASM runtime should be enabled at a time
 wasm = ["wasmer", "wasmer-compiler-cranelift", "wasmparser"]
 wasm-v2 = ["wasmtime", "wasmtime-wasi"]
 
-# Encryption features (planned for Phase 2)
+# Encryption Features (Phase 2)
+# - sqlx: Async database layer for encrypted storage
+# - chacha20poly1305: AEAD encryption for data at rest
+# - argon2: Secure password-based key derivation
+# - vodozemac: Matrix E2EE cryptographic primitives
 encryption = ["sqlx", "chacha20poly1305", "argon2", "dep:vodozemac"]
 
-
-
-# P2P features (planned for Phase 4)
+# P2P Networking Features (Phase 4)
+# - prost/tonic: gRPC for P2P RPC
+# - quinn: QUIC protocol for secure transport
+# - rcgen: Certificate generation for TLS
+# - mdns-sd: mDNS local network discovery
+# - rustls: TLS implementation for QUIC
+# - stun/igd: NAT traversal via STUN and UPnP
+# Note: p2p requires encryption for secure connections
 p2p = ["prost", "tonic", "encryption", "quinn", "rcgen", "mdns-sd", "rustls", "rustls-native-certs", "stun", "igd"]
 
-
-
-# Vector intelligence features
+# Vector Intelligence Features
+# - fastembed: Local embedding model (no API calls needed)
+# - sqlite-vec: Vector similarity search in SQLite
+# Note: Requires model download on first use (~100MB)
 vector = ["fastembed", "sqlite-vec"]
 
-# FastEmbed for local embeddings (replaces ort)
+# FastEmbed Dependency
+# - fastembed: Embedding model runtime
+# - ndarray: N-dimensional arrays for tensor operations
+# Note: Internal feature, use 'vector' instead
 fastembed = ["dep:fastembed", "dep:ndarray"]
 
-# Full feature set
+# Full Feature Set
+# Includes all CIS capabilities for complete functionality
 full = ["encryption", "p2p", "vector", "federation"]
 
-# Federation discovery with DNS resolution
+# Matrix Federation
+# - trust-dns-resolver: DNS SRV record lookup for federation
 federation = ["trust-dns-resolver"]
 
-# Test utilities for external crates
+# Test Utilities
+# Empty feature for external test crates to depend on
 test-utils = []
 
 [[bench]]

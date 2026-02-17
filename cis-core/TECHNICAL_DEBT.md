@@ -1,8 +1,8 @@
-# CIS Core 事件总线 - SHAME_LIST
+# CIS Core 事件总线 - Technical Debt Record
 
 ## 简化实现记录
 
-### 1. 持久化存储简化 (SHAME_TAG: D03-PERSISTENCE)
+### 1. 持久化存储简化 (DEBT_TAG: D03-PERSISTENCE)
 
 **问题**: 当前 `MemoryEventBus` 使用内存存储事件历史，重启后数据丢失。
 
@@ -20,7 +20,7 @@
 
 ---
 
-### 2. 事件确认机制简化 (SHAME_TAG: D03-ACK)
+### 2. 事件确认机制简化 (DEBT_TAG: D03-ACK)
 
 **问题**: 当前实现没有显式的事件确认机制。
 
@@ -38,7 +38,7 @@
 
 ---
 
-### 3. MockEventBus 功能限制 (SHAME_TAG: D03-MOCK)
+### 3. MockEventBus 功能限制 (DEBT_TAG: D03-MOCK)
 
 **问题**: `MockEventBus` 的 `subscribe_boxed` 方法不实际调用处理函数。
 
@@ -54,7 +54,7 @@
 
 ---
 
-### 4. 全局事件总线禁止 (SHAME_TAG: D03-NO-GLOBAL - 遵守)
+### 4. 全局事件总线禁止 (DEBT_TAG: D03-NO-GLOBAL - 遵守)
 
 **状态**: ✅ **遵守规则**
 
@@ -65,7 +65,7 @@
 
 ---
 
-### 5. 事件路由显式化 (SHAME_TAG: D03-EXPLICIT-ROUTING - 遵守)
+### 5. 事件路由显式化 (DEBT_TAG: D03-EXPLICIT-ROUTING - 遵守)
 
 **状态**: ✅ **遵守规则**
 
