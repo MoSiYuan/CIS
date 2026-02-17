@@ -60,7 +60,9 @@ ehthumbs_vista.db
 
 # Backup files
 *.bak
+*.bak2
 *.backup
+*.tmp
 
 # Test artifacts
 /test_artifacts/

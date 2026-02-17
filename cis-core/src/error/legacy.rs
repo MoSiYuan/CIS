@@ -114,6 +114,10 @@ pub enum CisError {
     #[error("Encryption error: {0}")]
     Encryption(String),
 
+    /// Resource exhausted errors (P0-6: memory limits, etc.)
+    #[error("Resource exhausted: {0}")]
+    ResourceExhausted(String),
+
     /// Generic errors with context
     #[error("{0}")]
     Other(String),
@@ -178,6 +182,11 @@ impl CisError {
     /// Create a new skill error
     pub fn skill(msg: impl Into<String>) -> Self {
         Self::Skill(msg.into())
+    }
+
+    /// Create a new resource exhausted error (P0-6)
+    pub fn resource_exhausted(msg: impl Into<String>) -> Self {
+        Self::ResourceExhausted(msg.into())
     }
 
     /// Create a new vector error

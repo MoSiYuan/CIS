@@ -43,92 +43,132 @@ impl DagExecutor {
         Self { skill_executor }
     }
     
-    /// 执行 DAG
+    /// 执行 DAG (并行版本 - P0-5 修复)
+    ///
+    /// ## 性能优化 (P0-5)
+    ///
+    /// **改进前**: 顺序执行所有节点，未利用并行性
+    /// **改进后**: 按依赖层级并行执行，充分利用并发能力
+    ///
+    /// ### 执行策略
+    ///
+    /// ```text
+    /// 示例 DAG:
+    ///   A ─┬─> C ──> E
+    ///       │
+    ///   B ──┘
+    ///
+    /// 执行流程:
+    /// Level 0: [A, B] 并行执行 ──┐
+    /// Level 1: [C]      等待A,B ──┤
+    /// Level 2: [E]      等待C   ──┘
+    /// ```
     pub async fn execute(&self, dag: DagDefinition, context: ExecutionContext) -> Result<HashMap<String, ExecutionResult>> {
         // 验证 DAG
         self.validate_dag(&dag)?;
-        
-        // 构建依赖图
+
+        // 构建依赖图和状态
         let mut status: HashMap<String, NodeStatus> = HashMap::new();
         for node in &dag.nodes {
             status.insert(node.id.clone(), NodeStatus::Pending);
         }
-        
+
         let status = Arc::new(RwLock::new(status));
-        let mut handles = vec![];
-        
-        // 执行节点（简化版：顺序执行）
-        for node in dag.nodes {
-            let executor = self.skill_executor.clone();
-            let status = status.clone();
-            let context = context.clone();
-            
-            let handle = tokio::spawn(async move {
-                // 检查依赖是否完成
-                let deps_completed = {
-                    let status = status.read().await;
+        let mut results = HashMap::new();
+
+        // 按依赖层级分组执行
+        let mut remaining_nodes: HashSet<String> = dag.nodes.iter().map(|n| n.id.clone()).collect();
+
+        loop {
+            // 找出所有依赖已满足的节点（可并行执行）
+            let ready_nodes: Vec<DagNode> = dag.nodes.iter()
+                .filter(|node| {
+                    // 节点还未完成
+                    if !remaining_nodes.contains(&node.id) {
+                        return false;
+                    }
+
+                    // 检查所有依赖是否已完成
                     node.dependencies.iter().all(|dep_id| {
-                        matches!(status.get(dep_id), Some(NodeStatus::Completed(_)))
+                        let status = status.try_read().ok();
+                        match status {
+                            Some(s) => matches!(s.get(dep_id), Some(NodeStatus::Completed(_))),
+                            None => false,
+                        }
                     })
-                };
-                
-                if !deps_completed {
-                    return Err(CisError::execution(format!(
-                        "Dependencies not completed for node {}", node.id
-                    )));
+                })
+                .cloned()
+                .collect();
+
+            if ready_nodes.is_empty() {
+                // 没有可执行的节点，检查是否全部完成
+                if remaining_nodes.is_empty() {
+                    break;  // 全部完成
+                } else {
+                    return Err(CisError::execution(
+                        "Deadlock detected: circular dependencies or unresolved dependencies".to_string()
+                    ));
                 }
-                
-                // 更新状态为运行中
-                {
+            }
+
+            // 并行执行当前层的所有节点
+            let mut handles = vec![];
+            for node in ready_nodes {
+                remaining_nodes.remove(&node.id);
+
+                let executor = self.skill_executor.clone();
+                let status = status.clone();
+                let context = context.clone();
+                let node_id = node.id.clone();
+
+                let handle = tokio::spawn(async move {
+                    // 更新状态为运行中
+                    {
+                        let mut status = status.write().await;
+                        status.insert(node_id.clone(), NodeStatus::Running);
+                    }
+
+                    // 执行 Skill
+                    let result = executor.execute(
+                        &node.skill_name,
+                        &node.method,
+                        &node.params,
+                        context
+                    ).await;
+
+                    // 更新状态
                     let mut status = status.write().await;
-                    status.insert(node.id.clone(), NodeStatus::Running);
-                }
-                
-                // 执行 Skill
-                let result = executor.execute(
-                    &node.skill_name,
-                    &node.method,
-                    &node.params,
-                    context
-                ).await;
-                
-                // 更新状态
-                let mut status = status.write().await;
-                match result {
-                    Ok(exec_result) => {
-                        status.insert(node.id.clone(), NodeStatus::Completed(exec_result.clone()));
-                        Ok(exec_result)
+                    match result {
+                        Ok(exec_result) => {
+                            status.insert(node_id.clone(), NodeStatus::Completed(exec_result.clone()));
+                            Ok((node_id, exec_result))
+                        }
+                        Err(e) => {
+                            status.insert(node_id.clone(), NodeStatus::Failed(e.to_string()));
+                            Err(e)
+                        }
+                    }
+                });
+
+                handles.push(handle);
+            }
+
+            // 等待当前层的所有节点完成
+            for handle in handles {
+                match handle.await {
+                    Ok(Ok((node_id, result))) => {
+                        results.insert(node_id, result);
+                    }
+                    Ok(Err(e)) => {
+                        return Err(CisError::execution(format!("Node execution failed: {}", e)));
                     }
                     Err(e) => {
-                        status.insert(node.id.clone(), NodeStatus::Failed(e.to_string()));
-                        Err(e)
+                        return Err(CisError::execution(format!("Node task panicked: {}", e)));
                     }
-                }
-            });
-            
-            handles.push((node.id, handle));
-        }
-        
-        // 收集结果
-        let mut results = HashMap::new();
-        for (node_id, handle) in handles {
-            match handle.await {
-                Ok(Ok(result)) => {
-                    results.insert(node_id, result);
-                }
-                Ok(Err(e)) => {
-                    return Err(CisError::execution(format!(
-                        "Node {} execution failed: {}", node_id, e
-                    )));
-                }
-                Err(e) => {
-                    return Err(CisError::execution(format!(
-                        "Node {} task panicked: {}", node_id, e
-                    )));
                 }
             }
         }
-        
+
         Ok(results)
     }
     

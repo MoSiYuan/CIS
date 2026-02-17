@@ -14,7 +14,7 @@ use cis_core::storage::paths::Paths;
 #[derive(Parser, Debug)]
 #[command(name = "cis")]
 #[command(about = "CIS - Cluster of Independent Systems")]
-#[command(version = "1.1.2")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
     /// Output JSON format (AI-Native mode)
     #[arg(long, global = true, help = "Output in JSON format for AI integration")]

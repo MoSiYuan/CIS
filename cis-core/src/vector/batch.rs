@@ -40,6 +40,7 @@
 //! ```
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use std::time::Instant;
@@ -98,6 +99,8 @@ struct BatchItem {
     value: Vec<u8>,
     category: Option<String>,
     response_tx: oneshot::Sender<Result<String>>,
+    /// 估算的内存大小（字节）- 用于 P0-6 内存限制
+    estimated_size_bytes: usize,
 }
 
 /// 批量处理器
@@ -110,6 +113,21 @@ struct BatchItem {
 /// 2. 当缓冲区达到 batch_size 时触发批量处理
 /// 3. 使用批量嵌入 API 提高效率
 /// 4. 返回结果给等待的请求
+///
+/// ## 内存限制 (P0-6 安全修复)
+///
+/// **改进前**: 无内存上限，大量数据可能导致 OOM
+/// **改进后**: 添加内存使用跟踪和上限检查
+///
+/// ```text
+/// 内存保护机制:
+/// 1. 每个 item 估算内存占用
+/// 2. 原子计数器跟踪当前使用量
+/// 3. 超过限制时拒绝新提交
+/// 4. 处理完成后自动释放计数
+/// ```
+///
+/// 默认限制: **100 MB** (可通过 `with_max_memory_mb` 自定义)
 ///
 /// ## 线程安全
 ///
@@ -124,7 +142,8 @@ struct BatchItem {
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let storage = Arc::new(VectorStorage::open_default()?);
-/// let mut processor = BatchProcessor::new(storage, 10);
+/// let mut processor = BatchProcessor::new(storage, 10)
+///     .with_max_memory_mb(200);  // 设置 200MB 限制
 ///
 /// // 批量提交
 /// let items = vec![
@@ -145,6 +164,10 @@ struct BatchItem {
 pub struct BatchProcessor {
     storage: Option<Arc<VectorStorage>>,
     batch_size: usize,
+    /// 最大内存限制（MB）- P0-6 安全修复
+    max_memory_bytes: usize,
+    /// 当前内存使用量（字节）- 原子操作保证线程安全
+    current_memory_usage: Arc<AtomicUsize>,
     tx: Option<mpsc::Sender<BatchItem>>,
     handle: Option<JoinHandle<()>>,
     stats: std::sync::Arc<std::sync::Mutex<BatchStats>>,
@@ -156,6 +179,9 @@ impl BatchProcessor {
     /// # 参数
     /// - `storage`: 向量存储实例
     /// - `batch_size`: 每批处理的最大项数（建议 10-100）
+    ///
+    /// # 默认配置
+    /// - **内存限制**: 100 MB (可通过 `with_max_memory_mb` 自定义)
     ///
     /// # 示例
     ///
@@ -171,30 +197,47 @@ impl BatchProcessor {
     /// # }
     /// ```
     pub fn new(storage: Arc<VectorStorage>, batch_size: usize) -> Self {
+        Self::with_config(storage, batch_size, 100)  // 默认 100MB
+    }
+
+    /// 使用自定义配置创建批量处理器
+    ///
+    /// # 参数
+    /// - `storage`: 向量存储实例
+    /// - `batch_size`: 每批处理的最大项数
+    /// - `max_memory_mb`: 最大内存限制（MB）
+    pub fn with_config(storage: Arc<VectorStorage>, batch_size: usize, max_memory_mb: usize) -> Self {
+        let max_memory_bytes = max_memory_mb * 1024 * 1024;
         let (tx, mut rx) = mpsc::channel::<BatchItem>(1000);
         let storage_clone = Arc::clone(&storage);
         let stats = std::sync::Arc::new(std::sync::Mutex::new(BatchStats::new()));
         let stats_clone = Arc::clone(&stats);
-        
+        let current_memory_usage = Arc::new(AtomicUsize::new(0));
+        let memory_usage_clone = Arc::clone(&current_memory_usage);
+
         let handle = tokio::spawn(async move {
             let mut buffer = Vec::with_capacity(batch_size);
             let mut flush_interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
-            
+
             loop {
                 tokio::select! {
                     // 接收新消息
                     item = rx.recv() => {
                         match item {
                             Some(item) => {
+                                let size = item.estimated_size_bytes;
                                 buffer.push(item);
-                                
+
                                 // 如果 buffer 已满，立即刷新
                                 if buffer.len() >= batch_size {
                                     let start = Instant::now();
                                     let count = buffer.len();
                                     let (success, failed) = Self::flush_batch(&storage_clone, &mut buffer).await;
                                     let duration = start.elapsed().as_millis() as u64;
-                                    
+
+                                    // 释放内存计数
+                                    let _ = memory_usage_clone.fetch_sub(size, Ordering::Relaxed);
+
                                     if let Ok(mut s) = stats_clone.lock() {
                                         s.update(count, success, failed, duration);
                                     }
@@ -210,36 +253,56 @@ impl BatchProcessor {
                     _ = flush_interval.tick(), if !buffer.is_empty() => {
                         let start = Instant::now();
                         let count = buffer.len();
+                        let mut total_size = 0;
+                        for item in &buffer {
+                            total_size += item.estimated_size_bytes;
+                        }
                         let (success, failed) = Self::flush_batch(&storage_clone, &mut buffer).await;
                         let duration = start.elapsed().as_millis() as u64;
-                        
+
+                        // 释放内存计数
+                        let _ = memory_usage_clone.fetch_sub(total_size, Ordering::Relaxed);
+
                         if let Ok(mut s) = stats_clone.lock() {
                             s.update(count, success, failed, duration);
                         }
                     }
                 }
             }
-            
+
             // 刷新剩余项
             if !buffer.is_empty() {
                 let start = Instant::now();
                 let count = buffer.len();
                 let (success, failed) = Self::flush_batch(&storage_clone, &mut buffer).await;
                 let duration = start.elapsed().as_millis() as u64;
-                
+
                 if let Ok(mut s) = stats_clone.lock() {
                     s.update(count, success, failed, duration);
                 }
             }
         });
-        
+
         Self {
             storage: Some(storage),
             batch_size,
+            max_memory_bytes,
+            current_memory_usage,
             tx: Some(tx),
             handle: Some(handle),
             stats,
         }
+    }
+
+    /// 设置最大内存限制（链式调用）
+    pub fn with_max_memory_mb(mut self, max_memory_mb: usize) -> Self {
+        self.max_memory_bytes = max_memory_mb * 1024 * 1024;
+        self
+    }
+
+    /// 估算 item 的内存大小（字节）
+    fn estimate_item_size(key: &str, value: &[u8], category: &Option<String>) -> usize {
+        key.len() + value.len() + category.as_ref().map(|s| s.len()).unwrap_or(0) + 64  // +64 为结构体开销
     }
     
     /// 刷新批量缓冲区
@@ -289,6 +352,9 @@ impl BatchProcessor {
     /// # 返回
     /// - `Result<String>`: 生成的记忆 ID
     ///
+    /// # 错误
+    /// - 如果内存限制已满，返回 `CisError::ResourceExhausted`
+    ///
     /// # 示例
     ///
     /// ```rust,no_run
@@ -304,17 +370,42 @@ impl BatchProcessor {
     /// # }
     /// ```
     pub async fn submit(&self, key: String, value: Vec<u8>, category: Option<String>) -> Result<String> {
+        // P0-6: 检查内存限制
+        let estimated_size = Self::estimate_item_size(&key, &value, &category);
+        let current_usage = self.current_memory_usage.load(Ordering::Relaxed);
+
+        if current_usage + estimated_size > self.max_memory_bytes {
+            return Err(CisError::ResourceExhausted(format!(
+                "Batch processor memory limit exceeded: {} MB (current: {:.2} MB, item: {} bytes)",
+                self.max_memory_bytes / (1024 * 1024),
+                current_usage as f64 / (1024.0 * 1024.0),
+                estimated_size
+            )));
+        }
+
+        // 增加内存计数
+        self.current_memory_usage.fetch_add(estimated_size, Ordering::Relaxed);
+
         let (response_tx, response_rx) = oneshot::channel();
-        
+
         let tx = self.tx.as_ref().ok_or_else(|| CisError::Other("Batch processor closed".into()))?;
         tx.send(BatchItem {
             key,
             value,
             category,
             response_tx,
-        }).await.map_err(|_| CisError::Other("Batch processor closed".into()))?;
-        
-        response_rx.await.map_err(|_| CisError::Other("Response cancelled".into()))?
+            estimated_size_bytes: estimated_size,
+        }).await.map_err(|_| {
+            // 发送失败，回退内存计数
+            self.current_memory_usage.fetch_sub(estimated_size, Ordering::Relaxed);
+            CisError::Other("Batch processor closed".into())
+        })?;
+
+        response_rx.await.map_err(|e| {
+            // 接收失败，回退内存计数
+            self.current_memory_usage.fetch_sub(estimated_size, Ordering::Relaxed);
+            CisError::Other(format!("Response cancelled: {}", e))
+        })?
     }
     
     /// 提交多个索引请求
@@ -374,7 +465,17 @@ impl BatchProcessor {
     pub fn batch_size(&self) -> usize {
         self.batch_size
     }
-    
+
+    /// 获取当前内存使用量（字节）- P0-6
+    pub fn current_memory_usage(&self) -> usize {
+        self.current_memory_usage.load(Ordering::Relaxed)
+    }
+
+    /// 获取当前内存使用量（MB）- P0-6
+    pub fn current_memory_usage_mb(&self) -> f64 {
+        self.current_memory_usage.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
+    }
+
     /// 获取处理统计信息
     pub fn stats(&self) -> BatchStats {
         self.stats.lock().unwrap().clone()

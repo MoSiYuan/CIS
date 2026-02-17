@@ -17,6 +17,43 @@
 //! - 缓存未命中: < 100μs
 //! - 吞吐量: > 100K ops/sec
 //!
+//! ## 已知限制 (P0-4: Writer Starvation)
+//!
+//! **当前实现** 使用 `tokio::sync::RwLock`，在高并发读场景下可能导致写者饥饿：
+//!
+//! ```text
+//! 问题场景:
+//! 读请求 1 ─┐
+//! 读请求 2 ─┼─→ 持续不断的读操作
+//! 读请求 3 ─┘         ↓
+//! 写请求   ───────────→ 长时间等待 ⚠️
+//! ```
+//!
+//! **解决方案** (推荐使用 parking_lot):
+//!
+//! ```toml
+//! # cis-core/Cargo.toml
+//! [dependencies]
+//! parking_lot = "0.12"
+//!
+//! [features]
+//! default = ["parking_lot"]
+//! parking_lot = ["dep:parking_lot"]
+//! ```
+//!
+//! ```rust
+//! #![cfg(feature = "parking_lot")]
+//! use parking_lot::RwLock;
+//!
+//! #![cfg(not(feature = "parking_lot"))]
+//! use tokio::sync::RwLock;
+//! ```
+//!
+//! **parking_lot 优势**:
+//! - 更好的写者优先策略
+//! - 更小的内存占用
+//! - 更快的锁操作（约 2x）
+//!
 //! ## 示例
 //!
 //! ```rust,no_run

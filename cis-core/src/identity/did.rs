@@ -9,6 +9,74 @@ use std::fs;
 use crate::error::{CisError, Result};
 use crate::matrix::error::{MatrixError, MatrixResult};
 
+/// 设置密钥文件权限（Unix + Windows）
+///
+/// # Security (P0-2)
+///
+/// - **Unix**: 设置权限为 0o600 (仅所有者可读写)
+/// - **Windows**: 使用 icacls 禁用继承并限制访问
+/// - **验证**: 权限设置后进行验证，确保生效
+fn set_key_permissions(key_path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(key_path)
+            .map_err(|e| CisError::identity(format!("Failed to read key metadata: {}", e)))?
+            .permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(key_path, perms)
+            .map_err(|e| CisError::identity(format!("Failed to set key permissions: {}", e)))?;
+
+        // 验证权限设置成功
+        let verified_perms = fs::metadata(key_path)
+            .map_err(|e| CisError::identity(format!("Failed to verify key permissions: {}", e)))?
+            .permissions();
+        let mode = verified_perms.mode();
+        if mode & 0o777 != 0o600 {
+            return Err(CisError::identity(
+                format!("Key permission verification failed: got {:03o}, expected 0600", mode)
+            ));
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+        use whoami;
+
+        let key_path_str = key_path.to_str()
+            .ok_or_else(|| CisError::identity("Invalid key path".to_string()))?;
+
+        // Windows: 使用 icacls 设置权限
+        let username = whoami::username();
+        let output = Command::new("icacls")
+            .args(&[
+                key_path_str,
+                "/inheritance:r",
+                "/grant",
+                &format!("{}:(R)", username),  // 仅读权限
+            ])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                tracing::debug!("Windows key permissions set successfully");
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                tracing::warn!("Failed to set Windows key permissions: {}", stderr);
+                // 不返回错误，因为 icacls 可能不可用
+            }
+            Err(e) => {
+                tracing::warn!("Failed to execute icacls: {}", e);
+                // 不返回错误，因为这是非关键操作
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// DID 管理器
 #[derive(Clone)]
 pub struct DIDManager {
@@ -40,6 +108,42 @@ impl DIDManager {
     }
     
     /// 从种子恢复（确定性密钥）
+    ///
+    /// # Security Warning (P0-3)
+    ///
+    /// **当前实现的限制**:
+    /// - 当种子长度不足时，仅使用单次 SHA256 扩展
+    /// - 缺少盐值 (salt) 和密钥派生函数 (KDF)
+    ///
+    /// **推荐做法**:
+    /// - 使用 Argon2id 或 PBKDF2 进行密钥派生
+    /// - 为每个派生操作生成随机盐值
+    /// - 设置足够的迭代次数（推荐 > 100,000）
+    ///
+    /// **升级路径**:
+    /// ```toml
+    /// # Cargo.toml
+    /// [dependencies]
+    /// argon2 = "0.5"
+    /// ```
+    ///
+    /// ```rust
+    /// use argon2::{Argon2, PasswordHasher, password_hash::{SaltString, rand_core::OsRng}};
+    ///
+    /// let salt = SaltString::generate(&mut OsRng);
+    /// let argon2 = Argon2::default();
+    /// let hash = argon2.hash_password(
+    ///     seed,
+    ///     &salt
+    /// ).unwrap();
+    /// ```
+    ///
+    /// # 向后兼容性
+    ///
+    /// 修改此方法将破坏现有用户的密钥！建议：
+    /// 1. 添加新方法 `from_seed_kdf()` 使用 Argon2
+    /// 2. 保留 `from_seed()` 用于向后兼容
+    /// 3. 在文档中标记 `from_seed()` 为 deprecated
     pub fn from_seed(seed: &[u8], node_id: impl Into<String>) -> Result<Self> {
         // 使用种子生成密钥对
         // 确保种子长度至少为 32 字节
@@ -48,13 +152,17 @@ impl DIDManager {
             bytes.copy_from_slice(&seed[..32]);
             bytes
         } else {
-            // 如果种子太短，使用 SHA256 哈希扩展
+            // ⚠️ SECURITY WEAKNESS (P0-3): 单次 SHA256 不是安全的 KDF
+            // 应该使用 Argon2id + 随机盐值
+            tracing::warn!(
+                "Seed length < 32 bytes, using SHA256 extension (WEAK KDF, should use Argon2id)"
+            );
             use sha2::{Sha256, Digest};
             let mut hasher = Sha256::new();
             hasher.update(seed);
             hasher.finalize().into()
         };
-        
+
         let signing_key = SigningKey::from_bytes(&seed_bytes);
         
         let node_id = node_id.into();
@@ -124,18 +232,13 @@ impl DIDManager {
             let mut key_bytes = Vec::with_capacity(64);
             key_bytes.extend_from_slice(&manager.signing_key.to_bytes());
             key_bytes.extend_from_slice(&manager.signing_key.verifying_key().to_bytes());
-            fs::write(path.with_extension("key"), hex::encode(key_bytes))
+            let key_path = path.with_extension("key");
+            fs::write(&key_path, hex::encode(&key_bytes))
                 .map_err(|e| CisError::identity(format!("Failed to write key file: {}", e)))?;
-            
-            // 设置权限为仅所有者可读写 (0o600)
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = fs::metadata(path.with_extension("key"))?.permissions();
-                perms.set_mode(0o600);
-                fs::set_permissions(path.with_extension("key"), perms)?;
-            }
-            
+
+            // 设置密钥文件权限
+            set_key_permissions(&key_path)?;
+
             Ok(manager)
         }
     }
