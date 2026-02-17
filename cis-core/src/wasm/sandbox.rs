@@ -27,8 +27,8 @@
 //! let sandbox = WasiSandbox::new()
 //!     .with_readonly_path("/data")
 //!     .with_writable_path("/tmp")
-//!     .with_max_fd(32)
-//!     .with_max_file_size(10 * 1024 * 1024); // 10MB
+//!     .with_max_fd(EXAMPLE_MAX_FD) // 64
+//!     .with_max_file_size(EXAMPLE_MAX_FILE_SIZE); // 10MB
 //!
 //! // 验证路径访问
 //! let validated_path = sandbox.validate_path("/data/file.txt", AccessType::Read)?;
@@ -46,6 +46,31 @@ use crate::error::{CisError, Result};
 // 🔒 P0安全修复：导入RAII文件描述符守卫
 mod file_descriptor_guard;
 pub use file_descriptor_guard::FileDescriptorGuard;
+
+// ========== P1-12: 沙箱配置常量 ==========
+//
+// 将魔法数字提取为命名常量，提高代码可读性和可维护性
+//
+// ### 文件描述符限制
+/// 默认最大文件描述符数量
+const DEFAULT_MAX_FD: u32 = 32;
+
+/// 示例文件描述符数量 (用于文档和测试)
+const EXAMPLE_MAX_FD: u32 = 64;
+
+// ### 文件大小限制
+/// 1MB 的字节数
+const MB: u64 = 1024 * 1024;
+
+/// 默认最大文件大小 (100MB)
+const DEFAULT_MAX_FILE_SIZE: u64 = 100 * MB;
+
+/// 示例最大文件大小 (10MB)
+const EXAMPLE_MAX_FILE_SIZE: u64 = 10 * MB;
+
+// ### 符号链接限制
+/// 默认最大符号链接深度 (防止循环链接)
+const DEFAULT_MAX_SYMLINK_DEPTH: u32 = 8;
 
 /// 访问类型枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,10 +140,10 @@ impl WasiSandbox {
     /// 创建新的沙箱配置
     ///
     /// 使用默认配置：
-    /// - max_fd: 32
-    /// - max_file_size: 100MB
+    /// - max_fd: [`DEFAULT_MAX_FD`] (32)
+    /// - max_file_size: [`DEFAULT_MAX_FILE_SIZE`] (100MB)
     /// - allow_symlinks: false
-    /// - max_symlink_depth: 8
+    /// - max_symlink_depth: [`DEFAULT_MAX_SYMLINK_DEPTH`] (8)
     ///
     /// # 示例
     ///
@@ -131,10 +156,10 @@ impl WasiSandbox {
         Self {
             readonly_paths: HashSet::new(),
             writable_paths: HashSet::new(),
-            max_fd: 32,
-            max_file_size: 100 * 1024 * 1024, // 100MB
+            max_fd: DEFAULT_MAX_FD,
+            max_file_size: DEFAULT_MAX_FILE_SIZE,
             allow_symlinks: false,
-            max_symlink_depth: 8,
+            max_symlink_depth: DEFAULT_MAX_SYMLINK_DEPTH,
             current_fd_count: AtomicU32::new(0),
         }
     }
@@ -199,7 +224,7 @@ impl WasiSandbox {
     /// use cis_core::wasm::sandbox::WasiSandbox;
     ///
     /// let sandbox = WasiSandbox::new()
-    ///     .with_max_fd(64);
+    ///     .with_max_fd(EXAMPLE_MAX_FD); // 64
     /// ```
     pub fn with_max_fd(mut self, max_fd: u32) -> Self {
         self.max_fd = max_fd;
@@ -220,7 +245,7 @@ impl WasiSandbox {
     /// use cis_core::wasm::sandbox::WasiSandbox;
     ///
     /// let sandbox = WasiSandbox::new()
-    ///     .with_max_file_size(10 * 1024 * 1024); // 10MB
+    ///     .with_max_file_size(EXAMPLE_MAX_FILE_SIZE); // 10MB
     /// ```
     pub fn with_max_file_size(mut self, max_file_size: u64) -> Self {
         self.max_file_size = max_file_size;
@@ -732,13 +757,13 @@ mod tests {
         let sandbox = WasiSandbox::new()
             .with_readonly_path("/data")
             .with_writable_path("/tmp")
-            .with_max_fd(64)
-            .with_max_file_size(10 * 1024 * 1024)
+            .with_max_fd(EXAMPLE_MAX_FD)
+            .with_max_file_size(EXAMPLE_MAX_FILE_SIZE)
             .with_allow_symlinks(true)
             .with_max_symlink_depth(16);
 
-        assert_eq!(sandbox.max_fd(), 64);
-        assert_eq!(sandbox.max_file_size(), 10 * 1024 * 1024);
+        assert_eq!(sandbox.max_fd(), EXAMPLE_MAX_FD);
+        assert_eq!(sandbox.max_file_size(), EXAMPLE_MAX_FILE_SIZE);
         assert!(sandbox.readonly_paths().contains(&PathBuf::from("/data")));
         // 路径会被规范化，在 macOS 上 /tmp 可能指向 /private/tmp
         // 所以只检查路径数量而不是具体路径
@@ -889,12 +914,12 @@ mod tests {
             .with_readonly_path("/data")
             .with_readonly_path("/config")
             .with_writable_path("/tmp")
-            .with_max_fd(64);
+            .with_max_fd(EXAMPLE_MAX_FD);
 
         let summary = sandbox.summary();
         assert_eq!(summary.readonly_paths_count, 2);
         assert_eq!(summary.writable_paths_count, 1);
-        assert_eq!(summary.max_fd, 64);
+        assert_eq!(summary.max_fd, EXAMPLE_MAX_FD);
         assert_eq!(summary.current_fd, 0);
     }
 }
