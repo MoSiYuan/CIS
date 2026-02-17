@@ -15,7 +15,8 @@ use crate::types::{MemoryDomain, MemoryCategory};
 /// 同步管理器
 pub struct MemorySyncManager {
     memory_service: Arc<MemoryService>,
-    #[allow(dead_code)]
+    /// TODO: P1-13 - Vector storage for semantic search integration
+    /// Currently unused in sync but reserved for future vector synchronization
     vector_storage: Arc<VectorStorage>,
     p2p: Arc<P2PNetwork>,
     /// 本地向量时钟
@@ -104,7 +105,6 @@ impl MemorySyncManager {
     }
 
     /// 处理同步消息
-    #[allow(dead_code)]
     async fn handle_sync_message(&self, data: Vec<u8>) -> Result<()> {
         let message: SyncMessage = serde_json::from_slice(&data)?;
 
@@ -124,7 +124,6 @@ impl MemorySyncManager {
     }
 
     /// 处理同步请求
-    #[allow(dead_code)]
     async fn handle_sync_request(&self, request: SyncRequest) -> Result<()> {
         tracing::info!("Received sync request from {}", request.node_id);
         
@@ -150,7 +149,6 @@ impl MemorySyncManager {
     }
 
     /// 处理同步响应
-    #[allow(dead_code)]
     async fn handle_sync_response(&self, response: SyncResponse) -> Result<()> {
         tracing::info!(
             "Received sync response from {} with {} entries",
@@ -173,7 +171,6 @@ impl MemorySyncManager {
     }
 
     /// 处理广播消息
-    #[allow(dead_code)]
     async fn handle_broadcast(&self, entry: SyncMemoryEntry) -> Result<()> {
         tracing::debug!("Received broadcast for key: {}", entry.key);
         self.merge_entry(entry).await?;
@@ -284,7 +281,6 @@ impl MemorySyncManager {
     }
 
     /// 获取本地公域记忆
-    #[allow(dead_code)]
     async fn get_local_public_memories(&self, since: Option<DateTime<Utc>>)
         -> Result<Vec<SyncMemoryEntry>>
     {
@@ -325,7 +321,6 @@ impl MemorySyncManager {
     }
     
     /// 获取已删除的键
-    #[allow(dead_code)]
     async fn get_deleted_keys(&self, _since: Option<DateTime<Utc>>) -> Result<Vec<String>> {
         // 从 memory_service 获取已删除的公域键
         // 简化实现：返回空列表
@@ -334,7 +329,6 @@ impl MemorySyncManager {
     }
 
     /// 获取条目的向量时钟
-    #[allow(dead_code)]
     async fn get_item_vector_clock(&self, key: &str) -> Result<VectorClock> {
         // 尝试从 metadata 获取
         let clock_key = format!("__vc__/{}", key);
@@ -348,7 +342,6 @@ impl MemorySyncManager {
     }
 
     /// 保存条目的向量时钟
-    #[allow(dead_code)]
     async fn save_item_vector_clock(&self, key: &str, clock: &VectorClock) -> Result<()> {
         let clock_key = format!("__vc__/{}", key);
         let clock_data = serde_json::to_vec(clock)?;
@@ -410,7 +403,6 @@ impl MemorySyncManager {
 #[derive(Clone)]
 struct MemorySyncHandle {
     memory_service: Arc<MemoryService>,
-    #[allow(dead_code)]
     vector_storage: Arc<VectorStorage>,
     p2p: Arc<P2PNetwork>,
     vector_clock: Arc<RwLock<VectorClock>>,

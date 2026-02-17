@@ -274,10 +274,8 @@ impl WsConnection {
 /// WebSocket client for connecting to remote nodes
 pub struct WsClient {
     /// Node ID
-    #[allow(dead_code)]
     node_id: String,
     /// Configuration
-    #[allow(dead_code)]
     config: WsConnectionConfig,
     /// Active connections
     connections: Arc<RwLock<HashMap<String, Arc<WsConnection>>>>,
@@ -429,11 +427,9 @@ struct ConnectionHandler<S> {
     /// Message receiver
     receiver: mpsc::UnboundedReceiver<WsNetworkMessage>,
     /// Configuration
-    #[allow(dead_code)]
     config: WsConnectionConfig,
-    /// Ping counter
-    #[allow(dead_code)]
-    ping_counter: u64,
+    /// Ping counter (reserved for future ping tracking)
+    _ping_counter: u64,
 }
 
 impl<S> ConnectionHandler<S>
@@ -452,7 +448,7 @@ where
             connection,
             receiver,
             config,
-            ping_counter: 0,
+            _ping_counter: 0,
         }
     }
 
@@ -579,7 +575,9 @@ where
 }
 
 /// WebSocket server for accepting incoming connections
-#[allow(dead_code)]
+///
+/// TODO: P1-13 - Server infrastructure for incoming WebSocket connections
+/// Currently unused but reserved for future peer-to-peer listening functionality
 pub struct WsServer {
     /// Bind address
     bind_addr: String,
