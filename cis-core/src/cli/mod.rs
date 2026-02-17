@@ -330,11 +330,15 @@ impl Default for ExecutionContext {
 
 impl ExecutionContext {
     /// 从环境检测
+    ///
+    /// # P1-14 安全修复
+    ///
+    /// 使用 std::io::IsTerminal 替代 unmaintained 的 atty crate
     pub fn detect() -> Self {
         let mut ctx = Self::default();
 
         // 检测批处理模式
-        if std::env::var("CI").is_ok() || !atty::is(atty::Stream::Stdout) {
+        if std::env::var("CI").is_ok() || !std::io::stdout().is_terminal() {
             ctx.batch_mode = true;
             ctx.output_format = OutputFormat::Json;
         }

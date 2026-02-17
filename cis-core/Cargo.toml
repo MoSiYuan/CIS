@@ -132,7 +132,7 @@ chrono = { version = "0.4", features = ["serde"] }
 dashmap = "5"
 
 # Terminal and output utilities
-atty = "0.2"
+# atty 已移除 (P1-14): 使用 std::io::IsTerminal 替代 (Rust 1.70+)
 colored = "2.0"
 
 # Regex for pattern matching

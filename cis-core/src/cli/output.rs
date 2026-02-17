@@ -56,8 +56,12 @@ pub struct OutputManager {
 
 impl OutputManager {
     /// 创建新的输出管理器
+    ///
+    /// # P1-14 安全修复
+    ///
+    /// 替换 unmaintained 的 atty crate 为 std::io::IsTerminal (Rust 1.70+)
     pub fn new(format: OutputFormat) -> Self {
-        let is_tty = atty::is(atty::Stream::Stdout);
+        let is_tty = std::io::stdout().is_terminal();
         let use_colors = is_tty && format == OutputFormat::Human;
 
         Self {

@@ -17,3 +17,44 @@ members = [
     "skills/matrix-register-skill",
     "cis-gui",
 ]
+
+# P1-3: 统一 workspace 依赖版本
+# 避免不同 crate 使用不同版本导致的编译膨胀和潜在不兼容
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "signal"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+
+# HTTP
+reqwest = { version = "0.11", features = ["json", "stream"] }
+
+# Crypto
+ed25519-dalek = "2.0"
+sha2 = "0.10"
+
+# Database
+rusqlite = { version = "0.30", features = ["bundled"] }
+
+# Networking
+quinn = "0.10"
+
+# WebAssembly
+wasm3 = { git = "https://github.com/wasm3/wasm3", tag = "v0.5.0" }
+
+# Workspace crates
+cis-core = { path = "cis-core" }
+cis-node = { path = "cis-node" }
