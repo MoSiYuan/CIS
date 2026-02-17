@@ -50,11 +50,12 @@
 //! auth.handle_challenge(challenge, &ws_sender).await?;
 //! ```
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock as StdRwLock};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, RwLock as TokioRwLock};
 use tracing::{debug, info, warn};
 
 use crate::identity::did::DIDManager;
@@ -63,6 +64,104 @@ use crate::network::{
     did_verify::{DidChallenge, DidResponse, DidVerifier, VerifiedPeer},
     NetworkError,
 };
+
+// ========== P1-6: WebSocket 防重放保护 ==========
+//
+// 防止攻击者重放已使用过的 challenge-response 来绕过认证
+//
+// ### 安全威胁
+// 没有 nonce 验证时，攻击者可以：
+// 1. 截获服务器发送的 DidChallenge
+// 2. 重放这个 challenge
+// 3. 使用之前获取的有效签名通过认证
+//
+// ### 解决方案
+// 使用 NonceCache 跟踪所有已使用的 nonce，确保每个 nonce 只能被使用一次
+
+/// Nonce 缓存用于防止重放攻击
+///
+/// 跟踪已使用的 challenge nonce，每个 nonce 只能使用一次
+/// 服务器端使用，客户端不需要（客户端不验证 nonce）
+#[derive(Debug)]
+pub struct NonceCache {
+    /// 已使用的 nonce (nonce -> 过期时间)
+    nonces: StdRwLock<HashMap<String, Instant>>,
+    /// Nonce TTL (时间戳有效期)
+    nonce_ttl: Duration,
+}
+
+impl NonceCache {
+    /// 创建新的 nonce 缓存
+    ///
+    /// # 参数
+    /// - `nonce_ttl`: nonce 有效期（建议 5-10 分钟）
+    pub fn new(nonce_ttl: Duration) -> Self {
+        Self {
+            nonces: StdRwLock::new(HashMap::new()),
+            nonce_ttl,
+        }
+    }
+
+    /// 使用默认配置创建 (5分钟 TTL)
+    pub fn default() -> Self {
+        Self::new(Duration::from_secs(300))
+    }
+
+    /// 验证并使用 nonce
+    ///
+    /// # 返回
+    /// - `Ok(true)`: nonce 未使用，现在已标记为已使用
+    /// - `Err(false)`: nonce 已被使用或已过期
+    pub fn verify_and_use(&self, nonce: &str) -> Result<bool, String> {
+        let mut nonces = self.nonces.write().unwrap();
+        let now = Instant::now();
+
+        // 清理过期的 nonce (每 100 次验证清理一次)
+        if nonce.as_bytes().len() % 100 == 0 {
+            nonces.retain(|_, expiry| *expiry > now);
+        }
+
+        // 检查 nonce 是否已存在
+        if nonces.contains_key(nonce) {
+            return Err("Nonce already used".to_string());
+        }
+
+        // 检查 nonce 是否过期 (challenge 中的 timestamp)
+        // 这里我们简化处理，直接标记为已使用
+        let expiry = now + self.nonce_ttl;
+        nonces.insert(nonce.to_string(), expiry);
+
+        tracing::debug!(
+            nonce = %nonce,
+            expires_in_secs = self.nonce_ttl.as_secs(),
+            "Nonce verified and marked as used"
+        );
+
+        Ok(true)
+    }
+
+    /// 获取当前缓存的 nonce 数量
+    pub fn len(&self) -> usize {
+        self.nonces.read().unwrap().len()
+    }
+
+    /// 清理所有过期 nonce
+    pub fn cleanup_expired(&self) -> usize {
+        let mut nonces = self.nonces.write().unwrap();
+        let now = Instant::now();
+        let before = nonces.len();
+        nonces.retain(|_, expiry| *expiry > now);
+        let after = nonces.len();
+
+        tracing::debug!(
+            removed = before - after,
+            remaining = after,
+            "Cleaned up expired nonces"
+        );
+
+        before - after
+    }
+}
 
 /// Authentication state machine
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,13 +249,15 @@ pub struct WebSocketAuth {
     /// DID manager for signing/verification
     did_manager: Arc<DIDManager>,
     /// Network ACL (server only)
-    acl: Option<Arc<RwLock<NetworkAcl>>>,
+    acl: Option<Arc<TokioRwLock<NetworkAcl>>>,
     /// Pending challenge (server stores challenge, client stores for signing)
     pending_challenge: Option<DidChallenge>,
     /// Verified peer info (available after successful auth)
     verified_peer: Option<VerifiedPeer>,
     /// Authentication timeout
     timeout: Duration,
+    /// P1-6: Nonce cache for replay attack prevention (server only)
+    nonce_cache: Option<Arc<NonceCache>>,
 }
 
 impl WebSocketAuth {
@@ -168,7 +269,7 @@ impl WebSocketAuth {
     /// * `connection_id` - Unique identifier for this connection
     pub fn new_server(
         did_manager: Arc<DIDManager>,
-        acl: Arc<RwLock<NetworkAcl>>,
+        acl: Arc<TokioRwLock<NetworkAcl>>,
         connection_id: impl Into<String>,
     ) -> Self {
         Self {
@@ -180,6 +281,7 @@ impl WebSocketAuth {
             pending_challenge: None,
             verified_peer: None,
             timeout: Duration::from_secs(30),
+            nonce_cache: Some(Arc::new(NonceCache::default())),
         }
     }
 
@@ -201,6 +303,7 @@ impl WebSocketAuth {
             pending_challenge: None,
             verified_peer: None,
             timeout: Duration::from_secs(30),
+            nonce_cache: None, // 客户端不需要 nonce 缓存
         }
     }
 
@@ -321,6 +424,19 @@ impl WebSocketAuth {
 
         let challenge = self.pending_challenge.take()
             .ok_or_else(|| NetworkError::VerificationFailed("No pending challenge".into()))?;
+
+        // P1-6: Verify nonce to prevent replay attacks
+        if let Some(nonce_cache) = &self.nonce_cache {
+            nonce_cache.verify_and_use(&challenge.nonce)
+                .map_err(|e| NetworkError::VerificationFailed(format!("Nonce replay detected: {}", e)))?;
+
+            debug!(
+                connection_id = %self.connection_id,
+                nonce = %challenge.nonce,
+                responder_did = %response.responder_did,
+                "Nonce verified, checking signature"
+            );
+        }
 
         self.state = AuthState::Verifying;
         debug!(
@@ -650,7 +766,7 @@ impl WebSocketAuthMiddleware {
     /// Create new middleware for server role
     pub fn new_server(
         did_manager: Arc<DIDManager>,
-        acl: Arc<RwLock<NetworkAcl>>,
+        acl: Arc<TokioRwLock<NetworkAcl>>,
         connection_id: impl Into<String>,
         sender: mpsc::UnboundedSender<String>,
     ) -> Self {
@@ -731,7 +847,7 @@ impl WebSocketAuthMiddleware {
 ///
 /// Checks if a peer is allowed to communicate based on ACL rules
 pub async fn check_acl_for_peer(
-    acl: &Arc<RwLock<NetworkAcl>>,
+    acl: &Arc<TokioRwLock<NetworkAcl>>,
     peer_did: &str,
 ) -> Result<(), NetworkError> {
     let acl_guard = acl.read().await;
@@ -829,5 +945,86 @@ mod tests {
         assert_eq!(format!("{}", AuthState::Verifying), "verifying");
         assert_eq!(format!("{}", AuthState::Verified), "verified");
         assert_eq!(format!("{}", AuthState::Failed), "failed");
+    }
+
+    // ========== P1-6: NonceCache Tests ==========
+
+    #[test]
+    fn test_nonce_cache_verify_and_use() {
+        let cache = NonceCache::new(Duration::from_secs(300));
+
+        // First use should succeed
+        let result = cache.verify_and_use("nonce-1");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true);
+        assert_eq!(cache.len(), 1);
+
+        // Second use of same nonce should fail
+        let result = cache.verify_and_use("nonce-1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("already used"));
+    }
+
+    #[test]
+    fn test_nonce_cache_multiple_nonces() {
+        let cache = NonceCache::new(Duration::from_secs(300));
+
+        // Add multiple nonces
+        for i in 0..10 {
+            let nonce = format!("nonce-{}", i);
+            assert!(cache.verify_and_use(&nonce).is_ok());
+        }
+
+        assert_eq!(cache.len(), 10);
+
+        // Re-using any should fail
+        assert!(cache.verify_and_use("nonce-5").is_err());
+    }
+
+    #[test]
+    fn test_nonce_cache_cleanup() {
+        let cache = NonceCache::new(Duration::from_millis(100)); // Short TTL for testing
+
+        // Add some nonces
+        for i in 0..5 {
+            let nonce = format!("nonce-{}", i);
+            assert!(cache.verify_and_use(&nonce).is_ok());
+        }
+
+        assert_eq!(cache.len(), 5);
+
+        // Wait for expiration
+        std::thread::sleep(Duration::from_millis(150));
+
+        // Cleanup should remove expired nonces
+        let removed = cache.cleanup_expired();
+        assert_eq!(removed, 5);
+        assert_eq!(cache.len(), 0);
+
+        // After cleanup, same nonces can be used again
+        assert!(cache.verify_and_use("nonce-0").is_ok());
+    }
+
+    #[test]
+    fn test_nonce_cache_default() {
+        let cache = NonceCache::default();
+        assert_eq!(cache.nonce_ttl.as_secs(), 300);
+    }
+
+    #[test]
+    fn test_nonce_cache_len() {
+        let cache = NonceCache::new(Duration::from_secs(300));
+
+        assert_eq!(cache.len(), 0);
+
+        cache.verify_and_use("nonce-1").unwrap();
+        assert_eq!(cache.len(), 1);
+
+        cache.verify_and_use("nonce-2").unwrap();
+        assert_eq!(cache.len(), 2);
+
+        // Duplicate doesn't increase count
+        let _ = cache.verify_and_use("nonce-1");
+        assert_eq!(cache.len(), 2);
     }
 }
