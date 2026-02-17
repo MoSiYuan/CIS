@@ -1,6 +1,6 @@
 //! DHT 操作实现 (已弃用)
 //!
-//! ⚠️ **DEPRECATED**: 此模块已被 `crate::p2p::kademlia` 模块替代
+//! [WARNING] **DEPRECATED**: 此模块已被 `crate::p2p::kademlia` 模块替代
 //! 
 //! 新的 Kademlia 实现提供了：
 //! - 完整的路由表 (KBucket, RoutingTable)

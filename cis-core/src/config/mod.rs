@@ -43,9 +43,9 @@ pub use security::{EncryptionConfig, SecurityConfig};
 pub use storage::{StorageConfig, DatabaseConfig};
 pub use wasm::WasmConfig;
 
-// 🔥 Memory conflict configuration (P1.7.0 任务组 0.5)
+// Memory conflict configuration (P1.7.0 任务组 0.5)
 
-/// 🔥 内存冲突配置 (P1.7.0 任务组 0.5)
+/// 内存冲突配置 (P1.7.0 任务组 0.5)
 ///
 /// # 核心保证
 ///
@@ -53,7 +53,7 @@ pub use wasm::WasmConfig;
 /// - **运行时验证**：启动时验证 `enforce_check == true`
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MemoryConflictConfig {
-    /// 🔥 Agent 执行前是否强制检查冲突（硬编码为 true，不可修改）
+    /// Agent 执行前是否强制检查冲突（硬编码为 true，不可修改）
     pub enforce_check: bool,
 
     /// 冲突超时时间（秒）
@@ -63,14 +63,14 @@ pub struct MemoryConflictConfig {
 impl Default for MemoryConflictConfig {
     fn default() -> Self {
         Self {
-            enforce_check: true,  // 🔥 硬编码为 true，不可修改
+            enforce_check: true,  // 硬编码为 true，不可修改
             conflict_timeout_secs: 300,
         }
     }
 }
 
 impl MemoryConflictConfig {
-    /// 🔥 验证配置（启动时调用）
+    /// 验证配置（启动时调用）
     ///
     /// # 核心逻辑
     ///
@@ -126,7 +126,7 @@ pub struct Config {
     #[serde(default)]
     pub p2p: P2PConfig,
 
-    /// 🔥 Memory conflict configuration (P1.7.0 任务组 0.5)
+    /// Memory conflict configuration (P1.7.0 任务组 0.5)
     #[serde(default)]
     pub memory_conflict: MemoryConflictConfig,
 }
@@ -139,7 +139,7 @@ impl Default for Config {
             security: SecurityConfig::default(),
             wasm: WasmConfig::default(),
             p2p: P2PConfig::default(),
-            memory_conflict: MemoryConflictConfig::default(),  // 🔥 默认强制检测
+            memory_conflict: MemoryConflictConfig::default(),  // 默认强制检测
         }
     }
 }
@@ -163,7 +163,7 @@ impl Config {
         self.wasm.validate()?;
         self.p2p.validate()?;
 
-        // 🔥 验证 memory_conflict 配置（P1.7.0 任务组 0.5）
+        // 验证 memory_conflict 配置（P1.7.0 任务组 0.5）
         let _validated_conflict = self.memory_conflict.validate()?;
 
         Ok(())
@@ -287,7 +287,7 @@ mod tests {
         assert!(config.validate().is_ok());
     }
 
-    // 🔥 MemoryConflictConfig 测试 (P1.7.0 任务组 0.5)
+    // MemoryConflictConfig 测试 (P1.7.0 任务组 0.5)
 
     /// 测试 MemoryConflictConfig 默认值
     #[test]

@@ -1,6 +1,6 @@
 //! # 强制执行测试 (P1.7.0 任务组 0.6)
 //!
-//! 🔥 **自动检测绕过路径** (CI/CD 集成)
+//! **自动检测绕过路径** (CI/CD 集成)
 //!
 //! # 核心机制
 //!
@@ -16,8 +16,8 @@
 //!     ↓
 //! cargo test enforcement_tests
 //!     ↓
-//! ❌ 如果代码中存在绕过路径 → 测试失败
-//! ✅ 如果所有路径都强制检测 → 测试通过
+//! [X] 如果代码中存在绕过路径 → 测试失败
+//! [OK] 如果所有路径都强制检测 → 测试通过
 //! ```
 
 use std::collections::HashMap;
@@ -35,7 +35,7 @@ use chrono::Utc;
 mod enforcement_tests {
     use super::*;
 
-    /// 🔥 测试无法绕过 SafeMemoryContext
+    /// 测试无法绕过 SafeMemoryContext
     ///
     /// # 测试目标
     ///
@@ -55,7 +55,7 @@ mod enforcement_tests {
     fn test_cannot_bypass_conflict_check() {
         println!("[INFO] Testing bypass prevention...");
 
-        // 1. ❌ 编译错误：SafeMemoryContext::new 是私有的（pub(crate)）
+        // 1. [X] 编译错误：SafeMemoryContext::new 是私有的（pub(crate)）
         // 以下代码无法编译，取消注释会导致编译错误：
         //
         // error[E0603]: constructor `new` of struct `SafeMemoryContext` is private
@@ -67,7 +67,7 @@ mod enforcement_tests {
         // let memories = HashMap::new();
         // let context = SafeMemoryContext::new(memories); // ← 编译错误
 
-        // 2. ✅ 在测试模块中（同一 crate），可以验证内部创建
+        // 2. [OK] 在测试模块中（同一 crate），可以验证内部创建
         let mut memories = HashMap::new();
         let entry = MemoryEntry {
             key: "test/key".to_string(),
@@ -90,7 +90,7 @@ mod enforcement_tests {
         println!("[INFO] ✓ Bypass prevention test passed");
     }
 
-    /// 🔥 测试 SafeMemoryContext 无法直接创建
+    /// 测试 SafeMemoryContext 无法直接创建
     ///
     /// # 测试目标
     ///
@@ -110,7 +110,7 @@ mod enforcement_tests {
     fn test_safe_memory_context_cannot_be_created_directly() {
         println!("[INFO] Testing SafeMemoryContext access control...");
 
-        // 1. ❌ 编译时验证：SafeMemoryContext::new 是私有的
+        // 1. [X] 编译时验证：SafeMemoryContext::new 是私有的
         // 以下代码如果取消注释，会导致编译错误：
         //
         // error[E0603]: constructor `new` of struct `SafeMemoryContext` is private
@@ -118,7 +118,7 @@ mod enforcement_tests {
         // let memories = HashMap::new();
         // let context = SafeMemoryContext::new(memories);
 
-        // 2. ✅ 只能通过内部模块（如 ConflictGuard）创建
+        // 2. [OK] 只能通过内部模块（如 ConflictGuard）创建
         // 这里我们模拟内部创建
         let memories = HashMap::new();
         let context = SafeMemoryContext::new(memories);
@@ -131,7 +131,7 @@ mod enforcement_tests {
         println!("[INFO]   SafeMemoryContext::new() is pub(crate), not public");
     }
 
-    /// 🔥 测试配置文件强制验证
+    /// 测试配置文件强制验证
     ///
     /// # 测试目标
     ///
@@ -176,7 +176,7 @@ mod enforcement_tests {
         println!("[WARN] Remember: enforce_check should ALWAYS be true in production");
     }
 
-    /// 🔥 测试 SafeMemoryContext 完整功能
+    /// 测试 SafeMemoryContext 完整功能
     ///
     /// # 测试目标
     ///
@@ -240,7 +240,7 @@ mod enforcement_tests {
         println!("[INFO] ✓ SafeMemoryContext full functionality test passed");
     }
 
-    /// 🔥 测试 ConflictChecked 标记类型
+    /// 测试 ConflictChecked 标记类型
     ///
     /// # 测试目标
     ///
@@ -278,7 +278,7 @@ mod enforcement_tests {
         println!("[INFO]   ConflictChecked is a zero-cost marker type");
     }
 
-    /// 🔥 测试 CI/CD 集成
+    /// 测试 CI/CD 集成
     ///
     /// # 测试目标
     ///
@@ -309,7 +309,7 @@ mod enforcement_tests {
         println!("[INFO] All enforcement tests are runnable in CI/CD pipeline");
     }
 
-    /// 🔥 测试 SafeMemoryContext 没有 Clone 和 Default
+    /// 测试 SafeMemoryContext 没有 Clone 和 Default
     ///
     /// # 测试目标
     ///
@@ -330,11 +330,11 @@ mod enforcement_tests {
     fn test_safe_memory_context_no_clone_default() {
         // 这是一个编译时测试，验证以下代码无法编译：
         //
-        // ❌ 无法 clone
+        // [X] 无法 clone
         // let context1 = SafeMemoryContext::new(HashMap::new());
         // let context2 = context1.clone();  // ← 编译错误
         //
-        // ❌ 无法 default
+        // [X] 无法 default
         // let context = SafeMemoryContext::default();  // ← 编译错误
 
         // 如果这些代码能编译，测试会失败
@@ -343,7 +343,7 @@ mod enforcement_tests {
         unreachable!("SafeMemoryContext should not have Clone or Default traits");
     }
 
-    /// 🔥 测试 SafeMemoryContext Debug 输出
+    /// 测试 SafeMemoryContext Debug 输出
     ///
     /// # 测试目标
     ///
@@ -386,7 +386,7 @@ mod enforcement_tests {
     }
 }
 
-/// 🔥 测试辅助模块
+/// 测试辅助模块
 ///
 /// 提供测试所需的辅助函数和模拟数据。
 #[cfg(test)]
@@ -489,7 +489,7 @@ mod helper_tests {
     }
 }
 
-/// 🔥 测试覆盖率检查
+/// 测试覆盖率检查
 ///
 /// 确保所有强制执行路径都有测试覆盖。
 #[cfg(test)]

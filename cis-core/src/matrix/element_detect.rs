@@ -230,10 +230,10 @@ pub fn print_element_status() {
     let apps = detect_element_apps();
 
     if apps.is_empty() {
-        println!("❌ Element app not detected");
+        println!("[X] Element app not detected");
         println!("   Install from: https://element.io/download");
     } else {
-        println!("✅ Found {} Element app(s):", apps.len());
+        println!("[OK] Found {} Element app(s):", apps.len());
         for (i, app) in apps.iter().enumerate() {
             println!("\n   [{}] {}", i + 1, app.name);
             println!("       Path: {}", app.path.display());

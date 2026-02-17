@@ -41,13 +41,22 @@ impl CoreDb {
     }
 
     /// 配置 WAL 模式（随时关机安全）
+    ///
+    /// P2-15: SQLite WAL 优化
+    /// - 启用 WAL 模式以提高并发性能
+    /// - NORMAL 模式平衡性能和安全性
+    /// - 自动 checkpoint 间隔优化
+    /// - 内存映射 I/O 提升读取性能
+    /// - 临时存储使用内存以减少磁盘 I/O
     pub fn configure_wal(&self) -> Result<()> {
         self.conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
              PRAGMA wal_autocheckpoint = 1000;
              PRAGMA journal_size_limit = 100000000;
-             PRAGMA temp_store = memory;"
+             PRAGMA temp_store = memory;
+             PRAGMA mmap_size = 268435456;
+             PRAGMA cache_size = -64000;"
         ).map_err(|e| CisError::Storage(format!("Failed to configure WAL: {}", e)))?;
         Ok(())
     }

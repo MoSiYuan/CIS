@@ -1,6 +1,6 @@
 //! # Conflict Guard (冲突守卫)
 //!
-//! 🔥 **强制执行冲突检测** (P1.7.0)
+//! **强制执行冲突检测** (P1.7.0)
 //!
 //! # 核心机制
 //!
@@ -30,10 +30,10 @@
 //! let memory_service = MemoryService::new().await?;
 //! let guard = ConflictGuard::new(memory_service);
 //!
-//! // 🔥 Agent 执行前强制检测冲突
+//! // Agent 执行前强制检测冲突
 //! let context = guard.check_and_create_context(&["key1", "key2"]).await?;
 //!
-//! // ✅ 检测通过后才能执行 Agent
+//! // [OK] 检测通过后才能执行 Agent
 //! executor.execute(task, context).await?;
 //! # Ok(())
 //! # }
@@ -49,7 +49,7 @@ use crate::memory::guard::types::{ConflictChecked, SafeMemoryContext};
 use crate::memory::MemoryService;
 use crate::types::MemoryDomain;
 
-/// 🔥 冲突通知
+/// 冲突通知
 ///
 /// # 说明
 ///
@@ -66,7 +66,7 @@ pub struct ConflictNotification {
     pub remote_versions: Vec<ConflictVersion>,
 }
 
-/// 🔥 冲突版本信息
+/// 冲突版本信息
 #[derive(Debug, Clone)]
 pub struct ConflictVersion {
     /// 节点 ID
@@ -82,7 +82,7 @@ pub struct ConflictVersion {
     pub timestamp: i64,
 }
 
-/// 🔥 冲突检测结果
+/// 冲突检测结果
 #[derive(Debug, Clone)]
 pub enum ConflictCheckResult {
     /// 无冲突，可以执行
@@ -95,7 +95,7 @@ pub enum ConflictCheckResult {
     },
 }
 
-/// 🔥 冲突解决选择
+/// 冲突解决选择
 #[derive(Debug, Clone)]
 pub enum ConflictResolutionChoice {
     /// 保留本地版本
@@ -113,7 +113,7 @@ pub enum ConflictResolutionChoice {
     AIMerge,
 }
 
-/// 🔥 ConflictGuard 配置
+/// ConflictGuard 配置
 #[derive(Debug, Clone)]
 pub struct ConflictGuardConfig {
     /// 是否启用强制检测
@@ -126,13 +126,13 @@ pub struct ConflictGuardConfig {
 impl Default for ConflictGuardConfig {
     fn default() -> Self {
         Self {
-            enforce_check: true,  // 🔥 默认强制检测
-            auto_resolve: false, // 🔥 默认不自动解决（用户决策优先）
+            enforce_check: true,  // 默认强制检测
+            auto_resolve: false, // 默认不自动解决（用户决策优先）
         }
     }
 }
 
-/// 🔥 冲突守卫
+/// 冲突守卫
 ///
 /// # 核心保证
 ///
@@ -157,7 +157,7 @@ pub struct ConflictGuard {
 }
 
 impl ConflictGuard {
-    /// 🔥 创建冲突守卫
+    /// 创建冲突守卫
     ///
     /// # 参数
     ///
@@ -176,7 +176,7 @@ impl ConflictGuard {
         }
     }
 
-    /// 🔥 创建冲突守卫（自定义配置）
+    /// 创建冲突守卫（自定义配置）
     ///
     /// # 参数
     ///
@@ -203,7 +203,7 @@ impl ConflictGuard {
         }
     }
 
-    /// 🔥 检查公域记忆冲突（Agent 执行前）
+    /// 检查公域记忆冲突（Agent 执行前）
     ///
     /// # 核心逻辑
     ///
@@ -253,7 +253,7 @@ impl ConflictGuard {
         Ok(ConflictCheckResult::NoConflicts)
     }
 
-    /// 🔥 获取未解决的冲突
+    /// 获取未解决的冲突
     ///
     /// # 参数
     ///
@@ -288,7 +288,7 @@ impl ConflictGuard {
         Ok(result)
     }
 
-    /// 🔥 检测新冲突（只检查公域记忆）
+    /// 检测新冲突（只检查公域记忆）
     ///
     /// # 核心逻辑
     ///
@@ -326,7 +326,7 @@ impl ConflictGuard {
         Ok(0)
     }
 
-    /// 🔥 强制冲突检查后创建 SafeMemoryContext（编译时保证）
+    /// 强制冲突检查后创建 SafeMemoryContext（编译时保证）
     ///
     /// # 核心保证
     ///
@@ -352,7 +352,7 @@ impl ConflictGuard {
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let context = guard.check_and_create_context(&["key1", "key2"]).await?;
     ///
-    /// // ✅ 检测通过，可以使用 context
+    /// // [OK] 检测通过，可以使用 context
     /// for (key, entry) in context.iter_memories() {
     ///     println!("{}: {:?}", key, entry.value);
     /// }
@@ -395,7 +395,7 @@ impl ConflictGuard {
         }
     }
 
-    /// 🔥 用户手动解决冲突
+    /// 用户手动解决冲突
     ///
     /// # 参数
     ///

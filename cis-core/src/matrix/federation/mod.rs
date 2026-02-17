@@ -42,16 +42,16 @@
 //!
 //! ## Features
 //!
-//! - ✅ Simplified HTTP API (not full Matrix Federation)
-//! - ✅ Matrix-compatible event format
-//! - ✅ Manual peer configuration
-//! - ✅ Event forwarding to multiple peers
-//! - ✅ Optional mDNS discovery via `MatrixDiscovery`
-//! - ✅ Optional mTLS support
-//! - ✅ Connection pooling and retries
-//! - ✅ Automatic reconnection with exponential backoff
-//! - ✅ DID-based authentication
-//! - ✅ Room state synchronization
+//! - [OK] Simplified HTTP API (not full Matrix Federation)
+//! - [OK] Matrix-compatible event format
+//! - [OK] Manual peer configuration
+//! - [OK] Event forwarding to multiple peers
+//! - [OK] Optional mDNS discovery via `MatrixDiscovery`
+//! - [OK] Optional mTLS support
+//! - [OK] Connection pooling and retries
+//! - [OK] Automatic reconnection with exponential backoff
+//! - [OK] DID-based authentication
+//! - [OK] Room state synchronization
 //!
 //! ## Example
 //!

@@ -152,7 +152,7 @@ impl DIDManager {
             bytes.copy_from_slice(&seed[..32]);
             bytes
         } else {
-            // ⚠️ SECURITY WEAKNESS (P0-3): 单次 SHA256 不是安全的 KDF
+            // [WARNING] SECURITY WEAKNESS (P0-3): 单次 SHA256 不是安全的 KDF
             // 应该使用 Argon2id + 随机盐值
             tracing::warn!(
                 "Seed length < 32 bytes, using SHA256 extension (WEAK KDF, should use Argon2id)"

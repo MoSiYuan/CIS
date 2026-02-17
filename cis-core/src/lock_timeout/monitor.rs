@@ -41,8 +41,8 @@ impl ContentionLevel {
 impl std::fmt::Display for ContentionLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Healthy => write!(f, "✅ Healthy"),
-            Self::Low => write!(f, "⚠️  Low contention"),
+            Self::Healthy => write!(f, "[OK] Healthy"),
+            Self::Low => write!(f, "[WARNING]  Low contention"),
             Self::Medium => write!(f, "🟡 Medium contention"),
             Self::High => write!(f, "🔴 High contention"),
         }

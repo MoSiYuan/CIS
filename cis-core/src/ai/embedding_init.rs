@@ -189,7 +189,7 @@ fn handle_download_model(config: &ModelDownloadConfig) -> Result<EmbeddingInitCo
         }
     }
     
-    println!("\n✅ 本地模型配置完成！");
+    println!("\n[OK] 本地模型配置完成！");
     println!("   模型路径: {}", config.local_path.display());
     
     Ok(EmbeddingInitConfig::local())
@@ -243,7 +243,7 @@ pub fn handle_openai_config() -> Result<EmbeddingInitConfig> {
     // 保存到配置文件
     match save_openai_config(&api_key) {
         Ok(_) => {
-            println!("✅ OpenAI API Key 已保存到配置文件");
+            println!("[OK] OpenAI API Key 已保存到配置文件");
             Ok(EmbeddingInitConfig::openai())
         }
         Err(e) => {
@@ -276,7 +276,7 @@ pub fn handle_claude_cli() -> Result<EmbeddingInitConfig> {
         }
     }
     
-    println!("\n✅ Claude CLI 代理配置完成！");
+    println!("\n[OK] Claude CLI 代理配置完成！");
     println!("   将使用 `claude` 命令生成嵌入。\n");
     
     Ok(EmbeddingInitConfig::claude_cli())

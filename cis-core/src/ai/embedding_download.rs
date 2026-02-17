@@ -167,16 +167,16 @@ pub async fn download_model_with_retry(max_retries: u32) -> Result<()> {
             println!("✓ Tokenizer 下载完成");
         }
         Ok(Err(e)) => {
-            eprintln!("⚠️ Tokenizer 下载失败: {}", e);
+            eprintln!("[WARNING] Tokenizer 下载失败: {}", e);
             eprintln!("   模型可能仍可用，但建议重新下载。");
         }
         Err(e) => {
-            eprintln!("⚠️ Tokenizer 下载失败: {}", e);
+            eprintln!("[WARNING] Tokenizer 下载失败: {}", e);
         }
     }
     
     println!();
-    println!("✅ 向量模型下载完成！");
+    println!("[OK] 向量模型下载完成！");
     println!("   模型路径: {}", model.path.display());
     
     Ok(())

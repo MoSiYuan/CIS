@@ -1,6 +1,6 @@
 //! # 冲突检测守卫模块
 //!
-//! 🔥 **强制执行冲突检测，防止 Agent 使用冲突的记忆** (P1.7.0)
+//! **强制执行冲突检测，防止 Agent 使用冲突的记忆** (P1.7.0)
 //!
 //! # 核心机制
 //!
@@ -31,10 +31,10 @@
 //!
 //! | 层级 | 保障机制 | 绕过难度 | 状态 |
 //! |------|----------|----------|------|
-//! | **编译时** | 类型系统 | 🔴 **不可能** | ✅ |
-//! | **API 层** | Builder 模式 | 🔴 极难 | ✅ |
-//! | **配置层** | 启动时验证 | 🟠 很难 | ✅ |
-//! | **测试层** | enforcement_tests | 🟡 中等 | ✅ |
+//! | **编译时** | 类型系统 | 🔴 **不可能** | [OK] |
+//! | **API 层** | Builder 模式 | 🔴 极难 | [OK] |
+//! | **配置层** | 启动时验证 | 🟠 很难 | [OK] |
+//! | **测试层** | enforcement_tests | 🟡 中等 | [OK] |
 //! | **文档层** | API 文档 | 🟡 中等 | ⏳ |
 //!
 //! # 模块结构
@@ -51,25 +51,25 @@
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let guard = ConflictGuard::new(memory_service);
 //!
-//! // 🔥 必须先检测冲突
+//! // 必须先检测冲突
 //! let context = guard.check_and_create_context(&["key1", "key2"]).await?;
 //!
-//! // ✅ 检测通过后才能执行 Agent
+//! // [OK] 检测通过后才能执行 Agent
 //! let result = executor.execute(task, context).await?;
 //! # Ok(())
 //! # }
 //! ```
 
 pub mod types;
-pub mod vector_clock;  // 🔥 Vector Clock 实现 (P1.7.0 任务组 0.2)
+pub mod vector_clock;  // Vector Clock 实现 (P1.7.0 任务组 0.2)
 
 pub use types::{ConflictChecked, SafeMemoryContext};
 pub use vector_clock::{VectorClock, VectorClockRelation};
 
-// 🔥 冲突守卫实现 (任务组 0.2)
+// 冲突守卫实现 (任务组 0.2)
 pub mod conflict_guard;
-pub mod conflict_resolution;  // 🔥 冲突解决逻辑
-pub mod ai_merge;  // 🔥 AI 合并实现
+pub mod conflict_resolution;  // 冲突解决逻辑
+pub mod ai_merge;  // AI 合并实现
 pub use conflict_guard::{
     ConflictGuard, ConflictGuardConfig, ConflictCheckResult,
     ConflictNotification, ConflictVersion, ConflictResolutionChoice,
@@ -83,7 +83,7 @@ pub use conflict_resolution::{
 };
 pub use ai_merge::{AIMerger, AIMergeConfig, AIMergeStrategy};
 
-// 🔥 强制执行保障测试 (任务组 0.6)
+// 强制执行保障测试 (任务组 0.6)
 #[cfg(test)]
 pub mod enforcement_tests;
 

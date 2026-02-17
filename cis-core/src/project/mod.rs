@@ -83,7 +83,7 @@ pub struct MemoryConfig {
     #[serde(default)]
     pub shared_keys: Vec<String>,
 
-    /// 🔥 作用域 ID（v1.1.7: 稳定哈希绑定）
+    /// 作用域 ID（v1.1.7: 稳定哈希绑定）
     ///
     /// # 说明
     ///
@@ -104,7 +104,7 @@ pub struct MemoryConfig {
     #[serde(default = "default_scope_id")]
     pub scope_id: String,
 
-    /// 🔥 人类可读名称（可选，用于调试和 UI）
+    /// 人类可读名称（可选，用于调试和 UI）
     ///
     /// # 示例
     ///
@@ -132,7 +132,7 @@ impl Default for MemoryConfig {
 }
 
 impl ProjectConfig {
-    /// 🔥 项目根目录（v1.1.7）
+    /// 项目根目录（v1.1.7）
     ///
     /// # 注意
     ///
@@ -141,7 +141,7 @@ impl ProjectConfig {
         &self.root_dir
     }
 
-    /// 🔥 保存配置文件
+    /// 保存配置文件
     ///
     /// # 使用场景
     ///
@@ -217,8 +217,8 @@ impl Project {
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown")),
                 shared_keys: vec!["conventions".to_string(), "architecture".to_string()],
-                scope_id: default_scope_id(),  // 🔥 v1.1.7: 默认为空（第一次初始化时生成）
-                display_name: None,       // 🔥 v1.1.7: 可选
+                scope_id: default_scope_id(),  // v1.1.7: 默认为空（第一次初始化时生成）
+                display_name: None,       // v1.1.7: 可选
             },
             extra: HashMap::new(),
         };

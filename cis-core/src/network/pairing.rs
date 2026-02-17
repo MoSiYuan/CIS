@@ -416,7 +416,7 @@ impl PairingService {
                     Err(e) => tracing::error!("[PAIRING] Failed to send response: {}", e),
                 }
                 
-                println!("✅ 接受组网请求，请确认添加此节点");
+                println!("[OK] 接受组网请求，请确认添加此节点");
                 
                 Ok(Some(PairingResult {
                     success: true,

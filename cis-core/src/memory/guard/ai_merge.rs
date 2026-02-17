@@ -1,6 +1,6 @@
 //! # AI Merge 冲突解决实现
 //!
-//! 🔥 **使用 AI 智能合并冲突的记忆值**
+//! **使用 AI 智能合并冲突的记忆值**
 //!
 //! # 核心机制
 //!
@@ -14,7 +14,7 @@ use crate::memory::guard::conflict_guard::ConflictVersion;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// 🔥 AI 合并配置
+/// AI 合并配置
 #[derive(Debug, Clone)]
 pub struct AIMergeConfig {
     /// 合并策略
@@ -35,7 +35,7 @@ impl Default for AIMergeConfig {
     }
 }
 
-/// 🔥 AI 合并策略
+/// AI 合并策略
 #[derive(Debug, Clone, Copy)]
 pub enum AIMergeStrategy {
     /// 智能合并（保留双方有效信息）
@@ -46,7 +46,7 @@ pub enum AIMergeStrategy {
     TimeBased,
 }
 
-/// 🔥 AI 合并器
+/// AI 合并器
 ///
 /// 使用 AI 服务智能合并冲突的记忆值。
 pub struct AIMerger {
@@ -57,7 +57,7 @@ pub struct AIMerger {
 }
 
 impl AIMerger {
-    /// 🔥 创建新的 AI 合并器
+    /// 创建新的 AI 合并器
     ///
     /// # 参数
     ///
@@ -77,7 +77,7 @@ impl AIMerger {
         }
     }
 
-    /// 🔥 设置 AI Provider
+    /// 设置 AI Provider
     ///
     /// # 参数
     ///
@@ -100,7 +100,7 @@ impl AIMerger {
         *ai = Some(provider);
     }
 
-    /// 🔥 执行 AI 合并
+    /// 执行 AI 合并
     ///
     /// # 核心逻辑
     ///
@@ -172,7 +172,7 @@ impl AIMerger {
         Ok(merged_value)
     }
 
-    /// 🔥 带重试的 AI 合并
+    /// 带重试的 AI 合并
     ///
     /// # 参数
     ///
@@ -209,7 +209,7 @@ impl AIMerger {
         }))
     }
 
-    /// 🔥 调用 AI 执行合并
+    /// 调用 AI 执行合并
     ///
     /// # 参数
     ///
@@ -243,7 +243,7 @@ impl AIMerger {
         self.parse_ai_response(&response)
     }
 
-    /// 🔥 构建系统提示词
+    /// 构建系统提示词
     ///
     /// # 返回
     ///
@@ -292,7 +292,7 @@ Return the merged value directly as plain text."#.to_string()
         }
     }
 
-    /// 🔥 构建合并 Prompt
+    /// 构建合并 Prompt
     ///
     /// # 参数
     ///
@@ -341,7 +341,7 @@ Return the merged value directly as plain text."#.to_string()
         )
     }
 
-    /// 🔥 解析 AI 响应
+    /// 解析 AI 响应
     ///
     /// # 参数
     ///

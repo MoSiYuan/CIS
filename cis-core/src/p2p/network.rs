@@ -35,11 +35,11 @@ pub use crate::traits::network::{NetworkStatus as NetworkStatusTrait, PeerInfo a
 
 /// 全局 P2P 网络实例 (DEPRECATED)
 ///
-/// ⚠️ 警告: 此全局单例已废弃，将在 v1.2.0 中移除。
+/// [WARNING] 警告: 此全局单例已废弃，将在 v1.2.0 中移除。
 /// 请使用 `ServiceContainer` 进行依赖注入。
 /// 全局 P2P 网络实例 (DEPRECATED)
 ///
-/// ⚠️ 警告: 此全局单例已废弃，将在 v1.2.0 中移除。
+/// [WARNING] 警告: 此全局单例已废弃，将在 v1.2.0 中移除。
 /// 请使用 `ServiceContainer` 进行依赖注入。
 #[deprecated(
     since = "1.1.4",
@@ -328,7 +328,7 @@ impl P2PNetwork {
 
     /// 获取全局实例 (DEPRECATED)
     ///
-    /// ⚠️ 警告: 此方法已废弃，将在 v1.2.0 中移除。
+    /// [WARNING] 警告: 此方法已废弃，将在 v1.2.0 中移除。
     /// 请使用 `ServiceContainer` 进行依赖注入。
     ///
     /// # Returns
@@ -347,7 +347,7 @@ impl P2PNetwork {
 
     /// 初始化并启动 P2P 网络 (DEPRECATED)
     ///
-    /// ⚠️ 警告: 此方法已废弃，将在 v1.2.0 中移除。
+    /// [WARNING] 警告: 此方法已废弃，将在 v1.2.0 中移除。
     /// 请使用 `ServiceContainer` 进行依赖注入。
     ///
     /// 如果网络已启动，返回现有实例
@@ -455,7 +455,7 @@ impl P2PNetwork {
 
     /// 停止 P2P 网络 (DEPRECATED)
     ///
-    /// ⚠️ 警告: 此方法已废弃，将在 v1.2.0 中移除。
+    /// [WARNING] 警告: 此方法已废弃，将在 v1.2.0 中移除。
     /// 请使用实例方法 `stop_instance()` 或直接丢弃实例。
     #[deprecated(
         since = "1.1.4",

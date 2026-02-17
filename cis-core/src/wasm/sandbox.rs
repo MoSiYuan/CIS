@@ -328,7 +328,7 @@ impl WasiSandbox {
     /// - `Ok(())`: 分配成功
     /// - `Err(CisError)`: 已达到最大文件描述符限制
     ///
-    /// ⚠️ **已弃用**: 使用 `try_allocate_fd()` 获得RAII保证
+    /// [WARNING] **已弃用**: 使用 `try_allocate_fd()` 获得RAII保证
     #[deprecated(since = "1.1.6", note = "Use try_allocate_fd() for RAII guarantee")]
     pub fn allocate_fd(&self) -> Result<()> {
         if self.try_allocate_fd().is_some() {
@@ -344,7 +344,7 @@ impl WasiSandbox {
 
     /// 释放文件描述符（旧接口，保持兼容性）
     ///
-    /// ⚠️ **已弃用**: RAII守卫会自动释放，无需手动调用
+    /// [WARNING] **已弃用**: RAII守卫会自动释放，无需手动调用
     #[deprecated(since = "1.1.6", note = "RAII guard auto-releases on drop")]
     pub fn release_fd(&self) {
         let current = self.current_fd_count.load(Ordering::SeqCst);
@@ -412,10 +412,10 @@ impl WasiSandbox {
     /// let sandbox = WasiSandbox::new()
     ///     .with_readonly_path("/data");
     ///
-    /// // ✅ 允许：白名单内的路径
+    /// // [OK] 允许：白名单内的路径
     /// let path = sandbox.validate_path("/data/file.txt", AccessType::Read)?;
     ///
-    /// // ❌ 拒绝：路径遍历攻击
+    /// // [X] 拒绝：路径遍历攻击
     /// let result = sandbox.validate_path("/data/../etc/passwd", AccessType::Read);
     /// assert!(result.is_err());
     /// # Ok(())
@@ -690,14 +690,14 @@ pub struct WasiSandboxSummary {
 
 /// 规范化路径
 ///
-/// 🔥 将路径转换为绝对路径并规范化（去除 `.` 和 `..`）
+/// 将路径转换为绝对路径并规范化（去除 `.` 和 `..`）
 ///
 /// # 安全修复 (P0)
 ///
 /// **漏洞修复**: 拒绝无法规范的路径，防止路径遍历攻击
 ///
-/// - 旧实现：`canonicalize()` 失败时回退到原始路径（⚠️ 不安全）
-/// - 新实现：返回错误，拒绝访问（✅ 安全）
+/// - 旧实现：`canonicalize()` 失败时回退到原始路径（[WARNING] 不安全）
+/// - 新实现：返回错误，拒绝访问（[OK] 安全）
 fn normalize_path(path: &Path) -> PathBuf {
     // 1. 转换为绝对路径
     let abs_path = if path.is_absolute() {

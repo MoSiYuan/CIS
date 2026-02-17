@@ -397,7 +397,7 @@ impl AiProvider for OpenCodeProvider {
         prompt: &str,
         ctx: Option<&ConversationContext>,
     ) -> Result<String> {
-        // ✅ 完全复用 RAG 增强逻辑
+        // [OK] 完全复用 RAG 增强逻辑
         let enhanced_prompt = if let Some(context) = ctx {
             match context.prepare_ai_prompt(prompt).await {
                 Ok(enhanced) => enhanced,

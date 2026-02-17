@@ -1,6 +1,6 @@
 //! # Vector Clock 实现 (P1.7.0 任务组 0.2)
 //!
-//! 🔥 **分布式版本控制**
+//! **分布式版本控制**
 //!
 //! # 核心机制
 //!
@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-/// 🔥 Vector Clock (分布式版本控制)
+/// Vector Clock (分布式版本控制)
 ///
 /// # 表示
 ///
@@ -50,7 +50,7 @@ pub struct VectorClock {
 }
 
 impl VectorClock {
-    /// 🔥 创建空的 Vector Clock
+    /// 创建空的 Vector Clock
     ///
     /// # 示例
     ///
@@ -64,7 +64,7 @@ impl VectorClock {
         }
     }
 
-    /// 🔥 增加指定节点的计数器
+    /// 增加指定节点的计数器
     ///
     /// # 参数
     ///
@@ -82,7 +82,7 @@ impl VectorClock {
         *self.counters.entry(node_id.to_string()).or_insert(0) += 1;
     }
 
-    /// 🔥 获取指定节点的计数器值
+    /// 获取指定节点的计数器值
     ///
     /// # 参数
     ///
@@ -95,7 +95,7 @@ impl VectorClock {
         self.counters.get(node_id)
     }
 
-    /// 🔥 获取所有节点计数器
+    /// 获取所有节点计数器
     ///
     /// # 返回
     ///
@@ -104,7 +104,7 @@ impl VectorClock {
         &self.counters
     }
 
-    /// 🔥 获取计数器数量
+    /// 获取计数器数量
     ///
     /// # 返回
     ///
@@ -113,7 +113,7 @@ impl VectorClock {
         self.counters.len()
     }
 
-    /// 🔥 判断是否为空
+    /// 判断是否为空
     ///
     /// # 返回
     ///
@@ -122,7 +122,7 @@ impl VectorClock {
         self.counters.is_empty()
     }
 
-    /// 🔥 合并两个 Vector Clock (取最大值)
+    /// 合并两个 Vector Clock (取最大值)
     ///
     /// # 用途
     ///
@@ -156,7 +156,7 @@ impl VectorClock {
         merged
     }
 
-    /// 🔥 比较 Vector Clock 关系
+    /// 比较 Vector Clock 关系
     ///
     /// # 返回
     ///
@@ -213,7 +213,7 @@ impl VectorClock {
         }
     }
 
-    /// 🔥 判断是否有冲突（并发）
+    /// 判断是否有冲突（并发）
     ///
     /// # 返回
     ///
@@ -257,7 +257,7 @@ impl fmt::Display for VectorClock {
     }
 }
 
-/// 🔥 Vector Clock 关系
+/// Vector Clock 关系
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VectorClockRelation {
     /// 相等

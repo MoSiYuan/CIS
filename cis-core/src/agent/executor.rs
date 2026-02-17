@@ -1,6 +1,6 @@
 //! # Agent Executor (单个任务执行)
 //!
-//! 🔥 **强制 SafeMemoryContext** (P1.7.0 任务组 0.3)
+//! **强制 SafeMemoryContext** (P1.7.0 任务组 0.3)
 //!
 //! # 核心机制
 //!
@@ -16,14 +16,14 @@
 //!     ↓
 //! 只能由 ConflictGuard::check_and_create_context() 创建
 //!     ↓
-//! ✅ 强制执行，无绕过路径
+//! [OK] 强制执行，无绕过路径
 //! ```
 
 use crate::error::{CisError, Result};
 use crate::memory::guard::types::SafeMemoryContext;
 use crate::types::Task;
 
-/// 🔥 Agent Executor (单个任务执行）
+/// Agent Executor (单个任务执行）
 ///
 /// # 核心职责
 ///
@@ -40,7 +40,7 @@ pub struct AgentExecutor {
 }
 
 impl AgentExecutor {
-    /// 🔥 执行 Agent 任务（强制要求 SafeMemoryContext）
+    /// 执行 Agent 任务（强制要求 SafeMemoryContext）
     ///
     /// # 编译时保证
     ///
@@ -71,7 +71,7 @@ impl AgentExecutor {
     ///
     /// let guard = ConflictGuard::new(memory_service);
     ///
-    /// // 🔥 强制检测冲突后才能执行
+    /// // 强制检测冲突后才能执行
     /// let memory = guard.check_and_create_context(&["key1", "key2"]).await?;
     ///
     /// let result = executor.execute(task, memory).await?;
@@ -81,7 +81,7 @@ impl AgentExecutor {
     ///
     /// # 错误示例
     ///
-    /// ❌ 以下代码无法编译（绕过路径）：
+    /// [X] 以下代码无法编译（绕过路径）：
     /// ```rust,compile_fail
     /// let memories = std::collections::HashMap::new();
     /// let memory = SafeMemoryContext::new(memories);  // ← 编译错误
@@ -90,7 +90,7 @@ impl AgentExecutor {
     pub async fn execute(
         &self,
         task: Task,
-        memory: SafeMemoryContext,  // ← 🔥 编译时强制
+        memory: SafeMemoryContext,  // ← 编译时强制
     ) -> Result<AgentResult> {
         println!("[INFO] Executing task: {}", task.id);
 
@@ -113,7 +113,7 @@ impl AgentExecutor {
         Ok(result)
     }
 
-    /// 🔥 检查键是否冲突
+    /// 检查键是否冲突
     ///
     /// # 参数
     ///
@@ -152,7 +152,7 @@ impl AgentExecutor {
     }
 }
 
-/// 🔥 Agent 执行结果
+/// Agent 执行结果
 #[derive(Debug, Clone)]
 pub struct AgentResult {
     /// 任务 ID

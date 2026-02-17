@@ -285,7 +285,7 @@ impl MatrixBridge {
             let task = match self.parse_skill_command(cmd) {
                 Some(t) => t,
                 None => {
-                    self.send_to_room(room_id, "❌ Invalid skill command format. Usage: !skill <name> [key=value ...]")
+                    self.send_to_room(room_id, "[X] Invalid skill command format. Usage: !skill <name> [key=value ...]")
                         .await?;
                     return Ok(());
                 }
@@ -301,7 +301,7 @@ impl MatrixBridge {
                     warn!("Skill invocation failed: {}", e);
                     self.send_to_room(
                         room_id,
-                        &format!("❌ Skill '{}' failed: {}", task.skill, e),
+                        &format!("[X] Skill '{}' failed: {}", task.skill, e),
                     )
                     .await?;
                 }
@@ -313,7 +313,7 @@ impl MatrixBridge {
                     self.send_to_room(room_id, &list).await?;
                 }
                 Err(e) => {
-                    self.send_to_room(room_id, &format!("❌ Failed to list skills: {}", e))
+                    self.send_to_room(room_id, &format!("[X] Failed to list skills: {}", e))
                         .await?;
                 }
             }
@@ -498,17 +498,17 @@ impl MatrixBridge {
         if result.success {
             match &result.data {
                 Some(data) => {
-                    format!("✅ Done ({}ms)\n```json\n{}\n```", 
+                    format!("[OK] Done ({}ms)\n```json\n{}\n```", 
                         result.elapsed_ms,
                         serde_json::to_string_pretty(data).unwrap_or_default()
                     )
                 }
-                None => format!("✅ Done ({}ms)", result.elapsed_ms),
+                None => format!("[OK] Done ({}ms)", result.elapsed_ms),
             }
         } else {
             match &result.error {
-                Some(err) => format!("❌ Error: {}", err),
-                None => "❌ Unknown error".to_string(),
+                Some(err) => format!("[X] Error: {}", err),
+                None => "[X] Unknown error".to_string(),
             }
         }
     }
@@ -1195,7 +1195,7 @@ mod tests {
             elapsed_ms: 100,
         };
         let formatted = bridge.format_result(&success_result);
-        assert!(formatted.contains("✅"));
+        assert!(formatted.contains("[OK]"));
         assert!(formatted.contains("100ms"));
 
         let error_result = SkillResult {
@@ -1205,7 +1205,7 @@ mod tests {
             elapsed_ms: 0,
         };
         let formatted = bridge.format_result(&error_result);
-        assert!(formatted.contains("❌"));
+        assert!(formatted.contains("[X]"));
         assert!(formatted.contains("Something went wrong"));
     }
 }

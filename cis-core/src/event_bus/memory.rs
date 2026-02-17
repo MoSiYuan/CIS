@@ -22,10 +22,10 @@
 //!    - 计划: 添加分布式支持时引入确认机制
 //!
 //! 3. **全局事件总线**: 禁止使用全局单例
-//!    - 状态: ✅ 遵守规则
+//!    - 状态: [OK] 遵守规则
 //!
 //! 4. **事件路由**: 每个事件有明确的发送者和接收者
-//!    - 状态: ✅ 通过 EventMetadata 实现
+//!    - 状态: [OK] 通过 EventMetadata 实现
 
 use async_trait::async_trait;
 use crate::error::{CisError, Result};

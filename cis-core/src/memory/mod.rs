@@ -36,16 +36,16 @@ pub mod service;
 pub mod ops;
 pub mod crypto;
 pub mod weekly_archived;
-pub mod guard;  // 🔥 冲突检测守卫模块（Phase 0: P1.7.0）
-pub mod scope;   // 🔥 记忆作用域（v1.1.7: 稳定哈希绑定）
+pub mod guard;  // 冲突检测守卫模块（Phase 0: P1.7.0）
+pub mod scope;   // 记忆作用域（v1.1.7: 稳定哈希绑定）
 
 // Re-export all public types
 pub use self::encryption::MemoryEncryption;
 pub use self::encryption_v2::{EncryptionKeyV2, MemoryEncryptionV2};
 pub use self::service::{MemoryItem, MemoryService, MemorySearchResult, SearchOptions, SyncMarker};
 pub use self::weekly_archived::{WeeklyArchivedMemory, MemoryItem as WeeklyMemoryItem, WeeklyMemoryStats};
-pub use self::guard::{ConflictChecked, SafeMemoryContext};  // 🔥 冲突检测类型
-pub use self::scope::MemoryScope;  // 🔥 记忆作用域
+pub use self::guard::{ConflictChecked, SafeMemoryContext};  // 冲突检测类型
+pub use self::scope::MemoryScope;  // 记忆作用域
 
 /// 扩展的记忆条目（包含更多元数据）
 #[derive(Debug, Clone, Serialize, Deserialize)]

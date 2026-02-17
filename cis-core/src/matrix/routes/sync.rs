@@ -4,7 +4,7 @@
 //!
 //! ## Implementation Status
 //!
-//! ✅ Completed:
+//! [OK] Completed:
 //! - Joined rooms with timeline and state
 //! - Invited rooms with invite state
 //! - Left rooms with timeline

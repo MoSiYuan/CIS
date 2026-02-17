@@ -83,7 +83,7 @@ impl EmbeddingService {
 
 /// 全局 Embedding 服务实例 (DEPRECATED)
 ///
-/// ⚠️ 警告: 此全局单例已废弃，将在 v1.2.0 中移除。
+/// [WARNING] 警告: 此全局单例已废弃，将在 v1.2.0 中移除。
 /// 请使用 `ServiceContainer` 进行依赖注入。
 #[deprecated(
     since = "1.1.4",
@@ -94,7 +94,7 @@ static EMBEDDING_SERVICE: tokio::sync::OnceCell<EmbeddingService> = tokio::sync:
 impl EmbeddingService {
     /// 获取全局实例 (DEPRECATED)
     ///
-    /// ⚠️ 警告: 此方法已废弃，将在 v1.2.0 中移除。
+    /// [WARNING] 警告: 此方法已废弃，将在 v1.2.0 中移除。
     /// 请使用 `ServiceContainer` 进行依赖注入。
     #[deprecated(
         since = "1.1.4",

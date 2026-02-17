@@ -95,7 +95,7 @@ impl InitWizard {
             messages: Vec::new(),
         };
 
-        println!("🚀 CIS 初始化向导\n");
+        println!("CIS 初始化向导\n");
 
         // Step 1: 环境检查
         if !self.skip_checks {
@@ -104,7 +104,7 @@ impl InitWizard {
             self.display_environment_check(&check);
 
             if check.ai_agents.iter().all(|a| !a.available) {
-                println!("\n⚠️  警告: 未检测到任何 AI Agent");
+                println!("\n[WARNING]  警告: 未检测到任何 AI Agent");
                 println!("   建议安装 OpenCode（DAG 任务推荐）:");
                 println!("   https://github.com/your-opencode-repo");
                 println!("   或 Claude CLI: https://github.com/anthropics/anthropic-cli");
@@ -124,19 +124,19 @@ impl InitWizard {
             "全局配置已保存到 {}",
             Paths::config_file().display()
         ));
-        println!("✅ 全局配置完成\n");
+        println!("[OK] 全局配置完成\n");
 
         // Step 3: 向量引擎配置（记忆、语义搜索必需）
         self.print_step(3, 6, "向量引擎配置");
         self.configure_vector_engine().await?;
         result.messages.push("向量引擎配置完成".to_string());
-        println!("✅ 向量引擎配置完成\n");
+        println!("[OK] 向量引擎配置完成\n");
 
         // Step 4: 安装内置 Skills
         self.print_step(4, 6, "安装内置 Skills");
         self.install_builtin_skills().await?;
         result.messages.push("内置 Skills 安装完成".to_string());
-        println!("✅ 内置 Skills 安装完成\n");
+        println!("[OK] 内置 Skills 安装完成\n");
 
         // Step 5: 项目初始化 (可选)
         if project_mode {
@@ -148,7 +148,7 @@ impl InitWizard {
                 "项目配置已保存到 {}",
                 project_toml.display()
             ));
-            println!("✅ 项目初始化完成\n");
+            println!("[OK] 项目初始化完成\n");
         }
 
         // Step 6: 验证
@@ -157,9 +157,9 @@ impl InitWizard {
         result.tests_passed = tests;
 
         if tests {
-            println!("\n✅ 所有测试通过！CIS 已准备就绪。");
+            println!("\n[OK] 所有测试通过！CIS 已准备就绪。");
         } else {
-            println!("\n⚠️  部分测试未通过，但 CIS 仍可使用。");
+            println!("\n[WARNING]  部分测试未通过，但 CIS 仍可使用。");
         }
 
         // 显示下一步
@@ -296,16 +296,16 @@ impl InitWizard {
 
         if check.git_available {
             println!(
-                "    ✅ Git: {}",
+                "    [OK] Git: {}",
                 check.git_version.as_ref().unwrap_or(&"unknown".to_string())
             );
         } else {
-            println!("    ❌ Git: 未安装");
+            println!("    [X] Git: 未安装");
         }
 
         println!("    🤖 AI Agents:");
         for agent in &check.ai_agents {
-            let status = if agent.available { "✅" } else { "❌" };
+            let status = if agent.available { "[OK]" } else { "[X]" };
             let version = agent
                 .version
                 .as_ref()
@@ -315,15 +315,15 @@ impl InitWizard {
         }
 
         if check.directory_permissions {
-            println!("    ✅ 目录权限: 正常");
+            println!("    [OK] 目录权限: 正常");
         } else {
-            println!("    ❌ 目录权限: 无法写入数据目录");
+            println!("    [X] 目录权限: 无法写入数据目录");
         }
 
         if check.home_dir_writable {
-            println!("    ✅ 主目录: 可写");
+            println!("    [OK] 主目录: 可写");
         } else {
-            println!("    ❌ 主目录: 不可写");
+            println!("    [X] 主目录: 不可写");
         }
 
         println!();
@@ -546,7 +546,7 @@ bootstrap_nodes = []
                     match handle_openai_config() {
                         Ok(_) => println!("  ✓ 已配置 OpenAI Embedding API"),
                         Err(e) => {
-                            println!("  ⚠️  配置失败: {}", e);
+                            println!("  [WARNING]  配置失败: {}", e);
                             println!("     将尝试下载本地模型...");
                             self.download_vector_model().await?;
                         }
@@ -557,17 +557,17 @@ bootstrap_nodes = []
                     match handle_claude_cli() {
                         Ok(_) => println!("  ✓ 已配置 Claude CLI 代理"),
                         Err(e) => {
-                            println!("  ⚠️  配置失败: {}", e);
+                            println!("  [WARNING]  配置失败: {}", e);
                             self.download_vector_model().await?;
                         }
                     }
                 }
                 "4" => {
-                    println!("  ⚠️  已配置 SQL 回退模式（无语义搜索）");
+                    println!("  [WARNING]  已配置 SQL 回退模式（无语义搜索）");
                     println!("     记忆和搜索功能将受限。");
                 }
                 "5" => {
-                    println!("  ⚠️  已跳过向量引擎配置");
+                    println!("  [WARNING]  已跳过向量引擎配置");
                     println!("     稍后可通过 `cis config vector` 重新配置");
                 }
                 _ => {
@@ -594,7 +594,7 @@ bootstrap_nodes = []
                 println!("     语义搜索和记忆功能已启用。");
             }
             Err(e) => {
-                println!("  ⚠️  模型下载失败: {}", e);
+                println!("  [WARNING]  模型下载失败: {}", e);
                 println!("     将使用 SQL 回退模式。");
                 println!("     稍后可通过 `cis config vector` 重试。");
             }
@@ -621,7 +621,7 @@ bootstrap_nodes = []
         let installer = match BuiltinSkillInstaller::new() {
             Ok(inst) => inst,
             Err(e) => {
-                println!("  ⚠️  无法创建安装器: {}", e);
+                println!("  [WARNING]  无法创建安装器: {}", e);
                 println!("     跳过内置 Skills 安装");
                 return Ok(());
             }
@@ -631,13 +631,13 @@ bootstrap_nodes = []
         println!("\n  正在安装必需 Skills...");
         match installer.install_required_skills() {
             Ok(installed) => {
-                println!("  ✅ 成功安装 {} 个 Skills:", installed.len());
+                println!("  [OK] 成功安装 {} 个 Skills:", installed.len());
                 for name in &installed {
                     println!("     ✓ {}", name);
                 }
             }
             Err(e) => {
-                println!("  ⚠️  部分 Skills 安装失败: {}", e);
+                println!("  [WARNING]  部分 Skills 安装失败: {}", e);
                 println!("     某些功能可能不可用");
                 // 不返回错误，继续初始化
             }
@@ -703,9 +703,9 @@ bootstrap_nodes = []
         // Test 1: 配置读取
         print!("  [1/5] 配置读取... ");
         match self.test_config_read().await {
-            Ok(_) => println!("✅ 通过"),
+            Ok(_) => println!("[OK] 通过"),
             Err(e) => {
-                println!("❌ 失败: {}", e);
+                println!("[X] 失败: {}", e);
                 all_passed = false;
             }
         }
@@ -713,9 +713,9 @@ bootstrap_nodes = []
         // Test 2: 目录写入
         print!("  [2/5] 目录写入... ");
         match self.test_directory_write().await {
-            Ok(_) => println!("✅ 通过"),
+            Ok(_) => println!("[OK] 通过"),
             Err(e) => {
-                println!("❌ 失败: {}", e);
+                println!("[X] 失败: {}", e);
                 all_passed = false;
             }
         }
@@ -723,9 +723,9 @@ bootstrap_nodes = []
         // Test 3: 节点密钥
         print!("  [3/5] 节点密钥... ");
         match self.test_node_key().await {
-            Ok(_) => println!("✅ 通过"),
+            Ok(_) => println!("[OK] 通过"),
             Err(e) => {
-                println!("❌ 失败: {}", e);
+                println!("[X] 失败: {}", e);
                 all_passed = false;
             }
         }
@@ -733,9 +733,9 @@ bootstrap_nodes = []
         // Test 4: 向量引擎
         print!("  [4/5] 向量引擎... ");
         match self.test_vector_engine().await {
-            Ok(_) => println!("✅ 通过"),
+            Ok(_) => println!("[OK] 通过"),
             Err(e) => {
-                println!("⚠️  警告: {}", e);
+                println!("[WARNING]  警告: {}", e);
                 // 向量引擎失败不视为整体失败，但提醒用户
             }
         }
@@ -743,9 +743,9 @@ bootstrap_nodes = []
         // Test 5: AI Provider
         print!("  [5/5] AI Provider... ");
         match self.test_ai_provider().await {
-            Ok(_) => println!("✅ 通过"),
+            Ok(_) => println!("[OK] 通过"),
             Err(e) => {
-                println!("⚠️  跳过: {}", e);
+                println!("[WARNING]  跳过: {}", e);
                 // AI 测试失败不视为整体失败
             }
         }

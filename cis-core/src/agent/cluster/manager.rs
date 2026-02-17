@@ -9,10 +9,10 @@
 //! 请使用 `ServiceContainer` 进行依赖注入。
 //!
 //! ```rust
-//! // ❌ 废弃的方式
+//! // [X] 废弃的方式
 //! let manager = SessionManager::global();
 //!
-//! // ✅ 推荐的方式
+//! // [OK] 推荐的方式
 //! let container = ServiceContainer::production(config).await?;
 //! // 通过容器获取 SessionManager 实例
 //! ```
@@ -97,7 +97,7 @@ impl Default for SessionManagerConfig {
 
 /// Session Manager - for managing agent sessions
 ///
-/// ⚠️ 注意: `global()` 方法已废弃，请使用依赖注入。
+/// [WARNING] 注意: `global()` 方法已废弃，请使用依赖注入。
 #[derive(Debug)]
 pub struct SessionManager {
     /// Active sessions (Mutex for thread-safety with non-Sync AgentSession)
@@ -125,7 +125,7 @@ impl SessionManager {
 
     /// Get global singleton instance (DEPRECATED)
     ///
-    /// ⚠️ 警告: 此方法已废弃，将在 v1.2.0 中移除。
+    /// [WARNING] 警告: 此方法已废弃，将在 v1.2.0 中移除。
     /// 请使用 `ServiceContainer` 进行依赖注入。
     #[deprecated(
         since = "1.1.4",

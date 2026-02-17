@@ -1,6 +1,6 @@
 //! # Agent Task Builder (API 层强制执行)
 //!
-//! 🔥 **强制冲突检测** (P1.7.0 任务组 0.4)
+//! **强制冲突检测** (P1.7.0 任务组 0.4)
 //!
 //! # 核心机制
 //!
@@ -18,7 +18,7 @@
 //!     ↓
 //! .with_memory_keys()
 //!     ↓
-//! .check_conflicts()  // ← 🔥 必须调用
+//! .check_conflicts()  // ← 必须调用
 //!     ↓ (返回 Builder)
 //! .execute()  // ← 断言 conflict_checked == true
 //! ```
@@ -39,7 +39,7 @@
 //! let result = AgentTaskBuilder::new(&executor)
 //!     .with_task(task)
 //!     .with_memory_keys(vec!["key1".to_string(), "key2".to_string()])
-//!     .check_conflicts().await?  // ← 🔥 强制调用
+//!     .check_conflicts().await?  // ← 强制调用
 //!     .execute().await?;         // ← 断言已检查
 //! # Ok(())
 //! # }
@@ -52,7 +52,7 @@ use crate::types::Task;
 use super::AgentExecutor;
 use super::executor::AgentResult;
 
-/// 🔥 Agent Task Builder (API 层强制执行)
+/// Agent Task Builder (API 层强制执行)
 ///
 /// # 核心职责
 ///
@@ -79,12 +79,12 @@ pub struct AgentTaskBuilder<'a> {
     /// 需要的记忆键（可选）
     required_keys: Option<Vec<String>>,
 
-    /// 🔥 是否已检查冲突（运行时标记）
+    /// 是否已检查冲突（运行时标记）
     conflict_checked: bool,
 }
 
 impl<'a> AgentTaskBuilder<'a> {
-    /// 🔥 创建 Builder
+    /// 创建 Builder
     ///
     /// # 参数
     ///
@@ -104,7 +104,7 @@ impl<'a> AgentTaskBuilder<'a> {
         }
     }
 
-    /// 🔥 设置任务
+    /// 设置任务
     ///
     /// # 参数
     ///
@@ -121,7 +121,7 @@ impl<'a> AgentTaskBuilder<'a> {
         self
     }
 
-    /// 🔥 设置需要的记忆键
+    /// 设置需要的记忆键
     ///
     /// # 参数
     ///
@@ -138,7 +138,7 @@ impl<'a> AgentTaskBuilder<'a> {
         self
     }
 
-    /// 🔥 强制冲突检查（不可跳过）
+    /// 强制冲突检查（不可跳过）
     ///
     /// # 核心逻辑
     ///
@@ -166,7 +166,7 @@ impl<'a> AgentTaskBuilder<'a> {
     ///
     /// # 错误示例
     ///
-    /// ❌ 以下代码会在执行时 panic（绕过路径）：
+    /// [X] 以下代码会在执行时 panic（绕过路径）：
     /// ```rust,should_panic
     /// let builder = AgentTaskBuilder::new(&executor)
     ///     .with_task(task)
@@ -206,7 +206,7 @@ impl<'a> AgentTaskBuilder<'a> {
         }
     }
 
-    /// 🔥 执行任务（强制要求 conflict_checked == true）
+    /// 执行任务（强制要求 conflict_checked == true）
     ///
     /// # 运行时断言
     ///
@@ -242,7 +242,7 @@ impl<'a> AgentTaskBuilder<'a> {
     ///
     /// # Panic 示例
     ///
-    /// ❌ 以下代码会 panic（未调用 check_conflicts）：
+    /// [X] 以下代码会 panic（未调用 check_conflicts）：
     /// ```rust,should_panic
     /// let builder = AgentTaskBuilder::new(&executor)
     ///     .with_task(task)
@@ -252,7 +252,7 @@ impl<'a> AgentTaskBuilder<'a> {
     /// builder.execute().await;  // ← panic: "Conflict check is mandatory"
     /// ```
     pub async fn execute(self) -> Result<AgentResult> {
-        // 🔥 运行时断言（双重保险）
+        // 运行时断言（双重保险）
         assert!(
             self.conflict_checked,
             "Conflict check is mandatory. No bypass path allowed!"
@@ -314,7 +314,7 @@ mod tests {
             title: "Test task".to_string(),
         };
 
-        // ❌ 不调用 check_conflicts，应该 panic
+        // [X] 不调用 check_conflicts，应该 panic
         let _ = AgentTaskBuilder::new(&executor)
             .with_task(task)
             .with_memory_keys(vec!["key1".to_string()])

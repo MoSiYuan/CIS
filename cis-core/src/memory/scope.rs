@@ -1,6 +1,6 @@
 //! # Memory Scope (记忆作用域)
 //!
-//! 🔥 **稳定哈希绑定机制** (v1.1.7)
+//! **稳定哈希绑定机制** (v1.1.7)
 //!
 //! # 设计原理
 //!
@@ -12,10 +12,10 @@
 //!
 //! | 场景 | 行为 | scope_id |
 //! |------|------|----------|
-//! | **第一次初始化** | 生成哈希并保存 | ✅ "a3f7e9c2b1d4f8a5" |
-//! | **移动项目** | 从配置文件读取 | ✅ 仍然是 "a3f7e9c2b1d4f8a5" |
-//! | **重命名目录** | 从配置文件读取 | ✅ 仍然是 "a3f7e9c2b1d4f8a5" |
-//! | **不同机器协作** | 配置文件同步 | ✅ 两台机器相同 |
+//! | **第一次初始化** | 生成哈希并保存 | [OK] "a3f7e9c2b1d4f8a5" |
+//! | **移动项目** | 从配置文件读取 | [OK] 仍然是 "a3f7e9c2b1d4f8a5" |
+//! | **重命名目录** | 从配置文件读取 | [OK] 仍然是 "a3f7e9c2b1d4f8a5" |
+//! | **不同机器协作** | 配置文件同步 | [OK] 两台机器相同 |
 
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{CisError, Result};
 use crate::types::MemoryDomain;
 
-/// 🔥 记忆作用域（稳定哈希绑定）
+/// 记忆作用域（稳定哈希绑定）
 ///
 /// # 稳定性保证
 ///
@@ -69,7 +69,7 @@ pub struct MemoryScope {
 }
 
 impl MemoryScope {
-    /// 🔥 从配置文件加载（核心方法）
+    /// 从配置文件加载（核心方法）
     ///
     /// # 稳定性保证
     ///
@@ -91,8 +91,8 @@ impl MemoryScope {
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = ProjectConfig::load(".cis/project.toml")?;
     ///
-    /// // ✅ 第一次：生成哈希并保存
-    /// // ✅ 移动后：从配置读取（哈希不变）
+    /// // [OK] 第一次：生成哈希并保存
+    /// // [OK] 移动后：从配置读取（哈希不变）
     /// let scope = MemoryScope::from_config(&config)?;
     ///
     /// println!("Scope ID: {}", scope.scope_id);
@@ -114,7 +114,7 @@ impl MemoryScope {
         })
     }
 
-    /// 🔥 自定义记忆域（不依赖 path）
+    /// 自定义记忆域（不依赖 path）
     ///
     /// # 使用场景
     ///
@@ -168,7 +168,7 @@ impl MemoryScope {
         }
     }
 
-    /// 🔥 生成记忆键（scope_id + key）
+    /// 生成记忆键（scope_id + key）
     ///
     /// # 格式
     ///
@@ -186,14 +186,14 @@ impl MemoryScope {
     ///
     /// # 优势
     ///
-    /// - ✅ 简短（16 字符 vs 冗长 path）
-    /// - ✅ 稳定（哈希不变，即使 path 变化）
-    /// - ✅ 唯一（哈希碰撞概率极低）
+    /// - [OK] 简短（16 字符 vs 冗长 path）
+    /// - [OK] 稳定（哈希不变，即使 path 变化）
+    /// - [OK] 唯一（哈希碰撞概率极低）
     pub fn memory_key(&self, key: &str) -> String {
         format!("{}::{}", self.scope_id, key)
     }
 
-    /// 🔥 判断是否为全局作用域
+    /// 判断是否为全局作用域
     ///
     /// # 示例
     ///
@@ -219,8 +219,8 @@ impl MemoryScope {
     ///
     /// # 安全修复 (P0)
     ///
-    /// - 旧实现：`canonicalize()` 失败时使用原始路径（⚠️ 不安全）
-    /// - 新实现：对不存在的路径使用绝对路径+安全盐值（✅ 安全）
+    /// - 旧实现：`canonicalize()` 失败时使用原始路径（[WARNING] 不安全）
+    /// - 新实现：对不存在的路径使用绝对路径+安全盐值（[OK] 安全）
     ///
     /// # 唯一性
     ///
@@ -287,7 +287,7 @@ impl MemoryScope {
         format!("{:016x}", hasher.finish())
     }
 
-    /// 🔥 从配置加载或生成 scope_id
+    /// 从配置加载或生成 scope_id
     ///
     /// # 核心逻辑
     ///

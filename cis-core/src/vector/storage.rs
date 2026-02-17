@@ -410,13 +410,21 @@ impl VectorStorage {
     }
 
     /// 配置 WAL 模式
+    ///
+    /// P2-15: SQLite WAL 优化
+    /// - 启用 WAL 模式以提高并发性能
+    /// - NORMAL 模式平衡性能和安全性
+    /// - 内存映射 I/O 提升向量搜索性能
+    /// - 增大缓存以适应向量数据
     fn configure_wal(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
              PRAGMA wal_autocheckpoint = 1000;
              PRAGMA journal_size_limit = 100000000;
-             PRAGMA temp_store = memory;",
+             PRAGMA temp_store = memory;
+             PRAGMA mmap_size = 268435456;
+             PRAGMA cache_size = -128000;",
         )
         .map_err(|e| CisError::storage(format!("Failed to configure WAL: {}", e)))?;
         Ok(())

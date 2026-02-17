@@ -1,6 +1,6 @@
 //! # Conflict Resolution 实现逻辑 (P1.7.0 任务组 0.2)
 //!
-//! 🔥 **冲突检测和解决**
+//! **冲突检测和解决**
 //!
 //! # 核心机制
 //!
@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// 🔥 LWW (Last-Write-Wins) 决胜策略
+/// LWW (Last-Write-Wins) 决胜策略
 ///
 /// # 核心逻辑
 ///
@@ -52,7 +52,7 @@ pub fn resolve_by_lww(versions: &[ConflictVersion]) -> Result<&ConflictVersion> 
     Ok(winner)
 }
 
-/// 🔥 基于 Vector Clock 检测冲突
+/// 基于 Vector Clock 检测冲突
 ///
 /// # 核心逻辑
 ///
@@ -101,7 +101,7 @@ pub fn detect_conflict_by_vector_clock(
     Ok(false)
 }
 
-/// 🔥 KeepBoth 策略的解决结果
+/// KeepBoth 策略的解决结果
 ///
 /// # 说明
 ///
@@ -121,7 +121,7 @@ pub struct KeepBothResult {
     pub remote_value: Vec<u8>,
 }
 
-/// 🔥 生成唯一的远程 key
+/// 生成唯一的远程 key
 ///
 /// # 核心逻辑
 ///
@@ -170,7 +170,7 @@ pub fn generate_unique_remote_key(base_key: &str, existing_keys: &[String]) -> S
     format!("{}_remote_{}", base_key, timestamp)
 }
 
-/// 🔥 应用冲突解决策略
+/// 应用冲突解决策略
 ///
 /// # 核心逻辑
 ///
@@ -268,7 +268,7 @@ pub fn apply_resolution_strategy(
     }
 }
 
-/// 🔥 应用冲突解决策略（异步版本，支持 AI Merge）
+/// 应用冲突解决策略（异步版本，支持 AI Merge）
 ///
 /// # 核心逻辑
 ///
@@ -363,7 +363,7 @@ pub async fn apply_resolution_strategy_async(
     }
 }
 
-/// 🔥 应用 KeepBoth 策略并返回详细信息
+/// 应用 KeepBoth 策略并返回详细信息
 ///
 /// # 核心逻辑
 ///
@@ -418,7 +418,7 @@ pub fn apply_keep_both_strategy(
     })
 }
 
-/// 🔥 反序列化 Vector Clock
+/// 反序列化 Vector Clock
 ///
 /// # 参数
 ///
@@ -453,7 +453,7 @@ fn deserialize_vector_clock(bytes: &[u8]) -> Result<VectorClock> {
     }
 }
 
-/// 🔥 序列化 Vector Clock
+/// 序列化 Vector Clock
 ///
 /// # 参数
 ///
@@ -468,7 +468,7 @@ pub fn serialize_vector_clock(vc: &VectorClock) -> Result<Vec<u8>> {
         .map_err(|e| CisError::memory_not_found(&format!("Failed to serialize Vector Clock: {}", e)))
 }
 
-/// 🔥 创建冲突通知
+/// 创建冲突通知
 ///
 /// # 参数
 ///

@@ -1,6 +1,6 @@
 //! # 冲突检测类型系统
 //!
-//! 🔥 **编译时强制保证**：只有通过冲突检查后才能创建 `SafeMemoryContext`
+//! **编译时强制保证**：只有通过冲突检查后才能创建 `SafeMemoryContext`
 //!
 //! # 设计原理
 //!
@@ -12,7 +12,7 @@
 //! # 无绕过路径
 //!
 //! ```compile_fail
-//! // ❌ 编译错误：无法直接创建 SafeMemoryContext
+//! // [X] 编译错误：无法直接创建 SafeMemoryContext
 //! let context = SafeMemoryContext::new(std::collections::HashMap::new());
 //! ```
 //!
@@ -24,10 +24,10 @@
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let guard = ConflictGuard::new(memory_service);
 //!
-//! // ✅ 必须先检测冲突
+//! // [OK] 必须先检测冲突
 //! let context = guard.check_and_create_context(&["key1", "key2"]).await?;
 //!
-//! // ✅ 检测通过后才能使用
+//! // [OK] 检测通过后才能使用
 //! for (key, entry) in context.iter_memories() {
 //!     println!("{}: {:?}", key, entry.value);
 //! }
@@ -40,7 +40,7 @@ use std::marker::PhantomData;
 
 use crate::storage::memory_db::MemoryEntry;
 
-/// 🔥 冲突已检查的零成本标记类型
+/// 冲突已检查的零成本标记类型
 ///
 /// # 类型安全保证
 ///
@@ -58,12 +58,12 @@ use crate::storage::memory_db::MemoryEntry;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConflictChecked {
-    // 🔥 私有的零大小标记，外部无法构造
+    // 私有的零大小标记，外部无法构造
     _private: (),
 }
 
 impl ConflictChecked {
-    /// 🔥 只有 `ConflictGuard` 可以调用此方法创建标记
+    /// 只有 `ConflictGuard` 可以调用此方法创建标记
     ///
     /// # 访问控制
     ///
@@ -75,7 +75,7 @@ impl ConflictChecked {
     }
 }
 
-/// 🔥 只有通过冲突检查才能创建的 Memory Context
+/// 只有通过冲突检查才能创建的 Memory Context
 ///
 /// # 核心保证
 ///
@@ -95,7 +95,7 @@ impl ConflictChecked {
 ///    ↓
 /// 创建前必须检测冲突
 ///    ↓
-/// 🔥 强制执行，无绕过路径
+/// 强制执行，无绕过路径
 /// ```
 ///
 /// # 字段说明
@@ -103,7 +103,7 @@ impl ConflictChecked {
 /// - `_phantom`: 零成本的编译时标记，保证类型安全
 /// - `memories`: 实际的记忆数据（HashMap<key, MemoryEntry>）
 pub struct SafeMemoryContext {
-    /// 🔥 编译时标记：只有通过冲突检查才能创建
+    /// 编译时标记：只有通过冲突检查才能创建
     _phantom: PhantomData<ConflictChecked>,
 
     /// 记忆数据：key → MemoryEntry
@@ -111,7 +111,7 @@ pub struct SafeMemoryContext {
 }
 
 impl SafeMemoryContext {
-    /// 🔥 私有构造函数：只有 `ConflictGuard` 可以调用
+    /// 私有构造函数：只有 `ConflictGuard` 可以调用
     ///
     /// # 访问控制
     ///
@@ -151,10 +151,10 @@ impl SafeMemoryContext {
     }
 }
 
-// 🔥 删除所有可能绕过检查的 trait 实现
-// ❌ 不实现 Clone（防止复制后重复使用）
-// ❌ 不实现 Default（防止默认构造）
-// ✅ 只实现必要的 Debug（用于日志）
+// 删除所有可能绕过检查的 trait 实现
+// [X] 不实现 Clone（防止复制后重复使用）
+// [X] 不实现 Default（防止默认构造）
+// [OK] 只实现必要的 Debug（用于日志）
 impl std::fmt::Debug for SafeMemoryContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SafeMemoryContext")
@@ -173,7 +173,7 @@ mod tests {
     /// 测试 ConflictChecked 只能由内部模块创建
     #[test]
     fn test_conflict_checked_internal_only() {
-        // ✅ 可以通过内部方法创建
+        // [OK] 可以通过内部方法创建
         let _checked = ConflictChecked::new();
     }
 
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     #[ignore = "编译时测试，手动验证"]
     fn test_safe_memory_context_cannot_create_directly() {
-        // ❌ 编译错误：new() 是 pub(crate) 的，外部无法调用
+        // [X] 编译错误：new() 是 pub(crate) 的，外部无法调用
         // let context = SafeMemoryContext::new(HashMap::new());
         //
         // 这确保了必须通过 ConflictGuard::check_and_create_context() 创建
@@ -260,11 +260,11 @@ mod tests {
     #[test]
     fn test_safe_memory_context_no_clone_default() {
         // 这是一个编译时测试，验证以下代码无法编译：
-        // ❌ 无法 clone
+        // [X] 无法 clone
         // let context1 = SafeMemoryContext::new(HashMap::new());
         // let context2 = context1.clone();
         //
-        // ❌ 无法 default
+        // [X] 无法 default
         // let context = SafeMemoryContext::default();
 
         // 如果这些代码能编译，测试会失败

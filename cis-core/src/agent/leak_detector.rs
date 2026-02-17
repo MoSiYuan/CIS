@@ -391,7 +391,7 @@ impl AgentLeakDetector {
 
         for leak in sorted_leaks {
             let severity_icon = match leak.severity {
-                LeakSeverity::Low => "⚠️",
+                LeakSeverity::Low => "[WARNING]",
                 LeakSeverity::Medium => "🟡",
                 LeakSeverity::High => "🔴",
             };

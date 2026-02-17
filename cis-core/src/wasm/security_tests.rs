@@ -6,7 +6,7 @@
 mod path_traversal_tests {
     use super::super::{WasiSandbox, AccessType};
 
-    /// ✅ 测试1: 基础路径遍历检测
+    /// [OK] 测试1: 基础路径遍历检测
     #[test]
     fn test_basic_path_traversal() {
         let sandbox = WasiSandbox::new()
@@ -21,7 +21,7 @@ mod path_traversal_tests {
         assert!(msg.contains("traversal") || msg.contains("denied"));
     }
 
-    /// ✅ 测试2: Windows风格路径遍历
+    /// [OK] 测试2: Windows风格路径遍历
     #[test]
     fn test_windows_path_traversal() {
         let sandbox = WasiSandbox::new()
@@ -32,7 +32,7 @@ mod path_traversal_tests {
         assert!(result.is_err());
     }
 
-    /// ✅ 测试3: 双重编码路径遍历
+    /// [OK] 测试3: 双重编码路径遍历
     #[test]
     fn test_double_encoded_traversal() {
         let sandbox = WasiSandbox::new()
@@ -43,7 +43,7 @@ mod path_traversal_tests {
         assert!(result.is_err());
     }
 
-    /// ✅ 测试4: 符号链接逃逸
+    /// [OK] 测试4: 符号链接逃逸
     #[test]
     fn test_symlink_escape() {
         let sandbox = WasiSandbox::new()
@@ -55,7 +55,7 @@ mod path_traversal_tests {
         assert!(!sandbox.allow_symlinks);
     }
 
-    /// ✅ 测试5: 白名单验证
+    /// [OK] 测试5: 白名单验证
     #[test]
     fn test_whitelist_validation() {
         let sandbox = WasiSandbox::new()
@@ -71,7 +71,7 @@ mod path_traversal_tests {
         }
     }
 
-    /// ✅ 测试6: 写权限检查
+    /// [OK] 测试6: 写权限检查
     #[test]
     fn test_write_permission_check() {
         let sandbox = WasiSandbox::new()
@@ -85,7 +85,7 @@ mod path_traversal_tests {
         assert!(msg.contains("denied") || msg.contains("Write"));
     }
 
-    /// ✅ 测试7: 文件描述符限制
+    /// [OK] 测试7: 文件描述符限制
     #[test]
     fn test_file_descriptor_limit() {
         let sandbox = WasiSandbox::new()
@@ -104,7 +104,7 @@ mod path_traversal_tests {
         // fd1和fd2在drop后自动释放
     }
 
-    /// ✅ 测试8: 文件描述符RAII自动释放
+    /// [OK] 测试8: 文件描述符RAII自动释放
     #[test]
     fn test_fd_raii_auto_release() {
         let sandbox = WasiSandbox::new()
