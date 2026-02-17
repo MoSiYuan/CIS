@@ -67,7 +67,9 @@ pub struct LocalExecutor {
     /// Worker 二进制路径
     worker_binary: String,
     /// 默认 Matrix Room (用于 Worker 通信)
-    #[allow(dead_code)]
+    ///
+    /// TODO: P1-13 - Reserved for future Matrix-based worker communication
+    /// Currently not used but kept for compatibility with future architecture
     default_room: String,
     /// Matrix Store (用于事件持久化)
     matrix_store: Option<Arc<MatrixStore>>,

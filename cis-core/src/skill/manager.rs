@@ -13,7 +13,7 @@ use super::registry::SkillRegistry;
 use super::types::{LoadOptions, SkillConfig, SkillInfo, SkillMeta, SkillState, SkillType};
 use super::{Event, Skill, SkillContext};
 use crate::error::{CisError, Result};
-use crate::storage::db::{DbManager, SkillDb};
+use crate::storage::db::DbManager;
 use crate::storage::paths::Paths;
 
 #[cfg(feature = "wasm")]
@@ -32,9 +32,6 @@ enum SkillEventCommand {
 struct ActiveSkill {
     /// Skill 元数据
     _info: SkillInfo,
-    /// Skill 数据库连接
-    #[allow(dead_code)]
-    db: Arc<Mutex<SkillDb>>,
     /// 配置
     config: SkillConfig,
     /// Skill 实例（用于事件处理）
@@ -45,7 +42,6 @@ struct ActiveSkill {
     shutdown_tx: Option<oneshot::Sender<()>>,
 }
 
-#[allow(dead_code)]
 impl ActiveSkill {
     /// 检查 Skill 是否处于活跃状态
     fn is_active(&self) -> bool {
