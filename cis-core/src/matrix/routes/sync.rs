@@ -29,21 +29,17 @@ use crate::matrix::routes::AppState;
 pub struct SyncRequest {
     /// A filter to apply to the sync
     #[serde(rename = "filter")]
-    #[allow(dead_code)]
     filter: Option<String>,
     /// A point in time to continue a sync from
     since: Option<String>,
     /// Whether to wait for new events
     #[serde(rename = "timeout")]
-    #[allow(dead_code)]
     timeout: Option<u64>,
     /// Whether the client supports full state
     #[serde(rename = "full_state")]
-    #[allow(dead_code)]
     full_state: Option<bool>,
     /// ID of the client device
     #[serde(rename = "set_presence")]
-    #[allow(dead_code)]
     set_presence: Option<String>,
 }
 

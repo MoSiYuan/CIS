@@ -46,7 +46,6 @@ const NOISE_MAX_MESSAGE_SIZE: usize = 65535;
 #[derive(Debug)]
 pub struct WebSocketClient {
     /// This node's ID
-    #[allow(dead_code)]
     node_id: String,
     /// This node's DID
     node_did: String,
@@ -427,7 +426,6 @@ struct ClientConnectionHandler {
     /// WebSocket stream (wrapped in Option for ownership transfer)
     ws_stream: Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     /// This node's ID
-    #[allow(dead_code)]
     node_id: String,
     /// This node's DID
     node_did: String,
@@ -446,15 +444,12 @@ struct ClientConnectionHandler {
     /// Connection state
     state: ConnectionState,
     /// Ping ID counter
-    #[allow(dead_code)]
     ping_counter: u64,
     /// Noise handshake state (ephemeral, used during handshake)
-    #[allow(dead_code)]
     noise_state: Option<snow::StatelessTransportState>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 enum ConnectionState {
     Connecting,
     Handshaking,

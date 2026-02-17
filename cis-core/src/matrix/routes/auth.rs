@@ -16,11 +16,9 @@ use crate::matrix::store_social::MatrixSocialStore;
 #[derive(Debug, Clone)]
 pub struct AuthenticatedUser {
     pub user_id: String,
-    #[allow(dead_code)]
     pub device_id: Option<String>,
 }
 
-#[allow(dead_code)]
 impl AuthenticatedUser {
     /// Create a new authenticated user
     pub fn new(user_id: impl Into<String>) -> Self {
@@ -89,7 +87,6 @@ pub fn authenticate(
 }
 
 /// Async version of authenticate for use in async handlers
-#[allow(dead_code)]
 pub async fn authenticate_async(
     headers: &HeaderMap,
     social_store: &MatrixSocialStore,
@@ -100,7 +97,6 @@ pub async fn authenticate_async(
 /// 便捷函数：从 AppState 认证
 /// 
 /// 用于处理函数中快速获取认证用户
-#[allow(dead_code)]
 pub fn authenticate_from_state(
     headers: &HeaderMap,
     social_store: &MatrixSocialStore,

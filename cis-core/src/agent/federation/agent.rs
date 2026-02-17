@@ -81,10 +81,8 @@ struct FederatedAgentState {
 /// 待处理请求
 struct PendingRequest {
     /// 请求 ID
-    #[allow(dead_code)]
     request_id: String,
     /// 发送时间
-    #[allow(dead_code)]
     sent_at: DateTime<Utc>,
     /// 响应发送通道
     response_tx: oneshot::Sender<TaskResultPayload>,
@@ -465,7 +463,6 @@ impl FederatedAgent {
     }
 
     /// 处理收到的任务请求（本地 Agent 模式）
-    #[allow(dead_code)]
     async fn handle_task_request(&self, event: AgentFederationEvent) -> Result<()> {
         match event {
             AgentFederationEvent::TaskRequest {

@@ -21,9 +21,7 @@ use crate::agent::cluster::SessionId;
 use crate::error::{CisError, Result};
 
 /// Default terminal size
-#[allow(dead_code)]
 const DEFAULT_COLS: u16 = 80;
-#[allow(dead_code)]
 const DEFAULT_ROWS: u16 = 24;
 
 /// Default output buffer size (max lines)
@@ -161,7 +159,6 @@ pub struct AgentSession {
     /// Last activity timestamp
     last_activity: Arc<RwLock<DateTime<Utc>>>,
     /// Max buffer lines
-    #[allow(dead_code)]
     max_buffer_lines: usize,
     /// Event broadcaster
     event_broadcaster: EventBroadcaster,
