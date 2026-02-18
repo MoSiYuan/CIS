@@ -1,15 +1,15 @@
-//! DAG 定义转换器
+//! DAG Definition Converters
 //!
-//! 提供不同 DAG 定义之间的双向转换：
+//! Provides bidirectional conversion between different DAG definitions:
 //! - TaskDag ↔ UnifiedDag
 //! - DagDefinition ↔ UnifiedDag
 //! - DagTaskDefinition ↔ UnifiedTask
 //!
-//! 设计原则：
-//! - 零拷贝转换（尽可能使用引用）
-//! - 保持数据完整性
-//! - 提供清晰的错误信息
-//! - 支持批量转换
+//! Design principles:
+//! - Zero-copy conversion (use references where possible)
+//! - Maintain data integrity
+//! - Provide clear error messages
+//! - Support batch conversion
 
 use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
@@ -22,50 +22,50 @@ use super::{
 use crate::types::TaskLevel;
 
 // ============================================================================
-// UnifiedDag 定义（临时放在这里，后续移到独立模块）
+// UnifiedDag definition (temporarily here, will move to separate module)
 // ============================================================================
 
-/// 统一 DAG 定义
+/// Unified DAG definition
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UnifiedDag {
-    /// DAG 元数据
+    /// DAG metadata
     pub metadata: DagMetadata,
 
-    /// 任务列表
+    /// Task list
     #[serde(rename = "tasks")]
     pub tasks: Vec<UnifiedTask>,
 
-    /// 执行策略
+    /// Execution policy
     #[serde(default)]
     pub execution_policy: ExecutionPolicy,
 }
 
-/// DAG 元数据
+/// DAG metadata
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DagMetadata {
-    /// DAG 唯一标识符
+    /// DAG unique identifier
     pub id: String,
 
-    /// DAG 名称
+    /// DAG name
     pub name: String,
 
-    /// DAG 描述
+    /// DAG description
     #[serde(default)]
     pub description: Option<String>,
 
-    /// DAG 版本
+    /// DAG version
     #[serde(default = "default_version")]
     pub version: String,
 
-    /// 创建时间
+    /// Creation time
     #[serde(default)]
     pub created_at: Option<DateTime<Utc>>,
 
-    /// 作者/创建者
+    /// Author/creator
     #[serde(default)]
     pub author: Option<String>,
 
-    /// 标签
+    /// Tags
     #[serde(default)]
     pub tags: Vec<String>,
 }
@@ -74,64 +74,64 @@ fn default_version() -> String {
     "1.0.0".to_string()
 }
 
-/// 统一任务定义
+/// Unified task definition
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UnifiedTask {
-    /// 任务 ID
+    /// Task ID
     pub id: String,
 
-    /// 任务名称
+    /// Task name
     #[serde(default)]
     pub name: Option<String>,
 
-    /// 任务描述
+    /// Task description
     #[serde(default)]
     pub description: Option<String>,
 
-    /// Skill 名称或 ID
+    /// Skill name or ID
     pub skill: String,
 
-    /// Skill 方法
+    /// Skill method
     #[serde(default = "default_skill_method")]
     pub method: String,
 
-    /// 任务参数
+    /// Task parameters
     #[serde(default)]
     pub params: Map<String, Value>,
 
-    /// 依赖任务 ID 列表
+    /// Dependency task ID list
     #[serde(default)]
     pub dependencies: Vec<String>,
 
-    /// 四级决策级别
+    /// Four-tier decision level
     #[serde(flatten)]
     pub level: TaskLevel,
 
-    /// Agent Runtime 配置
+    /// Agent Runtime configuration
     #[serde(default)]
     pub agent_config: Option<AgentTaskConfig>,
 
-    /// 回滚命令
+    /// Rollback commands
     #[serde(default)]
     pub rollback: Option<Vec<String>>,
 
-    /// 超时时间（秒）
+    /// Timeout (seconds)
     #[serde(default)]
     pub timeout_secs: Option<u64>,
 
-    /// 重试次数
+    /// Retry count
     #[serde(default)]
     pub retry: Option<u32>,
 
-    /// 任务条件
+    /// Task condition
     #[serde(default)]
     pub condition: Option<String>,
 
-    /// 是否幂等
+    /// Whether idempotent
     #[serde(default)]
     pub idempotent: bool,
 
-    /// 输出映射
+    /// Output mapping
     #[serde(default)]
     pub outputs: Option<Map<String, String>>,
 }
@@ -140,45 +140,45 @@ fn default_skill_method() -> String {
     "execute".to_string()
 }
 
-/// Agent 任务配置
+/// Agent task configuration
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AgentTaskConfig {
-    /// Agent Runtime 类型
+    /// Agent Runtime type
     #[serde(default)]
     pub runtime: RuntimeType,
 
-    /// 复用已有 Agent ID
+    /// Reuse existing Agent ID
     #[serde(default)]
     pub reuse_agent_id: Option<String>,
 
-    /// 是否保持 Agent
+    /// Whether to keep Agent
     #[serde(default)]
     pub keep_agent: bool,
 
-    /// 模型配置
+    /// Model configuration
     #[serde(default)]
     pub model: Option<String>,
 
-    /// Agent 系统提示词
+    /// Agent system prompt
     #[serde(default)]
     pub system_prompt: Option<String>,
 
-    /// 工作目录
+    /// Working directory
     #[serde(default)]
     pub work_dir: Option<String>,
 }
 
-/// 执行策略
+/// Execution policy
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionPolicy {
-    /// 所有任务必须成功
+    /// All tasks must succeed
     AllSuccess,
-    /// 任一任务成功即可
+    /// Any task success is sufficient
     FirstSuccess,
-    /// 允许技术债务
+    /// Allow technical debt
     AllowDebt,
-    /// 继续执行直到阻塞失败
+    /// Continue execution until blocking failure
     ContinueUntilBlocking,
 }
 
@@ -189,7 +189,7 @@ impl Default for ExecutionPolicy {
 }
 
 // ============================================================================
-// TaskDag → UnifiedDag 转换器
+// TaskDag → UnifiedDag converter
 // ============================================================================
 
 impl From<TaskDag> for UnifiedDag {
@@ -202,7 +202,7 @@ impl From<TaskDag> for UnifiedDag {
             metadata: DagMetadata {
                 id: uuid::Uuid::new_v4().to_string(),
                 name: "Migrated from TaskDag".to_string(),
-                description: Some("自动从 TaskDag 转换的 DAG".to_string()),
+                description: Some("DAG automatically converted from TaskDag".to_string()),
                 version: "1.0.0".to_string(),
                 created_at: Some(Utc::now()),
                 author: None,
@@ -215,9 +215,9 @@ impl From<TaskDag> for UnifiedDag {
 }
 
 impl UnifiedTask {
-    /// 从 DagNode 转换
+    /// Convert from DagNode
     fn from_dag_node(node: &DagNode) -> Self {
-        // 从 level 中提取 retry（如果是 Mechanical 级别）
+        // Extract retry from level (if Mechanical level)
         let retry = if let TaskLevel::Mechanical { retry: r } = &node.level {
             Some(*r as u32)
         } else {
@@ -263,7 +263,7 @@ impl TryFrom<UnifiedDag> for TaskDag {
     fn try_from(unified: UnifiedDag) -> Result<Self> {
         let mut dag = TaskDag::new();
 
-        // 第一遍：添加节点
+        // First pass: add nodes
         for task in &unified.tasks {
             dag.add_node_with_level(
                 task.id.clone(),
@@ -272,7 +272,7 @@ impl TryFrom<UnifiedDag> for TaskDag {
             ).map_err(|e| CisError::scheduler(format!("Failed to add node: {}", e)))?;
         }
 
-        // 第二遍：更新节点配置
+        // Second pass: update node configuration
         for task in unified.tasks {
             if let Some(node) = dag.get_node_mut(&task.id) {
                 node.skill_id = Some(task.skill);
@@ -282,7 +282,7 @@ impl TryFrom<UnifiedDag> for TaskDag {
                     node.reuse_agent = agent_config.reuse_agent_id;
                     node.keep_agent = agent_config.keep_agent;
 
-                    // 更新或创建 agent_config
+                    // Update or create agent_config
                     if node.agent_config.is_none() {
                         node.agent_config = Some(super::AgentConfig::default());
                     }
@@ -302,10 +302,10 @@ impl TryFrom<UnifiedDag> for TaskDag {
 }
 
 // ============================================================================
-// DagDefinition → UnifiedDag 转换器
+// DagDefinition → UnifiedDag converter
 // ============================================================================
 
-// 首先定义 DagDefinition（来自 dag_executor.rs）
+// First define DagDefinition (from dag_executor.rs)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DagDefinition {
     pub id: String,
@@ -345,13 +345,13 @@ impl From<DagDefinition> for UnifiedDag {
 }
 
 impl UnifiedTask {
-    /// 从 DagDefinitionNode 转换
+    /// Convert from DagDefinitionNode
     fn from_definition_node(node: DagDefinitionNode) -> Self {
-        // 尝试反序列化 params
+        // Try to deserialize params
         let params = if let Ok(map) = serde_json::from_slice::<Map<String, Value>>(&node.params) {
             map
         } else {
-            // 如果反序列化失败，将参数作为 base64 编码的字符串存储
+            // If deserialization fails, store params as base64 encoded string
             let mut map = Map::new();
             map.insert(
                 "raw".to_string(),
@@ -410,13 +410,13 @@ impl From<UnifiedDag> for DagDefinition {
 }
 
 // ============================================================================
-// 批量转换和辅助功能
+// Batch conversion and helper functions
 // ============================================================================
 
 impl UnifiedDag {
-    /// 验证 DAG 结构
+    /// Validate DAG structure
     pub fn validate(&self) -> Result<(), DagValidationError> {
-        // 1. 检查任务 ID 唯一性
+        // 1. Check task ID uniqueness
         let mut ids = HashSet::new();
         for task in &self.tasks {
             if !ids.insert(&task.id) {
@@ -424,7 +424,7 @@ impl UnifiedDag {
             }
         }
 
-        // 2. 检查依赖存在性
+        // 2. Check dependency existence
         for task in &self.tasks {
             for dep_id in &task.dependencies {
                 if !ids.contains(dep_id) {
@@ -436,12 +436,12 @@ impl UnifiedDag {
             }
         }
 
-        // 3. 检查循环依赖
+        // 3. Check cyclic dependencies
         if self.has_cycle()? {
             return Err(DagValidationError::CycleDetected(self.find_cycle()?));
         }
 
-        // 4. 检查根节点
+        // 4. Check root nodes
         let has_root = self.tasks.iter().any(|t| t.dependencies.is_empty());
         if !has_root {
             return Err(DagValidationError::NoRootTask);
@@ -450,7 +450,7 @@ impl UnifiedDag {
         Ok(())
     }
 
-    /// 检测循环依赖
+    /// Detect cyclic dependencies
     fn has_cycle(&self) -> Result<bool> {
         let mut visited = HashSet::new();
         let mut recursion_stack = HashSet::new();
@@ -495,7 +495,7 @@ impl UnifiedDag {
         Ok(false)
     }
 
-    /// 查找循环路径
+    /// Find cycle path
     fn find_cycle(&self) -> Result<Vec<String>> {
         let mut path = Vec::new();
         let mut visited = HashSet::new();
@@ -529,7 +529,7 @@ impl UnifiedDag {
         if let Some(task) = task_map.get(task_id) {
             for (i, dep_id) in task.dependencies.iter().enumerate() {
                 if let Some(pos) = new_path.iter().position(|id| id == dep_id) {
-                    // 找到环，提取从环开始到结束的路径
+                    // Found cycle, extract path from cycle start to end
                     let cycle = new_path[pos..].to_vec();
                     cycle.push(dep_id.clone());
                     return Ok(Some(cycle));
@@ -546,18 +546,18 @@ impl UnifiedDag {
         Ok(None)
     }
 
-    /// 获取拓扑排序的任务列表
+    /// Get topologically sorted task list
     pub fn topological_order(&self) -> Result<Vec<String>, DagValidationError> {
         let mut in_degree: HashMap<String, usize> = HashMap::new();
         let mut adj: HashMap<String, Vec<String>> = HashMap::new();
 
-        // 初始化
+        // Initialize
         for task in &self.tasks {
             in_degree.insert(task.id.clone(), task.dependencies.len());
             adj.insert(task.id.clone(), Vec::new());
         }
 
-        // 构建邻接表
+        // Build adjacency list
         for task in &self.tasks {
             for dep_id in &task.dependencies {
                 adj.entry(dep_id.clone())
@@ -566,7 +566,7 @@ impl UnifiedDag {
             }
         }
 
-        // Kahn 算法
+        // Kahn's algorithm
         let mut queue: Vec<String> = in_degree.iter()
             .filter(|(_, &degree)| degree == 0)
             .map(|(id, _)| id.clone())
@@ -596,19 +596,19 @@ impl UnifiedDag {
         Ok(result)
     }
 
-    /// 获取任务索引（用于快速查找）
+    /// Get task index (for fast lookup)
     pub fn task_index(&self) -> HashMap<&str, &UnifiedTask> {
         self.tasks.iter()
             .map(|t| (t.id.as_str(), t))
             .collect()
     }
 
-    /// 获取任务
+    /// Get task
     pub fn get_task(&self, id: &str) -> Option<&UnifiedTask> {
         self.tasks.iter().find(|t| t.id == id)
     }
 
-    /// 获取根任务（无依赖的任务）
+    /// Get root tasks (tasks with no dependencies)
     pub fn root_tasks(&self) -> Vec<&UnifiedTask> {
         self.tasks.iter()
             .filter(|t| t.dependencies.is_empty())
@@ -617,7 +617,7 @@ impl UnifiedDag {
 }
 
 // ============================================================================
-// 错误类型
+// Error types
 // ============================================================================
 
 #[derive(Debug, thiserror::Error)]
@@ -639,7 +639,7 @@ pub enum DagValidationError {
 }
 
 // ============================================================================
-// 单元测试
+// Unit tests
 // ============================================================================
 
 #[cfg(test)]
@@ -707,7 +707,7 @@ mod tests {
     fn test_validate_duplicate_id() {
         let mut dag = create_test_unified_dag();
         let task2 = dag.tasks[1].clone();
-        dag.tasks.push(task2); // 添加重复任务
+        dag.tasks.push(task2); // Add duplicate task
 
         let result = dag.validate();
         assert!(matches!(result, Err(DagValidationError::DuplicateTaskId(_))));
@@ -800,7 +800,7 @@ mod tests {
 }
 
 // ============================================================================
-// Default 实现
+// Default implementations
 // ============================================================================
 
 impl Default for UnifiedTask {
