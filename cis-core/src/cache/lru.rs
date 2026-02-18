@@ -10,6 +10,7 @@
 //! - 缓存统计 (命中率、淘汰数等)
 //! - 自动过期清理
 //! - 批量操作支持
+//! - **P0-4 修复**: 使用 parking_lot::RwLock 避免写者饥饿
 //!
 //! ## 性能
 //!
@@ -17,42 +18,42 @@
 //! - 缓存未命中: < 100μs
 //! - 吞吐量: > 100K ops/sec
 //!
-//! ## 已知限制 (P0-4: Writer Starvation)
+//! ## P0-4: Writer Starvation 修复
 //!
-//! **当前实现** 使用 `tokio::sync::RwLock`，在高并发读场景下可能导致写者饥饿：
+//! ✅ **已修复**: 默认使用 `parking_lot::RwLock`，具有更好的写者优先策略
+//!
+//! ### 问题场景（已修复）
 //!
 //! ```text
-//! 问题场景:
+//! 之前 (tokio::sync::RwLock):
 //! 读请求 1 ─┐
 //! 读请求 2 ─┼─→ 持续不断的读操作
 //! 读请求 3 ─┘         ↓
-//! 写请求   ───────────→ 长时间等待 [WARNING]
+//! 写请求   ───────────→ 长时间等待 [WARNING: 写者饥饿]
+//!
+//! 现在 (parking_lot::RwLock):
+//! 读请求 1 ─┐
+//! 读请求 2 ─┼─→ 写者优先策略
+//! 读请求 3 ─┘    ↓
+//! 写请求   ─────→ ✅ 及时获得锁
 //! ```
 //!
-//! **解决方案** (推荐使用 parking_lot):
+//! ### Feature 控制
 //!
 //! ```toml
-//! # cis-core/Cargo.toml
-//! [dependencies]
-//! parking_lot = "0.12"
-//!
-//! [features]
+//! # 默认启用 parking_lot (推荐)
 //! default = ["parking_lot"]
-//! parking_lot = ["dep:parking_lot"]
+//!
+//! # 可选：禁用 parking_lot 使用 tokio::sync::RwLock
+//! # cargo build --no-default-features --features "encryption"
 //! ```
 //!
-//! ```rust
-//! #![cfg(feature = "parking_lot")]
-//! use parking_lot::RwLock;
+//! ### parking_lot 优势
 //!
-//! #![cfg(not(feature = "parking_lot"))]
-//! use tokio::sync::RwLock;
-//! ```
-//!
-//! **parking_lot 优势**:
-//! - 更好的写者优先策略
-//! - 更小的内存占用
-//! - 更快的锁操作（约 2x）
+//! - ✅ 更好的写者优先策略
+//! - ✅ 更小的内存占用
+//! - ✅ 更快的锁操作（约 2x）
+//! - ✅ 公平性保证
 //!
 //! ## 示例
 //!
@@ -88,11 +89,46 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+
+// P0-4: 条件编译选择 RwLock 实现
+// 默认使用 parking_lot::RwLock (更好的写者优先策略)
+// 可通过 --no-default-features 禁用 parking_lot，回退到 tokio::sync::RwLock
+#[cfg(feature = "parking_lot")]
+use parking_lot::RwLock;
+
+#[cfg(not(feature = "parking_lot"))]
 use tokio::sync::RwLock;
 
 use crate::types::{MemoryCategory, MemoryDomain};
 
 use super::config::CacheConfig;
+
+// P0-4: 宏来简化条件编译的锁获取
+macro_rules! acquire_write {
+    ($cache:expr) => {
+        #[cfg(feature = "parking_lot")]
+        {
+            $cache.write()
+        }
+        #[cfg(not(feature = "parking_lot"))]
+        {
+            $cache.write().await
+        }
+    };
+}
+
+macro_rules! acquire_read {
+    ($cache:expr) => {
+        #[cfg(feature = "parking_lot")]
+        {
+            $cache.read()
+        }
+        #[cfg(not(feature = "parking_lot"))]
+        {
+            $cache.read().await
+        }
+    };
+}
 
 /// 缓存统计指标
 #[derive(Debug, Default)]
@@ -390,7 +426,8 @@ impl LruCache {
             return None;
         }
 
-        let mut cache = self.cache.write().await;
+        // P0-4: 使用宏进行条件编译的锁获取
+        let mut cache = acquire_write!(&self.cache);
         self.metrics.record_request();
 
         // 检查过期
@@ -434,7 +471,8 @@ impl LruCache {
             return;
         }
 
-        let mut cache = self.cache.write().await;
+        // P0-4: 使用宏进行条件编译的锁获取
+        let mut cache = acquire_write!(&self.cache);
 
         // 检查容量，必要时淘汰
         if cache.entries.len() >= self.config.max_entries {
@@ -465,7 +503,8 @@ impl LruCache {
             return;
         }
 
-        let mut cache = self.cache.write().await;
+        // P0-4: 使用宏进行条件编译的锁获取
+        let mut cache = acquire_write!(&self.cache);
         cache.entries.remove(key);
         cache.remove_from_access_order(key);
         self.metrics.record_invalidation();
@@ -480,7 +519,8 @@ impl LruCache {
             return;
         }
 
-        let mut cache = self.cache.write().await;
+        // P0-4: 使用宏进行条件编译的锁获取
+        let mut cache = acquire_write!(&self.cache);
         for key in keys {
             cache.entries.remove(key);
             cache.remove_from_access_order(key);
@@ -492,7 +532,7 @@ impl LruCache {
     ///
     /// 移除所有缓存条目并重置统计。
     pub async fn clear(&self) {
-        let mut cache = self.cache.write().await;
+        let mut cache = acquire_write!(&self.cache);
         cache.entries.clear();
         cache.access_order.clear();
         cache.size = 0;
@@ -501,13 +541,13 @@ impl LruCache {
 
     /// 获取缓存大小
     pub async fn size(&self) -> usize {
-        let cache = self.cache.read().await;
+        let cache = acquire_read!(&self.cache);
         cache.len()
     }
 
     /// 检查缓存是否为空
     pub async fn is_empty(&self) -> bool {
-        let cache = self.cache.read().await;
+        let cache = acquire_read!(&self.cache);
         cache.is_empty()
     }
 
@@ -517,7 +557,7 @@ impl LruCache {
             return false;
         }
 
-        let cache = self.cache.read().await;
+        let cache = acquire_read!(&self.cache);
         cache.entries.contains_key(key)
     }
 
@@ -532,7 +572,7 @@ impl LruCache {
             return 0;
         }
 
-        let mut cache = self.cache.write().await;
+        let mut cache = acquire_write!(&self.cache);
         let count = cache.remove_expired_entries();
         self.metrics
             .expirations
@@ -581,7 +621,7 @@ impl LruCache {
 
     /// 获取缓存健康状态
     pub async fn health_check(&self) -> CacheHealth {
-        let cache = self.cache.read().await;
+        let cache = acquire_read!(&self.cache);
         let size = cache.len();
         let snapshot = self.get_metrics().await;
 

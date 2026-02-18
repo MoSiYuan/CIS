@@ -113,6 +113,9 @@ thiserror = "1.0"
 # UUID
 uuid = { version = "1.6", features = ["v4", "serde"] }
 
+# Concurrency (P0-4: RwLock 写者饥饿修复)
+parking_lot = { version = "0.12", optional = true }
+
 # Random
 rand = "0.8"
 
@@ -196,7 +199,7 @@ downcast-rs = "1.2"
 
 # Production features - REQUIRED for production builds
 # DO NOT disable these features in production - will cause compile errors
-default = ["encryption", "vector", "p2p", "wasm"]
+default = ["encryption", "vector", "p2p", "wasm", "parking_lot"]  # P0-4: 默认启用 parking_lot 避免写者饥饿
 
 # WASM Runtime Support
 # - wasm: Wasmer-based runtime (v1, stable)
