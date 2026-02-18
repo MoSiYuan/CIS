@@ -387,10 +387,6 @@ impl CisError {
         .with_severity(ErrorSeverity::Error)
         .with_suggestion("Check the DID configuration and key storage")
     }
-        )
-        .with_context("did", did)
-        .with_suggestion("Ensure the DID follows the did:peer format")
-    }
 
     // ========================================================================
     // Concurrency Errors

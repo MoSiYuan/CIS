@@ -29,7 +29,11 @@
 
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+// P1-8: 连接池支持
+use r2d2::{Pool, PooledConnection};
+use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::ai::embedding::{create_embedding_service_sync, EmbeddingConfig, EmbeddingService, cosine_similarity};
 use crate::error::{CisError, Result};
@@ -133,7 +137,7 @@ pub const DEFAULT_SIMILARITY_THRESHOLD: f32 = 0.6;
 /// ## 线程安全
 ///
 /// `VectorStorage` 是线程安全的，可以在多个线程间共享。
-/// 内部使用 `Arc<Mutex<rusqlite::Connection>>` 管理数据库连接。
+/// 内部使用 `r2d2::Pool` 管理数据库连接池 (P1-8: 连接池优化)。
 ///
 /// ## 示例
 ///
@@ -163,8 +167,8 @@ pub const DEFAULT_SIMILARITY_THRESHOLD: f32 = 0.6;
 /// # }
 /// ```
 pub struct VectorStorage {
-    /// SQLite 连接
-    conn: Arc<Mutex<Connection>>,
+    /// P1-8: SQLite 连接池 (替换 Arc<Mutex<Connection>>)
+    pool: Pool<SqliteConnectionManager>,
     /// 嵌入服务
     embedding: Arc<dyn EmbeddingService>,
     /// 数据库路径
@@ -346,9 +350,19 @@ impl VectorStorage {
                 .map_err(|e| CisError::storage(format!("Failed to create directory: {}", e)))?;
         }
 
-        // 打开连接（扩展会自动加载）
-        let conn = Connection::open(path)
-            .map_err(|e| CisError::storage(format!("Failed to open vector db: {}", e)))?;
+        // P1-8: 创建连接池 (替代单连接)
+        // 连接池配置: 最大 10 个连接，最小 1 个，超时 30 秒
+        let manager = SqliteConnectionManager::file(path);
+        let pool = Pool::builder()
+            .max_size(10)
+            .min_idle(Some(1))
+            .connection_timeout(std::time::Duration::from_secs(30))
+            .build(manager)
+            .map_err(|e| CisError::storage(format!("Failed to create connection pool: {}", e)))?;
+
+        // 从池中获取一个连接来配置 WAL 模式和初始化表
+        let conn = pool.get()
+            .map_err(|e| CisError::storage(format!("Failed to get connection from pool: {}", e)))?;
 
         // 配置 WAL 模式
         Self::configure_wal(&conn)?;
@@ -357,7 +371,7 @@ impl VectorStorage {
         let config = VectorConfig::default();
 
         let storage = Self {
-            conn: Arc::new(Mutex::new(conn)),
+            pool,
             embedding,
             path: path.to_path_buf(),
             config,
@@ -391,15 +405,25 @@ impl VectorStorage {
         #[cfg(all(feature = "vector", feature = "sqlite-vec"))]
         ensure_vec_extension_registered();
 
-        let conn = Connection::open(path)
-            .map_err(|e| CisError::storage(format!("Failed to open vector db: {}", e)))?;
+        // P1-8: 创建连接池 (替代单连接)
+        let manager = SqliteConnectionManager::file(path);
+        let pool = Pool::builder()
+            .max_size(10)
+            .min_idle(Some(1))
+            .connection_timeout(std::time::Duration::from_secs(30))
+            .build(manager)
+            .map_err(|e| CisError::storage(format!("Failed to create connection pool: {}", e)))?;
+
+        // 从池中获取连接来配置 WAL 模式
+        let conn = pool.get()
+            .map_err(|e| CisError::storage(format!("Failed to get connection from pool: {}", e)))?;
 
         Self::configure_wal(&conn)?;
 
         let config = VectorConfig::default();
 
         let storage = Self {
-            conn: Arc::new(Mutex::new(conn)),
+            pool,
             embedding,
             path: path.to_path_buf(),
             config,
@@ -453,7 +477,7 @@ impl VectorStorage {
     #[cfg(all(feature = "vector", feature = "sqlite-vec"))]
     fn create_vec_tables(&self) -> Result<()> {
         // 记忆嵌入表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS memory_embeddings USING vec0(
                 embedding FLOAT[768],
                 memory_id TEXT PRIMARY KEY,
@@ -464,7 +488,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create memory_embeddings table: {}", e)))?;
 
         // 消息嵌入表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS message_embeddings USING vec0(
                 embedding FLOAT[768],
                 message_id TEXT PRIMARY KEY,
@@ -478,7 +502,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create message_embeddings table: {}", e)))?;
 
         // 摘要嵌入表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS summary_embeddings USING vec0(
                 embedding FLOAT[768],
                 summary_id TEXT PRIMARY KEY,
@@ -491,7 +515,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create summary_embeddings table: {}", e)))?;
 
         // 技能意图向量表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS skill_intent_vec USING vec0(
                 embedding FLOAT[768],
                 skill_id TEXT PRIMARY KEY,
@@ -503,7 +527,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create skill_intent_vec table: {}", e)))?;
 
         // 技能能力向量表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS skill_capability_vec USING vec0(
                 embedding FLOAT[768],
                 skill_id TEXT PRIMARY KEY,
@@ -515,7 +539,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create skill_capability_vec table: {}", e)))?;
 
         // Task 标题向量表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS task_title_vec USING vec0(
                 embedding FLOAT[768],
                 task_id TEXT PRIMARY KEY
@@ -524,7 +548,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create task_title_vec table: {}", e)))?;
 
         // Task 描述向量表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS task_description_vec USING vec0(
                 embedding FLOAT[768],
                 task_id TEXT PRIMARY KEY
@@ -533,7 +557,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create task_description_vec table: {}", e)))?;
 
         // Task 结果向量表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS task_result_vec USING vec0(
                 embedding FLOAT[768],
                 task_id TEXT PRIMARY KEY
@@ -548,7 +572,7 @@ impl VectorStorage {
     #[cfg(not(all(feature = "vector", feature = "sqlite-vec")))]
     fn create_fallback_tables(&self) -> Result<()> {
         // 记忆嵌入表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE TABLE IF NOT EXISTS memory_embeddings (
                 memory_id TEXT PRIMARY KEY,
                 embedding BLOB NOT NULL,
@@ -559,7 +583,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create memory_embeddings table: {}", e)))?;
 
         // 消息嵌入表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE TABLE IF NOT EXISTS message_embeddings (
                 message_id TEXT PRIMARY KEY,
                 embedding BLOB NOT NULL,
@@ -573,7 +597,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create message_embeddings table: {}", e)))?;
 
         // 摘要嵌入表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE TABLE IF NOT EXISTS summary_embeddings (
                 summary_id TEXT PRIMARY KEY,
                 embedding BLOB NOT NULL,
@@ -586,7 +610,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create summary_embeddings table: {}", e)))?;
 
         // 技能意图向量表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE TABLE IF NOT EXISTS skill_intent_vec (
                 skill_id TEXT PRIMARY KEY,
                 embedding BLOB NOT NULL,
@@ -598,7 +622,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create skill_intent_vec table: {}", e)))?;
 
         // 技能能力向量表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE TABLE IF NOT EXISTS skill_capability_vec (
                 skill_id TEXT PRIMARY KEY,
                 embedding BLOB NOT NULL,
@@ -610,7 +634,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create skill_capability_vec table: {}", e)))?;
 
         // Task 标题向量表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE TABLE IF NOT EXISTS task_title_vec (
                 task_id TEXT PRIMARY KEY,
                 embedding BLOB NOT NULL
@@ -619,7 +643,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create task_title_vec table: {}", e)))?;
 
         // Task 描述向量表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE TABLE IF NOT EXISTS task_description_vec (
                 task_id TEXT PRIMARY KEY,
                 embedding BLOB NOT NULL
@@ -628,7 +652,7 @@ impl VectorStorage {
         ).map_err(|e| CisError::storage(format!("Failed to create task_description_vec table: {}", e)))?;
 
         // Task 结果向量表
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "CREATE TABLE IF NOT EXISTS task_result_vec (
                 task_id TEXT PRIMARY KEY,
                 embedding BLOB NOT NULL
@@ -647,53 +671,53 @@ impl VectorStorage {
         // sqlite-vec 虚拟表不支持标准索引，它们使用自己的向量搜索算法
         #[cfg(not(all(feature = "vector", feature = "sqlite-vec")))]
         {
-            self.conn.lock().unwrap().execute(
+            self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
                 "CREATE INDEX IF NOT EXISTS idx_memory_key ON memory_embeddings(key)",
                 [],
             ).map_err(|e| CisError::storage(format!("Failed to create index: {}", e)))?;
 
-            self.conn.lock().unwrap().execute(
+            self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
                 "CREATE INDEX IF NOT EXISTS idx_memory_category ON memory_embeddings(category)",
                 [],
             ).map_err(|e| CisError::storage(format!("Failed to create index: {}", e)))?;
 
-            self.conn.lock().unwrap().execute(
+            self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
                 "CREATE INDEX IF NOT EXISTS idx_message_room ON message_embeddings(room_id)",
                 [],
             ).map_err(|e| CisError::storage(format!("Failed to create index: {}", e)))?;
 
-            self.conn.lock().unwrap().execute(
+            self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
                 "CREATE INDEX IF NOT EXISTS idx_message_time ON message_embeddings(timestamp)",
                 [],
             ).map_err(|e| CisError::storage(format!("Failed to create index: {}", e)))?;
 
-            self.conn.lock().unwrap().execute(
+            self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
                 "CREATE INDEX IF NOT EXISTS idx_summary_room ON summary_embeddings(room_id)",
                 [],
             ).map_err(|e| CisError::storage(format!("Failed to create index: {}", e)))?;
 
-            self.conn.lock().unwrap().execute(
+            self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
                 "CREATE INDEX IF NOT EXISTS idx_skill_project ON skill_intent_vec(project)",
                 [],
             ).map_err(|e| CisError::storage(format!("Failed to create index: {}", e)))?;
 
-            self.conn.lock().unwrap().execute(
+            self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
                 "CREATE INDEX IF NOT EXISTS idx_skill_cap_project ON skill_capability_vec(project)",
                 [],
             ).map_err(|e| CisError::storage(format!("Failed to create index: {}", e)))?;
 
             // Task 向量表索引
-            self.conn.lock().unwrap().execute(
+            self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
                 "CREATE INDEX IF NOT EXISTS idx_task_title_id ON task_title_vec(task_id)",
                 [],
             ).map_err(|e| CisError::storage(format!("Failed to create index: {}", e)))?;
 
-            self.conn.lock().unwrap().execute(
+            self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
                 "CREATE INDEX IF NOT EXISTS idx_task_desc_id ON task_description_vec(task_id)",
                 [],
             ).map_err(|e| CisError::storage(format!("Failed to create index: {}", e)))?;
 
-            self.conn.lock().unwrap().execute(
+            self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
                 "CREATE INDEX IF NOT EXISTS idx_task_result_id ON task_result_vec(task_id)",
                 [],
             ).map_err(|e| CisError::storage(format!("Failed to create index: {}", e)))?;
@@ -735,7 +759,7 @@ impl VectorStorage {
         // sqlite-vec 虚拟表的 TEXT 列不接受 NULL，使用空字符串代替
         let category = category.unwrap_or("");
 
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding, key, category)
              VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![&memory_id, &vec_json, key, category],
@@ -764,7 +788,7 @@ impl VectorStorage {
         let embeddings = self.embedding.batch_embed(&text_refs).await?;
 
         // 事务批量插入
-        let conn = self.conn.lock().unwrap();
+        let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| CisError::storage(format!("Failed to start transaction: {}", e)))?;
@@ -909,7 +933,7 @@ impl VectorStorage {
     async fn search_memory_vec(&self, query_vec: &[f32], limit: usize, threshold: f32) -> Result<Vec<MemoryResult>> {
         let query_json = vec_to_json(query_vec);
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         let mut stmt = conn.prepare(
             "SELECT memory_id, key, category, distance
              FROM memory_embeddings
@@ -950,7 +974,7 @@ impl VectorStorage {
     /// 备用实现：暴力搜索记忆
     #[cfg(not(all(feature = "vector", feature = "sqlite-vec")))]
     async fn search_memory_fallback(&self, query_vec: &[f32], limit: usize, threshold: f32) -> Result<Vec<MemoryResult>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         let mut stmt = conn.prepare(
             "SELECT memory_id, key, category, embedding FROM memory_embeddings"
         ).map_err(|e| CisError::storage(format!("Failed to prepare query: {}", e)))?;
@@ -1010,7 +1034,7 @@ impl VectorStorage {
 
     /// 删除记忆索引
     pub fn delete_memory_index(&self, memory_id: &str) -> Result<bool> {
-        let rows = self.conn.lock().unwrap().execute(
+        let rows = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "DELETE FROM memory_embeddings WHERE memory_id = ?1",
             [memory_id],
         ).map_err(|e| CisError::storage(format!("Failed to delete memory index: {}", e)))?;
@@ -1024,7 +1048,7 @@ impl VectorStorage {
         let vec = self.embedding.embed(&msg.content).await?;
         let vec_json = vec_to_json(&vec);
 
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "INSERT OR REPLACE INTO message_embeddings (message_id, embedding, room_id, sender, content, timestamp, message_type)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
@@ -1050,7 +1074,7 @@ impl VectorStorage {
         let texts: Vec<_> = messages.iter().map(|m| m.content.as_str()).collect();
         let embeddings = self.embedding.batch_embed(&texts).await?;
 
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         let tx = conn
             .transaction()
             .map_err(|e| CisError::storage(format!("Failed to start transaction: {}", e)))?;
@@ -1116,7 +1140,7 @@ impl VectorStorage {
              ORDER BY distance"
         };
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         let mut stmt = conn
             .prepare(sql)
             .map_err(|e| CisError::storage(format!("Failed to prepare query: {}", e)))?;
@@ -1182,7 +1206,7 @@ impl VectorStorage {
              vec![])
         };
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         let mut stmt = conn.prepare(sql)
             .map_err(|e| CisError::storage(format!("Failed to prepare query: {}", e)))?;
 
@@ -1229,7 +1253,7 @@ impl VectorStorage {
 
     /// 删除消息索引
     pub fn delete_message_index(&self, message_id: &str) -> Result<bool> {
-        let rows = self.conn.lock().unwrap().execute(
+        let rows = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "DELETE FROM message_embeddings WHERE message_id = ?1",
             [message_id],
         ).map_err(|e| CisError::storage(format!("Failed to delete message index: {}", e)))?;
@@ -1250,7 +1274,7 @@ impl VectorStorage {
         let vec = self.embedding.embed(summary_text).await?;
         let vec_json = vec_to_json(&vec);
 
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "INSERT OR REPLACE INTO summary_embeddings (summary_id, embedding, room_id, summary_text, start_time, end_time)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![summary_id, &vec_json, room_id, summary_text, start_time, end_time],
@@ -1297,7 +1321,7 @@ impl VectorStorage {
              ORDER BY distance"
         };
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         let mut stmt = conn
             .prepare(sql)
             .map_err(|e| CisError::storage(format!("Failed to prepare query: {}", e)))?;
@@ -1363,7 +1387,7 @@ impl VectorStorage {
              vec![])
         };
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         let mut stmt = conn.prepare(sql)
             .map_err(|e| CisError::storage(format!("Failed to prepare query: {}", e)))?;
 
@@ -1416,7 +1440,7 @@ impl VectorStorage {
         let intent_vec = self.embedding.embed(&semantics.intent_description).await?;
         let intent_json = vec_to_json(&intent_vec);
 
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "INSERT OR REPLACE INTO skill_intent_vec (skill_id, embedding, skill_name, description, project)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![
@@ -1432,7 +1456,7 @@ impl VectorStorage {
         let cap_vec = self.embedding.embed(&semantics.capability_description).await?;
         let cap_json = vec_to_json(&cap_vec);
 
-        self.conn.lock().unwrap().execute(
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "INSERT OR REPLACE INTO skill_capability_vec (skill_id, embedding, skill_name, description, project)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![
@@ -1475,7 +1499,7 @@ impl VectorStorage {
                 (intent_sql.to_string(), vec![])
             };
 
-            let conn = self.conn.lock().unwrap();
+            let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
             let mut stmt = conn
                 .prepare(&sql)
                 .map_err(|e| CisError::storage(format!("Failed to prepare intent query: {}", e)))?;
@@ -1520,7 +1544,7 @@ impl VectorStorage {
                 (cap_sql.to_string(), vec![])
             };
 
-            let conn = self.conn.lock().unwrap();
+            let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
             let mut stmt = conn
                 .prepare(&sql)
                 .map_err(|e| CisError::storage(format!("Failed to prepare cap query: {}", e)))?;
@@ -1575,12 +1599,12 @@ impl VectorStorage {
 
     /// 删除技能索引
     pub fn delete_skill_index(&self, skill_id: &str) -> Result<bool> {
-        let intent_rows = self.conn.lock().unwrap().execute(
+        let intent_rows = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "DELETE FROM skill_intent_vec WHERE skill_id = ?1",
             [skill_id],
         ).map_err(|e| CisError::storage(format!("Failed to delete skill intent: {}", e)))?;
 
-        let cap_rows = self.conn.lock().unwrap().execute(
+        let cap_rows = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?.execute(
             "DELETE FROM skill_capability_vec WHERE skill_id = ?1",
             [skill_id],
         ).map_err(|e| CisError::storage(format!("Failed to delete skill capability: {}", e)))?;
@@ -1595,9 +1619,9 @@ impl VectorStorage {
         &self.path
     }
 
-    /// 获取底层连接
-    pub fn conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
-        self.conn.lock().unwrap()
+    /// P1-8: 获取连接池中的连接
+    pub fn conn(&self) -> PooledConnection<SqliteConnectionManager> {
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e))).unwrap()
     }
 
     /// 获取配置
@@ -1612,7 +1636,7 @@ impl VectorStorage {
 
     /// 执行 checkpoint
     pub fn checkpoint(&self) -> Result<()> {
-        self.conn.lock().unwrap()
+        self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?
             .execute("PRAGMA wal_checkpoint(TRUNCATE)", [])
             .map_err(|e| CisError::storage(format!("Failed to checkpoint: {}", e)))?;
         Ok(())
@@ -1635,7 +1659,7 @@ impl VectorStorage {
     /// 根据配置创建HNSW索引以优化向量搜索性能。
     /// HNSW (Hierarchical Navigable Small World) 是一种高效的近似最近邻搜索算法。
     pub fn create_hnsw_indexes(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         
         // 为 memory_embeddings 创建 HNSW 索引表
         conn.execute(
@@ -1719,7 +1743,7 @@ impl VectorStorage {
         
         // 迁移 memory_embeddings 数据
         {
-            let conn = self.conn.lock().unwrap();
+            let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
             let mut stmt = conn.prepare(
                 "SELECT memory_id, embedding, key, category FROM memory_embeddings"
             ).map_err(|e| CisError::storage(format!("Failed to prepare migration query: {}", e)))?;
@@ -1767,7 +1791,7 @@ impl VectorStorage {
         let threshold = threshold.unwrap_or(DEFAULT_SIMILARITY_THRESHOLD);
         let query_bytes = serialize_f32_vec(&query_vec);
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         
         // 检查 HNSW 表是否存在且有数据
         let hnsw_count: i64 = conn.query_row(
@@ -1823,7 +1847,7 @@ impl VectorStorage {
 
     /// 性能监控：获取索引统计
     pub fn index_stats(&self) -> Result<IndexStats> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.pool.get().map_err(|e| CisError::storage(format!("Failed to get connection: {}", e)))?;
         
         let memory_count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM memory_embeddings",

@@ -324,37 +324,11 @@ impl BatchVectorLoader {
     /// 从数据库加载向量批次（异步接口）
     ///
     /// # 参数
-    /// - `loader_fn`: 加载函数 (返回向量数据)
+    /// - `vectors`: 已加载的向量数据
     ///
     /// # 返回
-    /// - `Result<VectorBatch>`: 加载的向量批次
-    pub async fn load_from_loader<F, Fut>(
-        &self,
-        loader_fn: F,
-    ) -> Result<VectorBatch>
-    where
-        F: FnOnce() -> Fut + Send + Sync,
-        Fut: Future<Output = Result<Vec<(VectorId, Vec<f32>)>> + Send + 'static,
-    {
-        // 在任务池中执行加载
-        let batch_size = self.batch_size;
-        let parallelism = self.parallelism;
-
-        let vectors = tokio::task::spawn_blocking(move || {
-            // 调用加载函数
-            let loaded = loader_fn();
-
-            // 使用 rayon 并行池
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(parallelism)
-                .build()
-                .map_err(|e| CisError::other(format!("Failed to create thread pool: {}", e)))?;
-
-            pool.install(|| loaded)
-        })
-        .await
-        .map_err(|e| CisError::other(format!("Loader task failed: {}", e)))?;
-
+    /// - `Result<VectorBatch>`: 向量批次
+    pub async fn load_from_vectors(&self, vectors: Vec<(VectorId, Vec<f32>)>) -> Result<VectorBatch> {
         VectorBatch::from_vectors(vectors)
     }
 

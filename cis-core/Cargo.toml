@@ -35,6 +35,10 @@ rpassword = "7.3"
 rusqlite = { version = "0.32", features = ["bundled", "backup", "hooks"] }
 sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "macros"], optional = true }
 
+# Connection pool for SQLite (P1-8: 向量存储连接池)
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
+
 # Vector extension for SQLite
 sqlite-vec = { version = "0.1", optional = true }
 
@@ -115,6 +119,12 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 
 # Concurrency (P0-4: RwLock 写者饥饿修复)
 parking_lot = { version = "0.12", optional = true }
+
+# Parallel processing (for batch_loader)
+rayon = "1.8"
+
+# LRU cache
+lru = "0.12"
 
 # Random
 rand = "0.8"
