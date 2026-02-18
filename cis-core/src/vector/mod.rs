@@ -1,16 +1,16 @@
 //! # Vector Intelligence Module
 //!
-//! 提供基于向量的语义检索能力，支持记忆、消息、技能等数据的智能搜索。
+//! Provides vector-based semantic retrieval capabilities, supporting intelligent search of memory, messages, skills, and other data.
 //!
-//! ## 主要组件
+//! ## Main Components
 //!
-//! - `storage::VectorStorage`: 核心向量存储，基于 sqlite-vec
-//! - `batch::BatchProcessor`: 批量处理器，异步批量化索引
-//! - `batch_loader::BatchVectorLoader`: 批量向量加载优化
-//! - `switch::IndexMonitor`: 智能索引切换策略
-//! - `merger::ResultMerger`: 搜索结果合并器
-//! - `adaptive_threshold::AdaptiveThreshold`: 自适应阈值调整器
-//! - `embedding`: 文本向量化服务（见 `crate::ai::embedding`）
+//! - `storage::VectorStorage`: Core vector storage based on sqlite-vec
+//! - `batch::BatchProcessor`: Batch processor for asynchronous batch indexing
+//! - `batch_loader::BatchVectorLoader`: Batch vector loading optimization
+//! - `switch::IndexMonitor`: Smart index switching strategy
+//! - `merger::ResultMerger`: Search result merger
+//! - `adaptive_threshold::AdaptiveThreshold`: Adaptive threshold adjuster
+//! - `embedding`: Text vectorization service (see `crate::ai::embedding`)
 //!
 //! ## 使用示例
 //!

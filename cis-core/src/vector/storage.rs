@@ -1,16 +1,16 @@
 //! # VectorStorage
 //!
-//! 统一向量存储，支持记忆、消息、技能等多种数据的语义检索。
+//! Unified vector storage supporting semantic retrieval of memory, messages, skills, and other data.
 //!
-//! ## 功能
+//! ## Features
 //!
-//! - 记忆嵌入存储和检索
-//! - 消息对话历史检索
-//! - 技能语义注册和匹配
-//! - HNSW 索引优化
-//! - 批量索引处理
+//! - Memory embedding storage and retrieval
+//! - Message conversation history retrieval
+//! - Skill semantic registration and matching
+//! - HNSW index optimization
+//! - Batch index processing
 //!
-//! ## 示例
+//! ## Examples
 //!
 //! ```rust,no_run
 //! use cis_core::vector::VectorStorage;
@@ -18,11 +18,11 @@
 //! # async fn example() -> anyhow::Result<()> {
 //! let storage = VectorStorage::open_default()?;
 //!
-//! // 索引记忆
+//! // Index memory
 //! storage.index_memory("key", b"value", Some("category")).await?;
 //!
-//! // 语义搜索
-//! let results = storage.search_memory("查询", 5, Some(0.7)).await?;
+//! // Semantic search
+//! let results = storage.search_memory("query", 5, Some(0.7)).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -40,34 +40,34 @@ use crate::error::{CisError, Result};
 use crate::memory::MemoryEntryExt;
 // use crate::types::{MemoryCategory, MemoryDomain};
 
-/// HNSW (Hierarchical Navigable Small World) 索引配置
+/// HNSW (Hierarchical Navigable Small World) index configuration
 ///
-/// HNSW 是一种高效的近似最近邻搜索算法，适用于大规模向量检索。
+/// HNSW is an efficient approximate nearest neighbor search algorithm for large-scale vector retrieval.
 ///
-/// ## 配置参数
+/// ## Configuration Parameters
 ///
-/// - `m`: 每个节点的最大连接数，控制图的密度。较大的值提高召回率但增加内存使用。
-/// - `ef_construction`: 构建时的搜索宽度，影响索引质量。较大的值构建更慢但搜索更准确。
-/// - `ef_search`: 搜索时的搜索宽度，影响查询性能和准确率。
+/// - `m`: Maximum connections per node, controls graph density. Larger values improve recall but increase memory usage.
+/// - `ef_construction`: Search width during construction, affects index quality. Larger values build slower but search more accurately.
+/// - `ef_search`: Search width during query, affects query performance and accuracy.
 ///
-/// ## 示例
+/// ## Examples
 ///
 /// ```rust
 /// use cis_core::vector::HnswConfig;
 ///
 /// let config = HnswConfig {
-///     m: 32,                    // 更高密度的图
-///     ef_construction: 200,     // 更高质量的索引
-///     ef_search: 128,           // 更准确的搜索
+///     m: 32,                    // Higher density graph
+///     ef_construction: 200,     // Higher quality index
+///     ef_search: 128,           // More accurate search
 /// };
 /// ```
 #[derive(Debug, Clone)]
 pub struct HnswConfig {
-    /// 每个节点的最大连接数
+    /// Maximum connections per node
     pub m: usize,
-    /// 构建时的搜索宽度
+    /// Search width during construction
     pub ef_construction: usize,
-    /// 搜索时的搜索宽度
+    /// Search width during query
     pub ef_search: usize,
 }
 
@@ -81,11 +81,11 @@ impl Default for HnswConfig {
     }
 }
 
-/// 向量存储配置
+/// Vector storage configuration
 ///
-/// 配置向量存储的各项参数，包括 HNSW 索引、向量维度和批处理大小。
+/// Configures various parameters for vector storage, including HNSW index, vector dimension, and batch size.
 ///
-/// ## 示例
+/// ## Examples
 ///
 /// ```rust
 /// use cis_core::vector::{VectorConfig, HnswConfig};
@@ -98,11 +98,11 @@ impl Default for HnswConfig {
 /// ```
 #[derive(Debug, Clone)]
 pub struct VectorConfig {
-    /// HNSW 索引配置
+    /// HNSW index configuration
     pub hnsw: HnswConfig,
-    /// 向量维度（默认 768）
+    /// Vector dimension (default 768)
     pub dimension: usize,
-    /// 批量处理大小
+    /// Batch processing size
     pub batch_size: usize,
 }
 
@@ -116,49 +116,49 @@ impl Default for VectorConfig {
     }
 }
 
-/// 索引统计信息
+/// Index statistics
 #[derive(Debug, Clone)]
 pub struct IndexStats {
     pub memory_entries: i64,
     pub skill_entries: i64,
 }
 
-/// 向量维度
+/// Vector dimension
 pub const EMBEDDING_DIM: usize = 768;
 
-/// 默认相似度阈值
+/// Default similarity threshold
 pub const DEFAULT_SIMILARITY_THRESHOLD: f32 = 0.6;
 
-/// 统一向量存储
+/// Unified vector storage
 ///
-/// 基于 sqlite-vec 的向量存储，支持记忆、消息、技能等多种数据的语义检索。
-/// 使用 HNSW 索引优化搜索性能，支持批量索引处理。
+/// Vector storage based on sqlite-vec, supporting semantic retrieval of memory, messages, skills, and other data.
+/// Uses HNSW index for optimized search performance and supports batch index processing.
 ///
-/// ## 线程安全
+/// ## Thread Safety
 ///
-/// `VectorStorage` 是线程安全的，可以在多个线程间共享。
-/// 内部使用 `r2d2::Pool` 管理数据库连接池 (P1-8: 连接池优化)。
+/// `VectorStorage` is thread-safe and can be shared across multiple threads.
+/// Internally uses `r2d2::Pool` for database connection management (P1-8: connection pool optimization).
 ///
-/// ## 示例
+/// ## Examples
 ///
 /// ```rust,no_run
 /// use cis_core::vector::VectorStorage;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// // 打开默认路径的存储
+/// // Open storage at default path
 /// let storage = VectorStorage::open_default()?;
 ///
-/// // 或指定路径
+/// // Or specify custom path
 /// let storage = VectorStorage::open(
 ///     Path::new("/path/to/vector.db"),
 ///     None
 /// )?;
 ///
-/// // 索引记忆
+/// // Index memory
 /// let memory_id = storage.index_memory("pref/dark_mode", b"Enable dark mode", Some("settings")).await?;
 ///
-/// // 语义搜索
+/// // Semantic search
 /// let results = storage.search_memory("night theme", 5, Some(0.7)).await?;
 /// for result in results {
 ///     println!("{}: {:.2}", result.key, result.similarity);
