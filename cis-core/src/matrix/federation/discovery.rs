@@ -49,7 +49,6 @@ pub struct PeerDiscovery {
     enable_mdns: bool,
     
     /// mDNS service name
-    #[allow(dead_code)]
     mdns_service_name: String,
     
     /// This server's name

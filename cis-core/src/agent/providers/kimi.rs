@@ -10,7 +10,6 @@ use crate::error::{CisError, Result};
 
 /// Kimi Code Provider
 pub struct KimiProvider {
-    #[allow(dead_code)]
     config: AgentConfig,
     /// 命令白名单验证器
     whitelist: CommandWhitelist,

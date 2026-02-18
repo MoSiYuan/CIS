@@ -38,7 +38,6 @@ pub struct WebSocketServer {
     /// This node's DID
     node_did: String,
     /// DID manager for authentication
-    #[allow(dead_code)]
     did_manager: Arc<DIDManager>,
     /// Shutdown signal sender
     shutdown_tx: Option<mpsc::Sender<()>>,
@@ -249,7 +248,6 @@ struct ConnectionHandler {
     /// This node's DID
     node_did: String,
     /// DID manager for authentication
-    #[allow(dead_code)]
     did_manager: Arc<DIDManager>,
     /// Remote node ID (set after auth)
     remote_node_id: Option<String>,

@@ -218,7 +218,6 @@ pub struct SyncQueue {
     /// Task receiver (stored for cloning)
     task_rx: Arc<Mutex<mpsc::Receiver<SyncTask>>>,
     /// Batch sender
-    #[allow(dead_code)]
     batch_tx: mpsc::Sender<BatchOperation>,
     /// Shutdown signal
     shutdown_tx: Arc<Mutex<Option<mpsc::Sender<()>>>>,
@@ -530,7 +529,6 @@ impl SyncQueue {
     }
 
     /// Create a batch key from node and room
-    #[allow(dead_code)]
     fn batch_key(node_id: &str, room_id: &str) -> String {
         format!("{}:{}", node_id, room_id)
     }

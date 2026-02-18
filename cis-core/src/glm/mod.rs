@@ -72,7 +72,6 @@ pub struct GlmApiState {
 pub struct MatrixHttpClient {
     server_url: String,
     access_token: String,
-    #[allow(dead_code)]
     user_id: String,
 }
 

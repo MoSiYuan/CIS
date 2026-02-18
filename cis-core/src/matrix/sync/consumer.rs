@@ -61,7 +61,6 @@ pub enum SyncResult {
 
 /// 等待中的同步请求
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 struct PendingRequest {
     /// 请求 ID
     request_id: String,

@@ -85,7 +85,6 @@ pub(crate) struct FederationState {
     store: Arc<MatrixStore>,
     
     /// Known peers
-    #[allow(dead_code)]
     peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
 }
 
@@ -632,7 +631,6 @@ async fn save_event_to_store(
 ///
 /// Deletes federation events older than the specified retention period.
 /// Default retention is 30 days.
-#[allow(dead_code)]
 pub(crate) async fn cleanup_expired_events(state: &FederationState, retention_days: Option<i64>) -> Result<usize, MatrixError> {
     let days = retention_days.unwrap_or(30);
     
@@ -656,7 +654,6 @@ pub(crate) async fn cleanup_expired_events(state: &FederationState, retention_da
 /// Start periodic cleanup task for federation events
 ///
 /// This spawns a background task that periodically cleans up expired events.
-#[allow(dead_code)]
 pub(crate) fn start_cleanup_task(state: FederationState, interval_hours: u64, retention_days: Option<i64>) {
     let interval = std::time::Duration::from_secs(interval_hours * 3600);
     

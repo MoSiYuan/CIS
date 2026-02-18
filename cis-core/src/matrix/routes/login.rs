@@ -31,7 +31,6 @@ pub enum LoginRequest {
     Password {
         identifier: Option<UserIdentifier>,
         user: Option<String>,
-        #[allow(dead_code)]
         password: String,
         device_id: Option<String>,
         initial_device_display_name: Option<String>,

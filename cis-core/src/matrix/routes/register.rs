@@ -27,7 +27,6 @@ pub struct RegisterRequest {
     
     /// Password (optional for CIS, may use DID signature instead)
     #[serde(rename = "password", default)]
-    #[allow(dead_code)]
     pub password: Option<String>,
     
     /// Device ID
@@ -40,7 +39,6 @@ pub struct RegisterRequest {
     
     /// Authentication flows (for UIAA)
     #[serde(rename = "auth", default)]
-    #[allow(dead_code)]
     pub auth: Option<serde_json::Value>,
 }
 

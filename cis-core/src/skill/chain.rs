@@ -782,7 +782,6 @@ pub struct ChainOrchestrator {
     /// 已注册的链模板
     templates: HashMap<String, ChainTemplate>,
     /// 兼容性缓存
-    #[allow(dead_code)]
     compatibility_cache: HashMap<(String, String), f32>,
     /// 模板向量缓存: 模板名称 -> 嵌入向量
     template_embeddings: HashMap<String, Vec<f32>>,

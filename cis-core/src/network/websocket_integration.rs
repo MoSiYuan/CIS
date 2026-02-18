@@ -143,7 +143,6 @@ pub struct WebSocketAuthenticator {
     connections: Arc<RwLock<HashMap<String, AuthenticatedConnection>>>,
     
     /// Challenge timeout
-    #[allow(dead_code)]
     challenge_timeout: Duration,
 }
 

@@ -217,7 +217,6 @@ pub struct AgentSession {
     /// Forwarder thread handle
     forwarder_handle: Option<JoinHandle<()>>,
     /// Sandbox configuration
-    #[allow(dead_code)]
     sandbox_config: SandboxConfig,
     /// Shutdown signal sender
     shutdown_tx: Option<mpsc::Sender<()>>,
@@ -671,7 +670,6 @@ pub struct SessionManager {
     /// Network ACL for verification
     acl: Arc<RwLock<NetworkAcl>>,
     /// DID manager
-    #[allow(dead_code)]
     did_manager: Arc<DIDManager>,
     /// Default sandbox config
     default_sandbox: SandboxConfig,

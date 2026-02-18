@@ -213,7 +213,6 @@ impl AgentClusterExecutor {
     }
     
     /// Start a single task (internal, uses DagRun)
-    #[allow(dead_code)]
     async fn start_task(&self, run: &DagRun, task_id: &str, command: &str) -> Result<()> {
         // Get dependencies for this task
         let upstream_deps = run.dag.get_task_dependencies(task_id);
@@ -463,7 +462,6 @@ impl AgentClusterExecutor {
     }
     
     /// Prepare upstream context for a task
-    #[allow(dead_code)]
     async fn prepare_upstream_context(&self, run: &DagRun, task_id: &str) -> String {
         // Get dependencies
         if let Some(node) = run.dag.get_node(task_id) {

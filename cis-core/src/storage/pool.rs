@@ -52,7 +52,6 @@ impl Default for PoolConfig {
 struct PooledConnection {
     conn: MultiDbConnection,
     checked_out_at: Option<std::time::Instant>,
-    #[allow(dead_code)]
     created_at: std::time::Instant,
 }
 

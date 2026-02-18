@@ -55,7 +55,6 @@ impl UserInput {
 }
 
 /// Skill DAG 执行器
-#[allow(dead_code)]
 pub struct SkillDagExecutor {
     /// DAG 调度器
     scheduler: DagScheduler,
@@ -71,7 +70,6 @@ pub struct SkillDagExecutor {
     input_tx: mpsc::Sender<UserInput>,
 }
 
-#[allow(dead_code)]
 #[allow(clippy::await_holding_lock)]
 impl SkillDagExecutor {
     /// 创建新的执行器
