@@ -2,13 +2,13 @@
 
 > **更新时间**: 2026-02-18
 > **版本**: v1.1.7
-> **进度**: 9/304 文件已完成 (3%)
+> **进度**: 10/304 文件已完成 (3%)
 
 ---
 
 ## 本次会话新增翻译
 
-### 已完成文件 (9 files)
+### 已完成文件 (10 files)
 
 | 文件 | 状态 | 提交 |
 |------|------|------|
@@ -19,14 +19,15 @@
 | vector/storage.rs | ✅ | af7ab22 |
 | cis-core/src/cache/lru.rs | ✅ | (已修改) |
 | scheduler/mod.rs | ✅ | 95cdb2c |
+| scheduler/converters.rs | ✅ | 7ea08b4 |
 
 ---
 
 ## 待处理高优先级文件
 
-### scheduler 模块 (✅ 已完成 mod.rs)
+### scheduler 模块 (✅ 已完成 mod.rs, converters.rs)
 - [x] scheduler/mod.rs (58 个中文注释) ✅ 95cdb2c
-- [ ] scheduler/converters.rs (27 个)
+- [x] scheduler/converters.rs (27 个中文注释) ✅ 7ea08b4
 - [ ] scheduler/notify.rs (31 个)
 
 ### storage 模块
@@ -98,8 +99,8 @@ head -20 /tmp/chinese_files.txt
 3. 批量处理其他核心模块
 
 ### 工作量估计
-- **已完成**: 9 个文件 (~2.5 小时)
-- **剩余**: 295 个文件
+- **已完成**: 10 个文件 (~3 小时)
+- **剩余**: 294 个文件
 - **估计时间**:
   - 自动化翻译 + 审查: 1-2 天
   - 人工翻译: 3-5 天
@@ -108,4 +109,7 @@ head -20 /tmp/chinese_files.txt
 
 **状态**: 进行中 (3% → 3%)
 
-**备注**: scheduler/mod.rs 是 scheduler 模块最大的文件，包含 58 个中文注释，现已全部翻译完成。剩余 scheduler 子模块 (converters.rs, notify.rs 等) 待处理。
+**备注**:
+- ✅ scheduler/mod.rs: 58 个中文注释已翻译
+- ✅ scheduler/converters.rs: 27 个中文注释已翻译
+- ⏳ scheduler/notify.rs: 31 个中文注释待处理 (下一个目标)
