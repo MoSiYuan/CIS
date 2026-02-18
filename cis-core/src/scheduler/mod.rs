@@ -61,12 +61,14 @@ pub mod execution;
 pub mod persistence;
 pub mod events;
 pub mod error;
+pub mod node_selector;  // P1-10: 异构任务路由
 
 // 重新导出新模块的类型
 pub use core::{DagScheduler, SchedulerDagError, SchedulerDagNode, DagStats, SchedulerCore, TaskQueue, TaskQueueItem, TaskQueueError, TaskQueueStats};
 pub use execution::{Executor, ExecutionResult, ExecutorStats, SyncExecutor, ParallelExecutor};
 pub use events::{SchedulerEvent, SchedulerEventType, EventListener, EventRegistry, LoggingEventListener};
 pub use persistence::{Persistence, SqlitePersistence, MemoryPersistence};
+pub use node_selector::{NodeSelector, NodeInfo, NodeResources, NodeSelectorFilter};  // P1-10
 // error 模块导出 Result 类型
 pub use error::Result as SchedulerResult;
 
@@ -150,23 +152,27 @@ pub struct DagTask {
     pub dependencies: Vec<String>,
     pub skill_id: Option<String>,
     pub level: TaskLevel,
-    
+
     // === 新增字段 ===
     /// 指定使用的 Agent Runtime
     #[serde(default)]
     pub agent_runtime: Option<RuntimeType>,
-    
+
     /// 复用已有 Agent ID（同 DAG 内）
     #[serde(default)]
     pub reuse_agent: Option<String>,
-    
+
     /// 是否保持 Agent（执行后不销毁）
     #[serde(default = "default_keep_agent")]
     pub keep_agent: bool,
-    
+
     /// Agent 配置（创建新 Agent 时用）
     #[serde(default)]
     pub agent_config: Option<AgentConfig>,
+
+    /// P1-10: 节点选择器（异构任务路由）
+    #[serde(default)]
+    pub node_selector: Option<crate::scheduler::node_selector::NodeSelector>,
 }
 
 fn default_keep_agent() -> bool {
@@ -203,23 +209,27 @@ pub struct DagNode {
     pub level: TaskLevel,
     /// Rollback commands
     pub rollback: Option<Vec<String>>,
-    
+
     // === Agent Teams 相关字段 ===
     /// 指定使用的 Agent Runtime
     #[serde(default)]
     pub agent_runtime: Option<RuntimeType>,
-    
+
     /// 复用已有 Agent ID（同 DAG 内）
     #[serde(default)]
     pub reuse_agent: Option<String>,
-    
+
     /// 是否保持 Agent（执行后不销毁）
     #[serde(default)]
     pub keep_agent: bool,
-    
+
     /// Agent 配置（创建新 Agent 时用）
     #[serde(default)]
     pub agent_config: Option<AgentConfig>,
+
+    /// P1-10: 节点选择器（异构任务路由）
+    #[serde(default)]
+    pub node_selector: Option<crate::scheduler::node_selector::NodeSelector>,
 }
 
 impl DagNode {
@@ -236,6 +246,7 @@ impl DagNode {
             reuse_agent: None,
             keep_agent: false,
             agent_config: None,
+            node_selector: None,  // P1-10
         }
     }
 
