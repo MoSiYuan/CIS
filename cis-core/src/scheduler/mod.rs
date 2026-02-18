@@ -55,24 +55,24 @@ impl std::fmt::Display for DagError {
 
 impl std::error::Error for DagError {}
 
-// ===== 新模块结构 (v1.1.6) =====
+// ===== New module structure (v1.1.6) =====
 pub mod core;
 pub mod execution;
 pub mod persistence;
 pub mod events;
 pub mod error;
-pub mod node_selector;  // P1-10: 异构任务路由
+pub mod node_selector;  // P1-10: Heterogeneous task routing
 
-// 重新导出新模块的类型
+// Re-export new module types
 pub use core::{DagScheduler, SchedulerDagError, SchedulerDagNode, DagStats, SchedulerCore, TaskQueue, TaskQueueItem, TaskQueueError, TaskQueueStats};
 pub use execution::{Executor, ExecutionResult, ExecutorStats, SyncExecutor, ParallelExecutor};
 pub use events::{SchedulerEvent, SchedulerEventType, EventListener, EventRegistry, LoggingEventListener};
 pub use persistence::{Persistence, SqlitePersistence, MemoryPersistence};
 pub use node_selector::{NodeSelector, NodeInfo, NodeResources, NodeSelectorFilter};  // P1-10
-// error 模块导出 Result 类型
+// error module exports Result type
 pub use error::Result as SchedulerResult;
 
-// ===== 旧模块（保持向后兼容） =====
+// ===== Old modules (maintain backward compatibility) =====
 pub mod event_driven;
 pub mod local_executor;
 pub mod multi_agent_executor;
@@ -83,13 +83,13 @@ pub mod skill_executor;
 pub mod skill_executor_unified;
 pub mod todo_monitor;
 
-// 重新导出旧的 persistence 类型
+// Re-export old persistence types
 pub use persistence_old::{DagPersistence, TaskExecution, TaskExecutionStatus};
 
-// DAG 定义统一模块（v1.1.6 新增）
+// DAG definition unified module (added in v1.1.6)
 pub mod converters;
 
-// DAG 统一集成测试
+// DAG unified integration tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,7 +106,7 @@ pub use notify::{
     CompletionNotifier, ErrorNotifier, ErrorSeverity, NotificationBundle, ReadyNotify,
     TaskCompletion, TaskError,
 };
-// 重新导出旧的 persistence 类型
+// Re-export old persistence types
 pub use old_persistence::{DagPersistence, TaskExecution, TaskExecutionStatus};
 pub use skill_executor::SkillDagExecutor;
 pub use todo_monitor::{TodoListMonitor, TodoChangeEvent, TodoListLoader, FileSystemLoader};
@@ -145,7 +145,7 @@ pub enum DagNodeStatus {
     Debt(FailureType),
 }
 
-/// DagTask - DAG 任务定义（用于 YAML 解析和内部使用）
+/// DagTask - DAG task definition (for YAML parsing and internal use)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DagTask {
     pub task_id: String,
@@ -153,24 +153,24 @@ pub struct DagTask {
     pub skill_id: Option<String>,
     pub level: TaskLevel,
 
-    // === 新增字段 ===
-    /// 指定使用的 Agent Runtime
+    // === New fields ===
+    /// Specify the Agent Runtime to use
     #[serde(default)]
     pub agent_runtime: Option<RuntimeType>,
 
-    /// 复用已有 Agent ID（同 DAG 内）
+    /// Reuse existing Agent ID (within same DAG)
     #[serde(default)]
     pub reuse_agent: Option<String>,
 
-    /// 是否保持 Agent（执行后不销毁）
+    /// Whether to keep Agent (don't destroy after execution)
     #[serde(default = "default_keep_agent")]
     pub keep_agent: bool,
 
-    /// Agent 配置（创建新 Agent 时用）
+    /// Agent configuration (used when creating new Agent)
     #[serde(default)]
     pub agent_config: Option<AgentConfig>,
 
-    /// P1-10: 节点选择器（异构任务路由）
+    /// P1-10: Node selector (for heterogeneous task routing)
     #[serde(default)]
     pub node_selector: Option<crate::scheduler::node_selector::NodeSelector>,
 }
@@ -210,24 +210,24 @@ pub struct DagNode {
     /// Rollback commands
     pub rollback: Option<Vec<String>>,
 
-    // === Agent Teams 相关字段 ===
-    /// 指定使用的 Agent Runtime
+    // === Agent Teams related fields ===
+    /// Specify the Agent Runtime to use
     #[serde(default)]
     pub agent_runtime: Option<RuntimeType>,
 
-    /// 复用已有 Agent ID（同 DAG 内）
+    /// Reuse existing Agent ID (within same DAG)
     #[serde(default)]
     pub reuse_agent: Option<String>,
 
-    /// 是否保持 Agent（执行后不销毁）
+    /// Whether to keep Agent (don't destroy after execution)
     #[serde(default)]
     pub keep_agent: bool,
 
-    /// Agent 配置（创建新 Agent 时用）
+    /// Agent configuration (used when creating new Agent)
     #[serde(default)]
     pub agent_config: Option<AgentConfig>,
 
-    /// P1-10: 节点选择器（异构任务路由）
+    /// P1-10: Node selector (for heterogeneous task routing)
     #[serde(default)]
     pub node_selector: Option<crate::scheduler::node_selector::NodeSelector>,
 }
@@ -548,12 +548,12 @@ impl TaskDag {
             .get_mut(&task_id)
             .ok_or_else(|| DagError::NodeNotFound(task_id.clone()))?;
 
-        // 只有当任务处于 Pending 或 Ready 状态时才标记为跳过
+        // Only mark as skipped if task is in Pending or Ready state
         if node.status == DagNodeStatus::Pending || node.status == DagNodeStatus::Ready {
             node.status = DagNodeStatus::Skipped;
         }
 
-        // 递归标记所有依赖此任务的下游任务为跳过
+        // Recursively mark all downstream tasks that depend on this task as skipped
         let mut skipped_tasks = vec![task_id];
         let dependents: Vec<String> = node.dependents.clone();
         
@@ -1081,7 +1081,7 @@ pub struct DagTaskSpec {
     pub env: HashMap<String, String>,
 }
 
-/// Agent Runtime 类型
+/// Agent Runtime type
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeType {
@@ -1093,7 +1093,7 @@ pub enum RuntimeType {
     Aider,
     /// OpenCode Runtime
     OpenCode,
-    /// 使用 DAG 配置的默认 Runtime
+    /// Use DAG configured default Runtime
     Default,
 }
 
@@ -1116,7 +1116,7 @@ impl From<AgentType> for RuntimeType {
 }
 
 impl RuntimeType {
-    /// 转换为 AgentType（如果可能）
+    /// Convert to AgentType (if possible)
     pub fn to_agent_type(self) -> Option<AgentType> {
         match self {
             RuntimeType::Claude => Some(AgentType::Claude),
@@ -1126,8 +1126,8 @@ impl RuntimeType {
             RuntimeType::Default => None,
         }
     }
-    
-    /// 获取显示名称
+
+    /// Get display name
     pub fn display_name(&self) -> &'static str {
         match self {
             RuntimeType::Claude => "Claude Code",
@@ -1290,36 +1290,36 @@ impl DagTodoList {
     }
 
     /// Submit a proposal (external agents call this)
-    /// 
+    ///
     /// Returns the proposal ID. If source is WorkerAgent, auto-merges.
     pub fn submit_proposal(&mut self, proposal: TodoListProposal) -> String {
         let id = proposal.id.clone();
-        
-        // 检查是否过期
+
+        // Check if expired
         if proposal.is_expired() {
-            self.proposal_history.push(ProposalResult::Expired { 
-                proposal_id: id.clone() 
+            self.proposal_history.push(ProposalResult::Expired {
+                proposal_id: id.clone()
             });
             return id;
         }
-        
-        // WorkerAgent 的提案直接合并
+
+        // WorkerAgent proposals are merged directly
         if !proposal.requires_review() {
             let result = self.merge_proposal(&proposal);
             self.proposal_history.push(result);
             return id;
         }
-        
-        // 外部提案需要审核
+
+        // External proposals require review
         self.pending_proposals.push(proposal);
         id
     }
 
-    /// Worker 审核并合并提案
-    /// 
-    /// Worker 根据策略自主决定是否接受提案
+    /// Worker reviews and merges proposal
+    ///
+    /// Worker autonomously decides whether to accept proposal based on policy
     pub fn review_and_merge<F>(
-        &mut self, 
+        &mut self,
         proposal_id: &str,
         should_accept: F
     ) -> ProposalResult
@@ -1327,20 +1327,20 @@ impl DagTodoList {
         F: FnOnce(&TodoListProposal, &DagTodoList) -> bool,
     {
         let pos = self.pending_proposals.iter().position(|p| p.id == proposal_id);
-        
+
         if let Some(pos) = pos {
             let proposal = self.pending_proposals.remove(pos);
-            
-            // 再次检查是否过期
+
+            // Check if expired again
             if proposal.is_expired() {
-                let result = ProposalResult::Expired { 
-                    proposal_id: proposal_id.to_string() 
+                let result = ProposalResult::Expired {
+                    proposal_id: proposal_id.to_string()
                 };
                 self.proposal_history.push(result.clone());
                 return result;
             }
-            
-            // Worker 自主决策
+
+            // Worker autonomous decision
             if should_accept(&proposal, self) {
                 let result = self.merge_proposal(&proposal);
                 self.proposal_history.push(result.clone());
@@ -1361,14 +1361,14 @@ impl DagTodoList {
         }
     }
 
-    /// 自动合并所有安全的外部提案
-    /// 
-    /// 只合并低风险的变更（如优先级调整）
+    /// Automatically merge all safe external proposals
+    ///
+    /// Only merge low-risk changes (e.g., priority adjustments)
     pub fn auto_merge_safe_proposals(&mut self) -> Vec<ProposalResult> {
-        // 分离安全和待审核的提案
+        // Separate safe and pending review proposals
         let mut safe = Vec::new();
         let mut pending = Vec::new();
-        
+
         for proposal in std::mem::take(&mut self.pending_proposals) {
             if self.is_safe_proposal(&proposal) {
                 safe.push(proposal);
@@ -1377,50 +1377,50 @@ impl DagTodoList {
             }
         }
         self.pending_proposals = pending;
-        
-        // 合并安全提案
+
+        // Merge safe proposals
         let mut results = Vec::new();
         for proposal in safe {
             let result = self.merge_proposal(&proposal);
             self.proposal_history.push(result.clone());
             results.push(result);
         }
-        
+
         results
     }
 
-    /// 判断提案是否安全（低风险）
+    /// Check if proposal is safe (low risk)
     fn is_safe_proposal(&self, proposal: &TodoListProposal) -> bool {
-        // 只添加新任务（不删除、不修改状态）是安全的
-        let only_adds = proposal.changes.removed.is_empty() 
+        // Only adding new tasks (no deletions, no status modifications) is safe
+        let only_adds = proposal.changes.removed.is_empty()
             && proposal.changes.modified.is_empty()
             && !proposal.changes.added.is_empty();
-        
-        // 只调整优先级是安全的
+
+        // Only adjusting priority is safe
         let only_priority_changes = proposal.changes.added.is_empty()
             && proposal.changes.removed.is_empty()
             && proposal.changes.modified.iter().all(|m| {
                 m.old_status == m.new_status && m.old_description == m.new_description
             });
-        
+
         only_adds || only_priority_changes
     }
 
-    /// 执行提案合并
+    /// Execute proposal merge
     fn merge_proposal(&mut self, proposal: &TodoListProposal) -> ProposalResult {
-        // 应用新增
+        // Apply additions
         for item in &proposal.changes.added {
             if self.get(&item.id).is_none() {
                 self.items.push(item.clone());
             }
         }
-        
-        // 应用删除
+
+        // Apply removals
         for item in &proposal.changes.removed {
             self.remove(&item.id);
         }
-        
-        // 应用修改
+
+        // Apply modifications
         for change in &proposal.changes.modified {
             if let Some(item) = self.get_mut(&change.id) {
                 item.status = change.new_status;
@@ -1429,30 +1429,30 @@ impl DagTodoList {
                 item.updated_at = Some(chrono::Utc::now());
             }
         }
-        
-        // 更新 checkpoint
+
+        // Update checkpoint
         self.checkpoint(format!(
             "Merged proposal {} from {}: {}",
             proposal.id, proposal.proposer, proposal.reason
         ));
-        
+
         ProposalResult::Accepted {
             proposal_id: proposal.id.clone(),
             merged_at: chrono::Utc::now(),
         }
     }
 
-    /// 获取待审核的提案
+    /// Get proposals pending review
     pub fn pending_review(&self) -> &[TodoListProposal] {
         &self.pending_proposals
     }
 
-    /// 清理过期提案
+    /// Clean up expired proposals
     pub fn cleanup_expired_proposals(&mut self) -> usize {
-        // 分离过期和待审核的提案
+        // Separate expired and pending review proposals
         let mut expired = Vec::new();
         let mut pending = Vec::new();
-        
+
         for proposal in std::mem::take(&mut self.pending_proposals) {
             if proposal.is_expired() {
                 expired.push(proposal);
@@ -1461,15 +1461,15 @@ impl DagTodoList {
             }
         }
         self.pending_proposals = pending;
-        
-        // 记录过期
+
+        // Record expired
         let count = expired.len();
         for proposal in expired {
             self.proposal_history.push(ProposalResult::Expired {
                 proposal_id: proposal.id,
             });
         }
-        
+
         count
     }
 
@@ -1606,52 +1606,52 @@ pub struct TodoItemChange {
     pub new_description: String,
 }
 
-/// DAG 变更提案来源
+/// DAG change proposal source
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProposalSource {
-    /// 来自 Room Agent（外部，需审核）
+    /// From Room Agent (external, requires review)
     RoomAgent,
-    /// 来自 Worker Agent（本地，可信）
+    /// From Worker Agent (local, trusted)
     WorkerAgent,
-    /// 来自用户 CLI（外部，需审核）
+    /// From user CLI (external, requires review)
     UserCLI,
-    /// 来自自动系统（外部，需审核）
+    /// From automatic system (external, requires review)
     AutoSystem,
 }
 
 impl ProposalSource {
-    /// 是否需要 Worker 审核
+    /// Whether Worker review is required
     pub fn requires_review(&self) -> bool {
         match self {
-            Self::WorkerAgent => false,  // 本地变更直接应用
-            _ => true,  // 外部变更需要审核
+            Self::WorkerAgent => false,  // Local changes applied directly
+            _ => true,  // External changes require review
         }
     }
 }
 
-/// TODO List 变更提案（安全模式）
+/// TODO List change proposal (safe mode)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoListProposal {
-    /// 提案 ID
+    /// Proposal ID
     pub id: String,
-    /// 提案来源
+    /// Proposal source
     pub source: ProposalSource,
-    /// 提案者身份（DID 或 node_id）
+    /// Proposer identity (DID or node_id)
     pub proposer: String,
-    /// 变更内容
+    /// Change content
     pub changes: TodoListDiff,
-    /// 提案理由
+    /// Proposal reason
     pub reason: String,
-    /// 提案时间
+    /// Proposal time
     pub proposed_at: chrono::DateTime<chrono::Utc>,
-    /// 过期时间（可选）
+    /// Expiration time (optional)
     #[serde(default)]
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl TodoListProposal {
-    /// 创建新的提案
+    /// Create new proposal
     pub fn new(
         source: ProposalSource,
         proposer: impl Into<String>,
@@ -1669,39 +1669,39 @@ impl TodoListProposal {
         }
     }
 
-    /// 设置过期时间
+    /// Set expiration time
     pub fn with_expiry(mut self, seconds: i64) -> Self {
         self.expires_at = Some(chrono::Utc::now() + chrono::Duration::seconds(seconds));
         self
     }
 
-    /// 检查是否过期
+    /// Check if expired
     pub fn is_expired(&self) -> bool {
         self.expires_at.is_some_and(|exp| chrono::Utc::now() > exp)
     }
 
-    /// 是否需要 Worker 审核
+    /// Whether Worker review is required
     pub fn requires_review(&self) -> bool {
         self.source.requires_review()
     }
 }
 
-/// 提案处理结果
+/// Proposal processing result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProposalResult {
-    /// 已接受并合并
+    /// Accepted and merged
     Accepted { proposal_id: String, merged_at: chrono::DateTime<chrono::Utc> },
-    /// 已拒绝
+    /// Rejected
     Rejected { proposal_id: String, reason: String },
-    /// 已过期
+    /// Expired
     Expired { proposal_id: String },
-    /// 待审核（需要 Worker 确认）
+    /// Pending review (requires Worker confirmation)
     PendingReview { proposal_id: String },
 }
 
 impl ProposalResult {
-    /// 获取提案 ID
+    /// Get proposal ID
     pub fn proposal_id(&self) -> &str {
         match self {
             ProposalResult::Accepted { proposal_id, .. } => proposal_id,
@@ -1710,8 +1710,8 @@ impl ProposalResult {
             ProposalResult::PendingReview { proposal_id } => proposal_id,
         }
     }
-    
-    /// 检查是否被接受
+
+    /// Check if accepted
     pub fn is_accepted(&self) -> bool {
         matches!(self, ProposalResult::Accepted { .. })
     }
@@ -2550,7 +2550,7 @@ impl DagScheduler {
         self.runs.get_mut(run_id)
     }
 
-    /// 标记任务为跳过状态
+    /// Mark task as skipped
     pub fn mark_skipped(
         &mut self,
         run_id: &str,
@@ -2558,17 +2558,17 @@ impl DagScheduler {
     ) -> std::result::Result<Vec<String>, DagError> {
         let run = self.runs.get_mut(run_id)
             .ok_or_else(|| DagError::NodeNotFound(run_id.to_string()))?;
-        
-        // 将任务标记为跳过，并获取被跳过的下游任务
+
+        // Mark task as skipped and get skipped downstream tasks
         let skipped_tasks = run.dag.mark_skipped(task_id.to_string())?;
-        
+
         run.update_status();
         run.updated_at = chrono::Utc::now();
-        
-        // 持久化
+
+        // Persist
         let run_clone = run.clone();
         let _ = self.persist_run(&run_clone);
-        
+
         Ok(skipped_tasks)
     }
 
@@ -2580,8 +2580,8 @@ impl DagScheduler {
         error_message: String,
     ) -> std::result::Result<Vec<String>, DagError> {
         let run = self.runs.get_mut(run_id).ok_or_else(|| DagError::NodeNotFound(run_id.to_string()))?;
-        
-        // 添加债务记录
+
+        // Add debt record
         run.add_debt(DebtEntry {
             task_id: task_id.to_string(),
             dag_run_id: run_id.to_string(),
@@ -2590,27 +2590,27 @@ impl DagScheduler {
             created_at: chrono::Utc::now(),
             resolved: false,
         });
-        
-        // 根据失败类型处理
+
+        // Handle based on failure type
         let skipped = match failure_type {
             FailureType::Ignorable => {
-                // 标记为 Ignorable 债务，但继续执行
+                // Mark as Ignorable debt, but continue execution
                 run.dag.mark_task_ignorable(task_id)?
             }
             FailureType::Blocking => {
-                // 标记为 Blocking 债务，跳过下游
+                // Mark as Blocking debt, skip downstream
                 run.status = DagRunStatus::Paused;
                 run.dag.mark_failed(task_id.to_string())?
             }
         };
-        
+
         run.update_status();
         run.updated_at = chrono::Utc::now();
-        
-        // 持久化
+
+        // Persist
         let run_clone = run.clone();
         let _ = self.persist_run(&run_clone);
-        
+
         Ok(skipped)
     }
 
