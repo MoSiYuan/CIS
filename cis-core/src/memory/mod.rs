@@ -1,7 +1,7 @@
-//! # 记忆服务模块
+//! # Memory Service Module
 //!
-//! 提供私域/公域记忆管理，支持加密和访问控制。
-//! 使用独立的 MemoryDb 存储，与核心数据库分离。
+//! Provides private/public memory management with encryption and access control.
+//! Uses independent MemoryDb storage, separated from the core database.
 
 /// 记忆搜索项
 #[derive(Debug, Clone)]
@@ -36,16 +36,16 @@ pub mod service;
 pub mod ops;
 pub mod crypto;
 pub mod weekly_archived;
-pub mod guard;  // 冲突检测守卫模块（Phase 0: P1.7.0）
-pub mod scope;   // 记忆作用域（v1.1.7: 稳定哈希绑定）
+pub mod guard;  // Conflict detection guard module (Phase 0: P1.7.0)
+pub mod scope;   // Memory scope (v1.1.7: stable hash binding)
 
 // Re-export all public types
 pub use self::encryption::MemoryEncryption;
 pub use self::encryption_v2::{EncryptionKeyV2, MemoryEncryptionV2};
 pub use self::service::{MemoryItem, MemoryService, MemorySearchResult, SearchOptions, SyncMarker};
 pub use self::weekly_archived::{WeeklyArchivedMemory, MemoryItem as WeeklyMemoryItem, WeeklyMemoryStats};
-pub use self::guard::{ConflictChecked, SafeMemoryContext};  // 冲突检测类型
-pub use self::scope::MemoryScope;  // 记忆作用域
+pub use self::guard::{ConflictChecked, SafeMemoryContext};  // Conflict detection types
+pub use self::scope::MemoryScope;  // Memory scope
 
 /// 扩展的记忆条目（包含更多元数据）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,8 +97,8 @@ impl From<MemoryItem> for MemoryEntryExt {
     }
 }
 
-// SearchOptions 现在直接从 service 模块导出
-// 如果需要向后兼容的转换，可以在这里添加
+// SearchOptions is now directly exported from the service module
+// Add backward-compatible conversions here if needed
 
 /// 私域/公域记忆过滤条件
 #[derive(Debug, Clone)]

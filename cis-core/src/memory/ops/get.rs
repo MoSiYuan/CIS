@@ -1,6 +1,6 @@
 //! # GET Operations
 //!
-//! 处理记忆读取操作，包括单个读取、批量读取和域过滤。
+//! Handles memory read operations, including single read, batch read, and domain filtering.
 
 use std::sync::Arc;
 
@@ -11,9 +11,9 @@ use crate::types::{MemoryCategory, MemoryDomain};
 use super::super::MemoryItem;
 use bincode;
 
-/// GET 操作处理器
+/// GET operation handler
 ///
-/// 负责从数据库读取记忆，处理解密和域过滤。
+/// Responsible for reading memory from database, handling decryption and domain filtering.
 pub struct GetOperations {
     state: Arc<MemoryServiceState>,
 }

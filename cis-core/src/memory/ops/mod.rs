@@ -1,13 +1,13 @@
 //! # Memory Operations Module
 //!
-//! 将 MemoryService 的操作拆分为独立模块，每个模块负责一类操作。
+//! Splits MemoryService operations into independent modules, each responsible for one type of operation.
 //!
-//! ## 模块结构
+//! ## Module Structure
 //!
-//! - `get` - 记忆读取操作
-//! - `set` - 记忆存储操作
-//! - `search` - 搜索和查询操作
-//! - `sync` - P2P 同步操作
+//! - `get` - Memory read operations
+//! - `set` - Memory write operations
+//! - `search` - Search and query operations
+//! - `sync` - P2P synchronization operations
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -17,7 +17,7 @@ use crate::memory::{MemoryEncryption, MemoryEncryptionV2};
 use crate::storage::memory_db::MemoryDb;
 use crate::vector::VectorStorage;
 
-/// 加密器枚举，支持 v1 和 v2
+/// Encryption wrapper enum, supporting v1 and v2
 #[derive(Clone)]
 pub enum EncryptionWrapper {
     V1(MemoryEncryption),
@@ -48,26 +48,26 @@ impl EncryptionWrapper {
     }
 }
 
-/// 共享的服务状态
+/// Shared service state
 ///
-/// 所有操作模块共享此状态，确保数据一致性。
+/// All operation modules share this state to ensure data consistency.
 pub struct MemoryServiceState {
-    /// 记忆数据库（私域/公域分离存储）
+    /// Memory database (private/public separated storage)
     pub memory_db: Arc<Mutex<MemoryDb>>,
-    /// 向量存储（用于语义搜索）
+    /// Vector storage (for semantic search)
     pub vector_storage: Arc<VectorStorage>,
-    /// 加密器（用于私域记忆）- 支持 v1 和 v2
+    /// Encryptor (for private memory) - supports v1 and v2
     pub encryption: Option<EncryptionWrapper>,
-    /// 节点ID
+    /// Node ID
     pub node_id: String,
-    /// 命名空间隔离
+    /// Namespace isolation
     pub namespace: Option<String>,
-    /// 缓存层（可选）
+    /// Cache layer (optional)
     pub cache: Option<Arc<LruCache>>,
 }
 
 impl MemoryServiceState {
-    /// 创建新的服务状态
+    /// Create a new service state
     pub fn new(
         memory_db: Arc<Mutex<MemoryDb>>,
         vector_storage: Arc<VectorStorage>,
@@ -85,13 +85,13 @@ impl MemoryServiceState {
         }
     }
 
-    /// 设置缓存
+    /// Set cache
     pub fn with_cache(mut self, cache: Arc<LruCache>) -> Self {
         self.cache = Some(cache);
         self
     }
 
-    /// 生成完整的键（包含命名空间前缀）
+    /// Generate full key (with namespace prefix)
     pub fn full_key(&self, key: &str) -> String {
         match &self.namespace {
             Some(ns) => format!("{}/{}", ns, key),
@@ -99,33 +99,33 @@ impl MemoryServiceState {
         }
     }
 
-    /// 获取节点ID
+    /// Get node ID
     pub fn node_id(&self) -> &str {
         &self.node_id
     }
 
-    /// 获取命名空间
+    /// Get namespace
     pub fn namespace(&self) -> Option<&str> {
         self.namespace.as_deref()
     }
 
-    /// 检查是否启用加密
+    /// Check if encryption is enabled
     pub fn is_encrypted(&self) -> bool {
         self.encryption.is_some()
     }
 
-    /// 迁移到 v2 加密
+    /// Migrate to v2 encryption
     pub fn migrate_to_v2(&self, v2_encryption: MemoryEncryptionV2) -> Option<EncryptionWrapper> {
         self.encryption.as_ref()?;
         Some(EncryptionWrapper::V2(v2_encryption))
     }
 
-    /// 从 v1 加密创建
+    /// Create with v1 encryption
     pub fn with_v1_encryption(encryption: MemoryEncryption) -> Option<EncryptionWrapper> {
         Some(EncryptionWrapper::V1(encryption))
     }
 
-    /// 从 v2 加密创建
+    /// Create with v2 encryption
     pub fn with_v2_encryption(encryption: MemoryEncryptionV2) -> Option<EncryptionWrapper> {
         Some(EncryptionWrapper::V2(encryption))
     }
