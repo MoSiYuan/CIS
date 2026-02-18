@@ -15,6 +15,7 @@ pub mod kademlia;
 pub mod nat;
 pub mod mdns_service;
 pub mod network;
+pub mod offline_queue;  // P1-9: 离线队列
 
 #[cfg(test)]
 mod connection_manager_tests;
@@ -24,6 +25,7 @@ mod transport_secure_tests;
 
 pub use connection_manager::{ConnectionManager, ConnectionHandle, ConnectionState};
 pub use peer::Message;
+pub use offline_queue::{OfflineQueue, OfflineQueueConfig, QueuedMessage, QueueStats};  // P1-9
 
 pub mod crypto {
     //! P2P 加密模块
