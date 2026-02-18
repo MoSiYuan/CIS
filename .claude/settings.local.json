@@ -67,6 +67,9 @@
       "Bash(git -C ~/work/project/CIS add cis-core/src/wasm/sandbox.rs cis-core/src/wasm/host.rs cis-core/src/wasm/mod.rs cis-core/src/memory/scope.rs cis-core/src/memory/guard/mod.rs cis-core/src/network/acl_service.rs cis-core/src/network/acl_module/mod.rs cis-core/src/network/mod.rs cis-core/src/network/sync.rs cis-core/src/network/websocket_auth.rs cis-core/src/network/agent_session.rs cis-core/src/service/node_service.rs cis-core/src/p2p/kad_dht.rs)",
       "Bash(git -C ~/work/project/CIS add:*)",
       "Bash(git -C:*)"
+    ],
+    "additionalDirectories": [
+      "/Users/jiangxiaolong/work/project/CIS"
     ]
   },
   "project": {
