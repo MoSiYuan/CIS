@@ -47,29 +47,71 @@ fn set_key_permissions(key_path: &Path) -> Result<()> {
         let key_path_str = key_path.to_str()
             .ok_or_else(|| CisError::identity("Invalid key path".to_string()))?;
 
-        // Windows: 使用 icacls 设置权限
+        // P0-2: Windows 权限安全修复
+        // 1. 设置为完全控制（F）而不是仅读（R）
+        // 2. 移除继承权限
+        // 3. 验证权限设置成功
         let username = whoami::username();
-        let output = Command::new("icacls")
+
+        // 尝试设置权限
+        let set_output = Command::new("icacls")
             .args(&[
                 key_path_str,
-                "/inheritance:r",
+                "/inheritance:r",  // 移除继承
                 "/grant",
-                &format!("{}:(R)", username),  // 仅读权限
+                &format!("{}:(F)", username),  // 完全控制权限 (P0-2 修复)
             ])
             .output();
 
-        match output {
+        match &set_output {
             Ok(output) if output.status.success() => {
-                tracing::debug!("Windows key permissions set successfully");
+                tracing::debug!("Windows key permissions set to Full Control");
             }
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 tracing::warn!("Failed to set Windows key permissions: {}", stderr);
-                // 不返回错误，因为 icacls 可能不可用
+                return Err(CisError::identity(format!(
+                    "Failed to set Windows key permissions: {}", stderr
+                )));
             }
             Err(e) => {
                 tracing::warn!("Failed to execute icacls: {}", e);
-                // 不返回错误，因为这是非关键操作
+                return Err(CisError::identity(format!(
+                    "Failed to execute icacls: {}", e
+                )));
+            }
+        }
+
+        // P0-2: 添加权限验证（Windows）
+        let verify_output = Command::new("icacls")
+            .args(&[key_path_str])
+            .output();
+
+        match verify_output {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // 验证当前用户有完全控制权限 (F)
+                if !stdout.contains("(F)") && !stdout.contains("(F).") {
+                    return Err(CisError::identity(format!(
+                        "Windows key permission verification failed: expected Full Control (F), got: {}",
+                        stdout.trim()
+                    )));
+                }
+                tracing::debug!("Windows key permissions verified successfully");
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                tracing::warn!("Failed to verify Windows key permissions: {}", stderr);
+                // 验证失败时返回错误
+                return Err(CisError::identity(format!(
+                    "Failed to verify Windows key permissions: {}", stderr
+                )));
+            }
+            Err(e) => {
+                tracing::warn!("Failed to verify Windows key permissions: {}", e);
+                return Err(CisError::identity(format!(
+                    "Failed to verify Windows key permissions: {}", e
+                )));
             }
         }
     }
@@ -152,15 +194,34 @@ impl DIDManager {
             bytes.copy_from_slice(&seed[..32]);
             bytes
         } else {
-            // [WARNING] SECURITY WEAKNESS (P0-3): 单次 SHA256 不是安全的 KDF
-            // 应该使用 Argon2id + 随机盐值
-            tracing::warn!(
-                "Seed length < 32 bytes, using SHA256 extension (WEAK KDF, should use Argon2id)"
+            // P0-3 安全修复：使用 Argon2id 进行密钥派生
+            // - Argon2id 是密码学安全的 KDF，抵抗 GPU/ASIC 攻击
+            // - 使用固定的盐值（用于向后兼容）+ 种子作为密码
+            // - 使用推荐的默认参数（m=19456, t=2, p=1）
+            tracing::info!(
+                "Seed length < 32 bytes, using Argon2id KDF for secure key derivation"
             );
-            use sha2::{Sha256, Digest};
-            let mut hasher = Sha256::new();
-            hasher.update(seed);
-            hasher.finalize().into()
+
+            use argon2::{Argon2, PasswordHasher};
+            use argon2::password_hash::Salt;
+
+            // 使用固定的盐值以保持向后兼容（确定性行为）
+            // 注意：为了更好的安全性，应该使用随机盐值并存储它
+            let salt_bytes = [0u8; 16];  // 固定盐值（向后兼容）
+            let salt = Salt::try_from(&salt_bytes[..])
+                .map_err(|e| CisError::identity(format!("Invalid salt: {}", e)))?;
+
+            // 使用 Argon2id (Algorithm::Argon2id)
+            let argon2 = Argon2::default();
+            let mut output = [0u8; 32];
+
+            argon2.hash_password_into(
+                seed,  // 种子作为密码
+                &salt_bytes,  // 盐值
+                &mut output
+            ).map_err(|e| CisError::identity(format!("Argon2id KDF failed: {}", e)))?;
+
+            output
         };
 
         let signing_key = SigningKey::from_bytes(&seed_bytes);

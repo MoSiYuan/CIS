@@ -374,6 +374,21 @@ impl CisError {
             format!("Invalid DID: {}", reason.into()),
         )
         .with_context("did", did)
+        .with_suggestion("Verify the DID format and ensure it matches did:cis:node:xxx")
+    }
+
+    /// Identity/DID error (for backward compatibility with legacy CisError::identity)
+    pub fn identity(msg: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCategory::Identity,
+            "001",
+            format!("Identity error: {}", msg.into()),
+        )
+        .with_severity(ErrorSeverity::Error)
+        .with_suggestion("Check the DID configuration and key storage")
+    }
+        )
+        .with_context("did", did)
         .with_suggestion("Ensure the DID follows the did:peer format")
     }
 
