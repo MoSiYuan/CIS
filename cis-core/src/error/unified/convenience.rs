@@ -442,6 +442,16 @@ impl CisError {
         .with_suggestion("The skill is trying to perform an unauthorized operation")
     }
 
+    /// Generic WASM error (for backward compatibility)
+    pub fn wasm(msg: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCategory::Wasm,
+            "000",
+            format!("WASM error: {}", msg.into()),
+        )
+        .with_severity(ErrorSeverity::Error)
+    }
+
     // ========================================================================
     // Internal Errors
     // ========================================================================
