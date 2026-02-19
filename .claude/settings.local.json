@@ -68,7 +68,14 @@
       "Bash(git -C ~/work/project/CIS add:*)",
       "Bash(git -C:*)",
       "Bash(/Users/jiangxiaolong/work/project/CIS/docs/plan/v1.1.6/P1-5_WASM_SANDBOX_SPLIT_REPORT.md:*)",
-      "Bash(/Users/jiangxiaolong/work/project/CIS/docs/plan/v1.1.6/P1-5_FINAL_COMPLETION_REPORT.md:*)"
+      "Bash(/Users/jiangxiaolong/work/project/CIS/docs/plan/v1.1.6/P1-5_FINAL_COMPLETION_REPORT.md:*)",
+      "Bash(/Users/jiangxiaolong/work/project/CIS/docs/plan/v1.1.6/P0_P1_TASK_PROGRESS_REPORT.md:*)",
+      "Bash(/Users/jiangxiaolong/work/project/CIS/docs/plan/v1.1.6/P0_P1_TASK_PROGRESS_UPDATE.md:*)",
+      "Bash(/tmp/fix_lru_locks.sh:*)",
+      "Bash(/Users/jiangxiaolong/work/project/CIS/docs/plan/v1.1.6/SESSION_COMPLETION_REPORT.md:*)",
+      "Bash(/Users/jiangxiaolong/work/project/CIS/docs/plan/v1.1.6/P0_FINAL_REPORT.md:*)",
+      "Bash(/tmp/translate_comments.py:*)",
+      "Bash(__NEW_LINE_1fcfb6c568ddad2b__ chmod +x /tmp/translate_comments.py)"
     ],
     "additionalDirectories": [
       "/Users/jiangxiaolong/work/project/CIS"

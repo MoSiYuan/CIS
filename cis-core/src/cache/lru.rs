@@ -426,8 +426,13 @@ impl LruCache {
             return None;
         }
 
-        // P0-4: 使用宏进行条件编译的锁获取
-        let mut cache = acquire_write!(&self.cache);
+        // P0-4: 条件编译 - parking_lot 使用同步锁，tokio 使用异步锁
+        #[cfg(feature = "parking_lot")]
+        let mut cache = self.cache.write();  // 同步锁（短暂阻塞可接受）
+
+        #[cfg(not(feature = "parking_lot"))]
+        let mut cache = self.cache.write().await;  // 异步锁
+
         self.metrics.record_request();
 
         // 检查过期
@@ -471,8 +476,12 @@ impl LruCache {
             return;
         }
 
-        // P0-4: 使用宏进行条件编译的锁获取
-        let mut cache = acquire_write!(&self.cache);
+        // P0-4: 条件编译 - parking_lot 使用同步锁，tokio 使用异步锁
+        #[cfg(feature = "parking_lot")]
+        let mut cache = self.cache.write();  // 同步锁（短暂阻塞可接受）
+
+        #[cfg(not(feature = "parking_lot"))]
+        let mut cache = self.cache.write().await;  // 异步锁
 
         // 检查容量，必要时淘汰
         if cache.entries.len() >= self.config.max_entries {
@@ -503,8 +512,13 @@ impl LruCache {
             return;
         }
 
-        // P0-4: 使用宏进行条件编译的锁获取
-        let mut cache = acquire_write!(&self.cache);
+        // P0-4: 条件编译锁获取
+        #[cfg(feature = "parking_lot")]
+        let mut cache = self.cache.write();
+
+        #[cfg(not(feature = "parking_lot"))]
+        let mut cache = self.cache.write().await;
+
         cache.entries.remove(key);
         cache.remove_from_access_order(key);
         self.metrics.record_invalidation();
@@ -519,8 +533,12 @@ impl LruCache {
             return;
         }
 
-        // P0-4: 使用宏进行条件编译的锁获取
-        let mut cache = acquire_write!(&self.cache);
+        // P0-4: 条件编译锁获取
+        #[cfg(feature = "parking_lot")]
+        let mut cache = self.cache.write();
+
+        #[cfg(not(feature = "parking_lot"))]
+        let mut cache = self.cache.write().await;
         for key in keys {
             cache.entries.remove(key);
             cache.remove_from_access_order(key);
@@ -532,7 +550,7 @@ impl LruCache {
     ///
     /// 移除所有缓存条目并重置统计。
     pub async fn clear(&self) {
-        let mut cache = acquire_write!(&self.cache);
+        let mut cache = self.cache.write().await;
         cache.entries.clear();
         cache.access_order.clear();
         cache.size = 0;
@@ -541,13 +559,13 @@ impl LruCache {
 
     /// 获取缓存大小
     pub async fn size(&self) -> usize {
-        let cache = acquire_read!(&self.cache);
+        let cache = self.cache.read().await;
         cache.len()
     }
 
     /// 检查缓存是否为空
     pub async fn is_empty(&self) -> bool {
-        let cache = acquire_read!(&self.cache);
+        let cache = self.cache.read().await;
         cache.is_empty()
     }
 
@@ -557,7 +575,7 @@ impl LruCache {
             return false;
         }
 
-        let cache = acquire_read!(&self.cache);
+        let cache = self.cache.read().await;
         cache.entries.contains_key(key)
     }
 
@@ -572,7 +590,7 @@ impl LruCache {
             return 0;
         }
 
-        let mut cache = acquire_write!(&self.cache);
+        let mut cache = self.cache.write().await;
         let count = cache.remove_expired_entries();
         self.metrics
             .expirations
@@ -621,7 +639,7 @@ impl LruCache {
 
     /// 获取缓存健康状态
     pub async fn health_check(&self) -> CacheHealth {
-        let cache = acquire_read!(&self.cache);
+        let cache = self.cache.read().await;
         let size = cache.len();
         let snapshot = self.get_metrics().await;
 

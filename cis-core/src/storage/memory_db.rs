@@ -1,7 +1,7 @@
-//! 独立的记忆数据库
+//! Independent Memory Database
 //!
-//! 与 core.db 分离，支持私域/公域记忆分离存储，有独立的 WAL 文件。
-//! 私域记忆加密存储，公域记忆支持联邦同步。
+//! Separated from core.db, supports private/public memory separated storage with independent WAL files.
+//! Private memory is encrypted, public memory supports federation sync.
 
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{CisError, Result};
 use crate::types::{MemoryCategory, MemoryDomain};
 
-/// 记忆条目
+/// Memory entry
 #[derive(Debug, Clone)]
 pub struct MemoryEntry {
     pub key: String,
@@ -20,24 +20,24 @@ pub struct MemoryEntry {
     pub updated_at: i64,
 }
 
-/// 独立的记忆数据库
+/// Independent memory database
 ///
-/// 存储私域和公域记忆，与核心数据库分离
+/// Stores private and public memory, separated from core database
 pub struct MemoryDb {
     conn: Connection,
     path: PathBuf,
 }
 
 impl MemoryDb {
-    /// 打开记忆数据库（如果不存在则创建）
+    /// Open memory database (create if not exists)
     pub fn open(path: &Path) -> Result<Self> {
-        // 创建目录
+        // Create directory
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| CisError::storage(format!("Failed to create directory: {}", e)))?;
         }
 
-        // 打开连接
+        // Open connection
         let conn = Connection::open(path)
             .map_err(|e| CisError::storage(format!("Failed to open memory db: {}", e)))?;
 
@@ -46,22 +46,22 @@ impl MemoryDb {
             path: path.to_path_buf(),
         };
 
-        // 配置 WAL 模式
+        // Configure WAL mode
         db.configure_wal()?;
 
-        // 初始化 schema
+        // Initialize schema
         db.init_schema()?;
 
         Ok(db)
     }
 
-    /// 使用默认路径打开记忆数据库
+    /// Open memory database with default path
     pub fn open_default() -> Result<Self> {
         use super::paths::Paths;
         Self::open(&Paths::memory_db())
     }
 
-    /// 配置 WAL 模式（随时关机安全）
+    /// Configure WAL mode (safe for sudden shutdown)
     fn configure_wal(&self) -> Result<()> {
         self.conn.execute_batch(
             "PRAGMA journal_mode = WAL;
@@ -73,9 +73,9 @@ impl MemoryDb {
         Ok(())
     }
 
-    /// 初始化 Schema
+    /// Initialize Schema
     fn init_schema(&self) -> Result<()> {
-        // 私域记忆表（加密）
+        // Private memory table (encrypted)
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS private_entries (
                 key TEXT PRIMARY KEY,
@@ -88,7 +88,7 @@ impl MemoryDb {
             [],
         ).map_err(|e| CisError::storage(format!("Failed to create private_entries table: {}", e)))?;
 
-        // 公域记忆表（可联邦同步）
+        // Public memory table (federatable sync)
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS public_entries (
                 key TEXT PRIMARY KEY,
@@ -102,7 +102,7 @@ impl MemoryDb {
             [],
         ).map_err(|e| CisError::storage(format!("Failed to create public_entries table: {}", e)))?;
 
-        // 记忆索引表
+        // Memory index table
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS memory_index (
                 key TEXT PRIMARY KEY,
@@ -114,7 +114,7 @@ impl MemoryDb {
             [],
         ).map_err(|e| CisError::storage(format!("Failed to create memory_index table: {}", e)))?;
 
-        // 创建索引
+        // Create indexes
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_private_category ON private_entries(category)",
             [],
