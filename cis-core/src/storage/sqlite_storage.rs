@@ -1,7 +1,7 @@
-//! # SqliteStorage - 真实存储服务实现
+//! # SqliteStorage - Real Storage Service Implementation
 //!
-//! 基于 SQLite 的 StorageService 真实实现。
-//! 由于 SQLite 连接不是线程安全的，每个操作创建独立连接。
+//! Real implementation of StorageService based on SQLite.
+//! Since SQLite connections are not thread-safe, each operation creates an independent connection.
 
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -12,64 +12,64 @@ use rusqlite::Connection;
 use crate::error::{CisError, Result};
 use crate::traits::{StorageService, StorageQuery, StorageRecord, StorageStats};
 
-/// SQLite 存储服务
+/// SQLite storage service
 ///
-/// 基于 SQLite 的真实存储实现，每个操作使用独立连接以保证线程安全。
+/// Real storage implementation based on SQLite, using independent connections per operation to ensure thread safety.
 pub struct SqliteStorage {
-    /// 数据库连接路径
+    /// Database connection path
     db_path: Arc<std::path::PathBuf>,
 }
 
 impl SqliteStorage {
-    /// 创建新的 SQLite 存储服务
+    /// Create new SQLite storage service
     pub fn new() -> Result<Self> {
         let db_path = Arc::new(crate::storage::paths::Paths::node_db());
-        
-        // 确保目录存在
+
+        // Ensure directory exists
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
-        // 初始化数据库
+
+        // Initialize database
         let conn = Self::open_connection(&db_path)?;
         Self::init_schema(&conn)?;
         drop(conn);
-        
+
         Ok(Self { db_path })
     }
 
-    /// 从指定路径创建存储服务
+    /// Create storage service from specified path
     pub fn with_path(path: impl AsRef<Path>) -> Result<Self> {
         let db_path = Arc::new(path.as_ref().to_path_buf());
-        
+
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         let conn = Self::open_connection(&db_path)?;
         Self::init_schema(&conn)?;
         drop(conn);
-        
+
         Ok(Self { db_path })
     }
 
-    /// 打开数据库连接
+    /// Open database connection
     fn open_connection(path: &Path) -> Result<Connection> {
         let conn = Connection::open(path)
             .map_err(|e| CisError::Storage(format!("Failed to open storage: {}", e)))?;
-        
-        // 配置 WAL 模式
+
+        // Configure WAL mode
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
              PRAGMA wal_autocheckpoint = 1000;
              PRAGMA journal_size_limit = 100000000;"
         ).map_err(|e| CisError::Storage(format!("Failed to configure WAL: {}", e)))?;
-        
+
         Ok(conn)
     }
 
-    /// 初始化数据库 Schema
+    /// Initialize database schema
     fn init_schema(conn: &Connection) -> Result<()> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS kv_store (
@@ -90,7 +90,7 @@ impl SqliteStorage {
         Ok(())
     }
 
-    /// 获取当前时间戳（秒）
+    /// Get current timestamp (seconds)
     fn now_secs() -> u64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -98,7 +98,7 @@ impl SqliteStorage {
             .as_secs()
     }
 
-    /// 获取连接路径的克隆
+    /// Get clone of connection path
     fn db_path(&self) -> std::path::PathBuf {
         (*self.db_path).clone()
     }
