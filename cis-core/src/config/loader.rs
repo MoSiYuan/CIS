@@ -612,7 +612,7 @@ mdns_enabled = true
 dht_enabled = true
 relay_enabled = true
 hole_punching_enabled = true
-protocol_version = "cis/1.1.4"
+protocol_version = "cis/1.1.5"
 network_id = "cis-mainnet"
 
 [p2p.dht]

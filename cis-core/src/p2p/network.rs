@@ -335,7 +335,7 @@ impl P2PNetwork {
     /// - `Some(Arc<P2PNetwork>)` - 网络已启动
     /// - `None` - 网络未启动
     #[deprecated(
-        since = "1.1.4",
+        since = "1.1.5",
         note = "全局单例已废弃，请使用 ServiceContainer 进行依赖注入"
     )]
     #[allow(deprecated)]
@@ -352,7 +352,7 @@ impl P2PNetwork {
     ///
     /// 如果网络已启动，返回现有实例
     #[deprecated(
-        since = "1.1.4",
+        since = "1.1.5",
         note = "全局单例已废弃，请使用 ServiceContainer 进行依赖注入"
     )]
     #[allow(deprecated)]
@@ -458,7 +458,7 @@ impl P2PNetwork {
     /// [WARNING] 警告: 此方法已废弃，将在 v1.2.0 中移除。
     /// 请使用实例方法 `stop_instance()` 或直接丢弃实例。
     #[deprecated(
-        since = "1.1.4",
+        since = "1.1.5",
         note = "全局单例已废弃，请使用实例方法或直接丢弃实例"
     )]
     #[allow(deprecated)]

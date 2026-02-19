@@ -105,7 +105,7 @@ impl MdnsService {
         let mut properties = HashMap::new();
         properties.insert("node_id".to_string(), node_id.clone());
         properties.insert("did".to_string(), did.to_string());
-        properties.insert("version".to_string(), "1.1.3".to_string());
+        properties.insert("version".to_string(), "1.1.5".to_string());
         
         // 添加额外元数据
         for (key, value) in metadata {

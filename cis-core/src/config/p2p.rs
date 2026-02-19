@@ -767,7 +767,7 @@ fn default_hole_punching_enabled() -> bool {
 }
 
 fn default_protocol_version() -> String {
-    "cis/1.1.4".to_string()
+    "cis/1.1.5".to_string()
 }
 
 fn default_network_id() -> String {
@@ -789,7 +789,7 @@ mod tests {
         assert!(config.dht_enabled);
         assert!(config.relay_enabled);
         assert!(config.hole_punching_enabled);
-        assert_eq!(config.protocol_version, "cis/1.1.4");
+        assert_eq!(config.protocol_version, "cis/1.1.5");
         assert_eq!(config.network_id, "cis-mainnet");
     }
 
