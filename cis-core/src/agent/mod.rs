@@ -3,6 +3,15 @@
 //! 提供统一的 LLM Agent 抽象接口，支持双向调用：
 //! - CIS → Agent: CIS 调用外部 LLM Agent
 //! - Agent → CIS: 外部 Agent 通过 CLI/API 调用 CIS
+//!
+//! ## Multi-Agent Architecture (Phase 7)
+//!
+//! This module includes:
+//! - Receptionist Agent: Entry point that routes requests to appropriate workers
+//! - Worker Agents: Specialized agents for different task types
+
+pub mod receptionist;
+pub mod worker;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -43,6 +52,10 @@ pub use builder::AgentTaskBuilder;  // Builder API（P1.7.0 任务组 0.4）
 pub use cluster::{SessionManager, SessionId, SessionEvent, SessionState};
 pub use executor::{AgentExecutor, AgentResult};  // Executor API（P1.7.0 任务组 0.3）
 pub use config::{AgentCommandConfig, AgentMode};
+
+// Multi-Agent exports (Phase 7)
+pub use receptionist::{ReceptionistAgent, ReceptionistConfig, RoutingDecision};
+pub use worker::{WorkerAgent, WorkerAgentConfig, WorkerType};
 
 /// Agent 请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
