@@ -1,9 +1,9 @@
-# TASK 7.5: P2P 跨设备 Agent 调用
+# TASK 7.6: P2P 跨设备 Agent 调用
 
 > **Phase**: 7 - 多 Agent 架构 (P3 可选)
 > **状态**: ⏳ 待开始
 > **负责人**: TBD
-> **周期**: Week 16
+> **周期**: Week 17
 
 ---
 
@@ -267,6 +267,6 @@ multi-agent = [
 
 ## 阻塞
 
-- 无（Phase 7 最后一项）
+- TASK_7_7 (多 Agent 集成测试)
 
 ---

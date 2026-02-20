@@ -15,9 +15,9 @@
 | Phase 3 | cis-core 重构 | Week 6-7 | ⏳ 待开始 | 5 |
 | Phase 4 | ZeroClaw 兼容 | Week 8-9 | ⏳ 待开始 | 4 |
 | Phase 5 | 测试与验证 | Week 9-10 | ⏳ 待开始 | 3 |
-| Phase 6 | 发布准备 | Week 11-12 | ⏳ 待开始 | 3 |
-| Phase 7 | 多 Agent 架构 (P3) | Week 13+ | ⏳ 待开始 | 6 |
-| **总计** | | **Week 1-16+** | | **32** |
+| Phase 6 | 发布准备 | Week 11-13 | ⏳ 待开始 | 4 |
+| Phase 7 | 多 Agent 架构 (P3) | Week 14-18 | ⏳ 待开始 | 7 |
+| **总计** | | **Week 1-18+** | | **34** |
 
 ---
 
@@ -30,10 +30,10 @@ task/
 │   ├── TASK_0_1_ZEROCLAW_ANALYSIS.md
 │   └── TASK_0_2_PLAN_INTEGRATION.md
 ├── phase1_cis_common/          # Phase 1: 基础 (Week 1)
-│   ├── TASK_1_1_CREATE_CRATE.md
+│   ├── TASK_1_1_CREATE_WORKSPACE.md
 │   ├── TASK_1_2_EXTRACT_TYPES.md
-│   ├── TASK_1_3_EXTRACT_TRAITS.md
-│   └── TASK_1_4_UPDATE_WORKSPACE.md      # 新增
+│   ├── TASK_1_3_DEFINE_TRAITS.md
+│   └── TASK_1_4_UPDATE_WORKSPACE.md
 ├── phase2_extract_modules/     # Phase 2: 模块提取 (Week 2-5)
 │   ├── TASK_2_1_EXTRACT_STORAGE.md
 │   ├── TASK_2_2_EXTRACT_MEMORY.md
@@ -55,17 +55,19 @@ task/
 │   ├── TASK_5_1_TEST_FRAMEWORK.md
 │   ├── TASK_5_2_CI_CONFIG.md
 │   └── TASK_5_3_BENCHMARKS.md            # 新增
-├── phase6_release/             # Phase 6: 发布 (Week 11-12)
+├── phase6_release/             # Phase 6: 发布 (Week 11-13)
 │   ├── TASK_6_1_DOC_UPDATE.md
 │   ├── TASK_6_2_RELEASE.md
-│   └── TASK_6_3_RELEASE_CIS.md           # 新增
-└── phase7_multi_agent/         # Phase 7: 多 Agent (P3, Week 13+)
+│   ├── TASK_6_3_RELEASE_CIS.md
+│   └── TASK_6_4_MIGRATION_GUIDE.md       # 新增
+└── phase7_multi_agent/         # Phase 7: 多 Agent (P3, Week 14-18)
     ├── TASK_7_1_AGENT_TRAIT.md
     ├── TASK_7_2_RECEPTIONIST.md
     ├── TASK_7_3_WORKER_AGENTS.md
     ├── TASK_7_4_DAG_ORCHESTRATION.md
-    ├── TASK_7_5_MEMORY_ISOLATION.md      # 新增
-    └── TASK_7_6_INTEGRATION_TESTS.md     # 可选新增
+    ├── TASK_7_5_MEMORY_ISOLATION.md
+    ├── TASK_7_6_P2P_CROSS_DEVICE.md      # 重编号 (原 TASK_7_5)
+    └── TASK_7_7_INTEGRATION_TESTS.md     # 新增
 ```
 
 ---
@@ -149,7 +151,8 @@ Phase 6: 发布 ◄────────────────────�
     │
     ├── Task 6.1 (文档更新)
     ├── Task 6.2 (发布准备)
-    └── Task 6.3 (正式发布)
+    ├── Task 6.3 (正式发布)
+    └── Task 6.4 (迁移指南)
     │
     ▼ (P3 可选)
 Phase 7: 多 Agent ◄───────────────────依赖──► Task 6.3 + Task 2.5
@@ -159,7 +162,8 @@ Phase 7: 多 Agent ◄───────────────────�
     ├── Task 7.3 (Worker Agents)
     ├── Task 7.4 (DAG 编排)
     ├── Task 7.5 (记忆隔离)
-    └── Task 7.6 (集成测试)
+    ├── Task 7.6 (P2P 跨设备)
+    └── Task 7.7 (集成测试)
 ```
 
 ---
@@ -207,14 +211,15 @@ Phase 7: 多 Agent ◄───────────────────�
 | 5.2 | CI 配置 | 5.1 | ⏳ |
 | 5.3 | 性能基准测试 | 5.2 | ⏳ |
 
-### Phase 6: 发布 (Week 11-12)
+### Phase 6: 发布 (Week 11-13)
 | 任务 | 描述 | 依赖 | 状态 |
 |------|------|------|------|
 | 6.1 | 文档更新 | 5.2 | ⏳ |
 | 6.2 | 发布准备 | 6.1 | ⏳ |
 | 6.3 | 发布 CIS v1.2.0 | 6.2 | ⏳ |
+| 6.4 | 编写迁移指南 | 6.3 | ⏳ |
 
-### Phase 7: 多 Agent (P3, Week 13+)
+### Phase 7: 多 Agent (P3, Week 14-18)
 | 任务 | 描述 | 依赖 | 状态 |
 |------|------|------|------|
 | 7.1 | Agent trait 实现 | 6.3 | ⏳ |
@@ -222,7 +227,8 @@ Phase 7: 多 Agent ◄───────────────────�
 | 7.3 | Worker Agents | 7.1 | ⏳ |
 | 7.4 | DAG 编排 | 7.2, 7.3 | ⏳ |
 | 7.5 | 记忆分组与幻觉降低 | 7.1 | ⏳ |
-| 7.6 | 集成测试 | 7.4, 7.5 | ⏳ |
+| 7.6 | P2P 跨设备 Agent 调用 | 7.4, 7.5, 2.5 | ⏳ |
+| 7.7 | 多 Agent 集成测试 | 7.4, 7.5, 7.6 | ⏳ |
 
 ---
 
@@ -293,10 +299,14 @@ Phase 7: 多 Agent ◄───────────────────�
 
 ## 📚 相关文档
 
+### 计划文档
 - [../plan/CIS_V1.2.0_FINAL_PLAN_INTEGRATED_kimi.md](../plan/CIS_V1.2.0_FINAL_PLAN_INTEGRATED_kimi.md) - 完整计划
 - [../plan/CIS_V1.2.0_MULTI_AGENT_ARCHITECTURE_kimi.md](../plan/CIS_V1.2.0_MULTI_AGENT_ARCHITECTURE_kimi.md) - 多 Agent 架构
 - [../plan/REVIEW_QUESTIONS_kimi.md](../plan/REVIEW_QUESTIONS_kimi.md) - 审阅问题
 - [../plan/REVIEW_RESPONSES_glm.md](../plan/REVIEW_RESPONSES_glm.md) - GLM 回复
+
+### 代码-任务映射
+- [CODE_TO_TASK_MAPPING.md](CODE_TO_TASK_MAPPING.md) - **⭐ Worker Agent必读** - 快速定位任务相关的代码文件
 
 ---
 
