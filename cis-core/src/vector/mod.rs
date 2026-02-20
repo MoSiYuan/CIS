@@ -2,6 +2,19 @@
 //!
 //! Provides vector-based semantic retrieval capabilities, supporting intelligent search of memory, messages, skills, and other data.
 //!
+//! ## Phase 3 Migration Note
+//!
+//! This module is kept for backward compatibility. The vector functionality has been migrated
+//! to cis-common/cis-vector crate. New code should use:
+//!
+//! ```rust
+//! use cis_vector::*;  // Recommended
+//! ```
+//!
+//! This module re-exports from cis_vector for backward compatibility.
+
+pub use cis_vector::*;
+//!
 //! ## Main Components
 //!
 //! - `storage::VectorStorage`: Core vector storage based on sqlite-vec

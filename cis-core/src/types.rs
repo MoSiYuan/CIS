@@ -1,6 +1,21 @@
 //! # CIS Core Types
 //!
 //! Core data structures and domain types for CIS.
+//!
+//! ## Phase 3 Migration Note
+//!
+//! This module is kept for backward compatibility. The types have been migrated
+//! to cis-common/cis-types crate. New code should use:
+//!
+//! ```rust
+//! use cis_types::*;  // Recommended
+//! // or
+//! use cis_core::cis_types;
+//! ```
+//!
+//! The following types are re-exported from cis_types for backward compatibility.
+
+pub use cis_types::*;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -35,7 +50,10 @@ pub enum TaskLevel {
     /// Auto-execute, retry on failure
     Mechanical { retry: u8 },
     /// Countdown execution, can intervene
-    Recommended { default_action: Action, timeout_secs: u16 },
+    Recommended {
+        default_action: Action,
+        timeout_secs: u16,
+    },
     /// Modal confirmation, must manually confirm
     Confirmed,
     /// Pause DAG, wait for arbitration
@@ -240,8 +258,9 @@ impl Task {
         Self::new(
             format!("skill-{}", skill_id_str),
             format!("Execute skill {}", skill_id_str),
-            "skill".to_string()
-        ).with_skill(skill_id_str)
+            "skill".to_string(),
+        )
+        .with_skill(skill_id_str)
     }
 
     /// 设置要调用的 Skill

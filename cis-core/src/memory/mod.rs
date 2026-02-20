@@ -2,6 +2,19 @@
 //!
 //! Provides private/public memory management with encryption and access control.
 //! Uses independent MemoryDb storage, separated from the core database.
+//!
+//! ## Phase 3 Migration Note
+//!
+//! This module is kept for backward compatibility. The memory functionality has been migrated
+//! to cis-common/cis-memory crate. New code should use:
+//!
+//! ```rust
+//! use cis_memory::*;  // Recommended
+//! ```
+//!
+//! This module re-exports from cis_memory for backward compatibility.
+
+pub use cis_memory::*;
 
 /// 记忆搜索项
 #[derive(Debug, Clone)]

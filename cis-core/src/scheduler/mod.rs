@@ -2,18 +2,18 @@
 //!
 //! Provides DAG-based task dependency management and scheduling.
 //!
-//! ## Features
+//! ## Phase 3 Migration Note
 //!
-//! - Task dependency tracking
-//! - Cycle detection
-//! - Topological sorting for execution order
-//! - Failure propagation
-//! - Parallel execution support at same level
+//! This module is kept for backward compatibility. The scheduler functionality has been migrated
+//! to cis-common/cis-scheduler crate. New code should use:
 //!
-//! ## Architecture
+//! ```rust
+//! use cis_scheduler::*;  // Recommended
+//! ```
 //!
-//! This module is 100% inherited from AgentFlow's proven implementation,
-//! adapted only for CIS crate naming.
+//! This module re-exports from cis_scheduler for backward compatibility.
+
+pub use cis_scheduler::*;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
