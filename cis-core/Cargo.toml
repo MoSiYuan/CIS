@@ -182,6 +182,16 @@ ndarray = { version = "0.15", optional = true }
 # E2EE dependencies
 vodozemac = { version = "0.7", optional = true }
 
+# cis-common crates (Phase 3: Re-exported for backward compatibility)
+# These modules have been migrated to cis-common workspace
+cis-types = { workspace = true }
+cis-traits = { workspace = true }
+cis-storage = { workspace = true }
+cis-memory = { workspace = true }
+cis-scheduler = { workspace = true }
+cis-vector = { workspace = true, optional = true }
+cis-p2p = { workspace = true, optional = true }
+
 [dev-dependencies]
 tokio-test = "0.4"
 criterion = { version = "0.5", features = ["async_tokio"] }
@@ -211,6 +221,11 @@ downcast-rs = "1.2"
 # Production features - REQUIRED for production builds
 # DO NOT disable these features in production - will cause compile errors
 default = ["encryption", "vector", "p2p", "wasm", "parking_lot"]  # P0-4: 默认启用 parking_lot 避免写者饥饿
+
+# Feature flags for cis-common dependencies
+# These enable optional cis-common modules
+vector-common = ["dep:cis-vector"]
+p2p-common = ["dep:cis-p2p"]
 
 # WASM Runtime Support
 # - wasm: Wasmer-based runtime (v1, stable)
