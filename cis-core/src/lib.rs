@@ -33,6 +33,21 @@
 //! CIS → Agent: CIS calls external LLM Agent through AgentProvider
 //! Agent → CIS: External Agent calls CIS through CLI/API
 //! ```
+//!
+//! ## Phase 3 Migration Note
+//!
+//! The following modules have been migrated to cis-common workspace crates:
+//! - `types` → `cis-types`
+//! - `storage` → `cis-storage`
+//! - `memory` → `cis-memory`
+//! - `scheduler` → `cis-scheduler`
+//! - `vector` → `cis-vector`
+//! - `p2p` → `cis-p2p`
+//!
+//! For backward compatibility, these modules are re-exported from cis-common.
+
+pub use cis_types::*;
+pub use cis_traits::*;
 
 pub mod error;
 pub mod types;
