@@ -85,6 +85,9 @@ pub mod config;
 // Sandbox module - Security and path validation
 pub mod sandbox;
 
+// ZeroClaw adapter layer - ZeroClaw compatibility (Phase 4)
+pub mod zeroclaw;
+
 // Cache module - LRU cache for memory queries
 pub mod cache;
 
