@@ -1,0 +1,19 @@
+[package]
+name = "cis-traits"
+version = "1.2.0"
+edition = "2021"
+
+[dependencies]
+cis-types = { path = "../cis-types", version = "1.2.0" }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+
+[features]
+default = []
+core = []
+memory = ["core"]
+scheduler = ["core"]
+agent = ["core"]
+lifecycle = ["core"]
+full = ["memory", "scheduler", "agent", "lifecycle"]

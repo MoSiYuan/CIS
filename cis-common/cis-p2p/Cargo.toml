@@ -1,0 +1,12 @@
+[package]
+name = "cis-p2p"
+version = "1.2.0"
+edition = "2021"
+
+[dependencies]
+cis-types = { path = "../cis-types", version = "1.2.0" }
+cis-traits = { path = "../cis-traits", version = "1.2.0" }
+async-trait = "0.1"
+
+[features]
+default = []

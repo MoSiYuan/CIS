@@ -2,6 +2,13 @@
 resolver = "2"
 
 members = [
+    "cis-common/cis-types",
+    "cis-common/cis-traits",
+    "cis-common/cis-storage",
+    "cis-common/cis-memory",
+    "cis-common/cis-scheduler",
+    "cis-common/cis-vector",
+    "cis-common/cis-p2p",
     "cis-core",
     "cis-node",
     "cis-skill-sdk",
@@ -58,3 +65,12 @@ wasm3 = { git = "https://github.com/wasm3/wasm3", tag = "v0.5.0" }
 # Workspace crates
 cis-core = { path = "cis-core" }
 cis-node = { path = "cis-node" }
+
+# cis-common crates
+cis-types = { path = "cis-common/cis-types", version = "1.2.0" }
+cis-traits = { path = "cis-common/cis-traits", version = "1.2.0" }
+cis-storage = { path = "cis-common/cis-storage", version = "1.2.0" }
+cis-memory = { path = "cis-common/cis-memory", version = "1.2.0" }
+cis-scheduler = { path = "cis-common/cis-scheduler", version = "1.2.0" }
+cis-vector = { path = "cis-common/cis-vector", version = "1.2.0" }
+cis-p2p = { path = "cis-common/cis-p2p", version = "1.2.0" }
