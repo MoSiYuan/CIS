@@ -49,8 +49,27 @@
 pub use cis_types::*;
 pub use cis_traits::*;
 
+// MODULES MIGRATED TO CIS-COMMON (Phase 3)
+// ========================================
+// The following modules have been migrated to cis-common workspace crates:
+// - types → cis-types
+// - storage → cis-storage
+// - memory → cis-memory
+// - scheduler → cis-scheduler
+// - vector → cis-vector
+// - p2p → cis-p2p
+//
+// For backward compatibility, these modules are now re-exported via cis_types/cis_traits.
+// Original module files are kept for reference not be used directly but should.
+
+// pub mod types;  // MIGRATED → cis-types (use cis_types::* instead)
+// pub mod storage;  // MIGRATED → cis-storage (use cis_storage::* instead)
+// pub mod memory;  // MIGRATED → cis-memory (use cis_memory::* instead)
+// pub mod scheduler;  // MIGRATED → cis-scheduler (use cis_scheduler::* instead)
+// pub mod vector;  // MIGRATED → cis-vector (use cis_vector::* instead)
+// pub mod p2p;  // MIGRATED → cis-p2p (use cis_p2p::* instead)
+
 pub mod error;
-pub mod types;
 
 // Lock timeout module - Lock management with timeout and monitoring
 pub mod lock_timeout;
@@ -58,18 +77,16 @@ pub mod lock_timeout;
 // Configuration module - unified configuration center
 pub mod config;
 
-// Core modules
-pub mod sandbox;
-pub mod scheduler;
+// Core modules (Note: scheduler, memory, storage migrated to cis-common)
+// pub mod scheduler;  // MIGRATED → cis-scheduler
+// pub mod memory;  // MIGRATED → cis-memory
+// pub mod storage;  // MIGRATED → cis-storage
 
-// Memory module - Private/Public memory with encryption
-pub mod memory;
+// Sandbox module - Security and path validation
+pub mod sandbox;
 
 // Cache module - LRU cache for memory queries
 pub mod cache;
-
-// Storage module - Cross-platform storage with core/skill data isolation
-pub mod storage;
 
 // Skill module - Hot-swappable skill management
 pub mod skill;
@@ -102,8 +119,8 @@ pub mod matrix;
 // Identity module - DID management
 pub mod identity;
 
-// Vector Intelligence module - Semantic search
-pub mod vector;
+// Vector Intelligence module - Semantic search (MIGRATED to cis-common)
+// pub mod vector;  // MIGRATED → cis-vector
 
 // Conversation module - Session dialogue management
 pub mod conversation;
@@ -114,9 +131,9 @@ pub mod telemetry;
 // Task module - Task management and vector indexing
 pub mod task;
 
-// P2P module - Peer-to-peer networking
-#[cfg(feature = "p2p")]
-pub mod p2p;
+// P2P module - Peer-to-peer networking (MIGRATED to cis-common)
+// #[cfg(feature = "p2p")]
+// pub mod p2p;  // MIGRATED → cis-p2p
 
 // Network module - Access control and DID-based admission
 pub mod network;
