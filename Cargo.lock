@@ -1622,6 +1622,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cis-memory"
+version = "1.2.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "cis-storage",
+ "cis-traits",
+ "cis-types",
+]
+
+[[package]]
 name = "cis-node"
 version = "1.1.5"
 dependencies = [
@@ -1656,6 +1667,25 @@ dependencies = [
  "walkdir",
  "which",
  "whoami",
+]
+
+[[package]]
+name = "cis-p2p"
+version = "1.2.0"
+dependencies = [
+ "async-trait",
+ "cis-traits",
+ "cis-types",
+]
+
+[[package]]
+name = "cis-scheduler"
+version = "1.2.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "cis-traits",
+ "cis-types",
 ]
 
 [[package]]
@@ -1712,6 +1742,43 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "cis-storage"
+version = "1.2.0"
+dependencies = [
+ "async-trait",
+ "cis-traits",
+ "cis-types",
+ "rusqlite",
+]
+
+[[package]]
+name = "cis-traits"
+version = "1.2.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "cis-types",
+ "serde",
+]
+
+[[package]]
+name = "cis-types"
+version = "1.2.0"
+dependencies = [
+ "chrono",
+ "serde",
+]
+
+[[package]]
+name = "cis-vector"
+version = "1.2.0"
+dependencies = [
+ "async-trait",
+ "cis-traits",
+ "cis-types",
 ]
 
 [[package]]
