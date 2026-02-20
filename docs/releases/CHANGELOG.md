@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - TBD
+
+### Module Architecture Refactoring
+
+- **cis-common workspace**: Split core into multiple reusable crates
+  - cis-types: Common type definitions
+  - cis-traits: Core trait definitions
+  - cis-storage: Storage backend
+  - cis-memory: Memory management
+  - cis-scheduler: Task scheduling
+  - cis-vector: Vector storage
+  - cis-p2p: P2P networking
+  - cis-core: Runtime and orchestration (lightweight coordination layer)
+
+- **Backward Compatibility**: Old imports still work via re-exports
+  - `use cis_core::types::*` → Works (deprecated, use cis_types instead)
+  - `use cis_types::*` → Recommended
+
+### ZeroClaw Compatibility
+
+- **Adapter Layer**: New zeroclaw module for ZeroClaw integration
+  - Memory adapter: ZeroclawMemoryAdapter
+  - Scheduler adapter: ZeroclawSchedulerAdapter
+  - ZeroClaw can use CIS as backend
+
+### Performance
+
+- Trait abstraction overhead < 5%
+- Memory operations latency increase < 8%
+- All v1.1.x benchmarks within budget
+
+### Dependencies
+
+- Updated tokio to 1.35
+- Updated serde to 1.0
+- Updated rusqlite to 0.30
+
 ## [1.1.5] - 2026-02-11
 
 ### Matrix 联邦增强
