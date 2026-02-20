@@ -60,7 +60,7 @@ pub use acl_module::{AclEntry, AclResult, NetworkAcl, NetworkMode};
 // 🔒 从acl_service重新导出AclService
 pub use acl_service::{AclService, AclPermission, AclAction, NetworkAclService};
 pub use acl_rules::{
-    AclRule, AclRulesEngine, AclAction, Condition, RuleContext, RulesSummary
+    AclRule, AclRulesEngine, AclAction as RuleAction, Condition, RuleContext, RulesSummary
 };
 pub use agent_session::{
     AgentSession,

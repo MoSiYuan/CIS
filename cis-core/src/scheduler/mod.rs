@@ -107,7 +107,7 @@ pub use notify::{
     TaskCompletion, TaskError,
 };
 // Re-export old persistence types
-pub use old_persistence::{DagPersistence, TaskExecution, TaskExecutionStatus};
+pub use persistence::{DagPersistence, TaskExecution, TaskExecutionStatus};
 pub use skill_executor::SkillDagExecutor;
 pub use todo_monitor::{TodoListMonitor, TodoChangeEvent, TodoListLoader, FileSystemLoader};
 

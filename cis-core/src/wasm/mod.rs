@@ -4,6 +4,8 @@
 
 pub mod sandbox;
 pub mod host;
+pub mod runtime;
 
 pub use sandbox::{WasiSandbox, AccessType, FileDescriptorGuard};
 pub use host::{HostContext, HostFunctions};
+pub use runtime::WasmRuntime;
