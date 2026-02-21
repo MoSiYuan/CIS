@@ -6,9 +6,9 @@ members = [
     "cis-storage",
     "cis-memory",
     "cis-scheduler",
-",
+    "cis-vector",
     "cis-p2p",
-    "cis-vector]
+]
 
 [workspace.package]
 version = "1.2.0"
